@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { filterNav, type NavItem } from "@/lib/nav";
+import { navFor, type NavItem } from "@/lib/nav";
+import { resolveHref } from "@/lib/role-routes";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -19,8 +20,8 @@ interface Props {
 
 export function SidebarNav({ collapsed = false, scope, onNavigate, onExpandRequest }: Props) {
   const pathname = usePathname();
-  const { can } = useAuth();
-  const items = filterNav(can);
+  const { can, user } = useAuth();
+  const items = navFor(user?.role, can).map((i) => (i.href ? { ...i, href: resolveHref(i.href, user?.home) } : i));
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   const isGroupOpen = (item: NavItem) =>

@@ -3,20 +3,24 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { MonitorPlay, X } from "lucide-react";
+import { ShieldAlert, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/states";
 import { useAuth } from "@/lib/auth";
+import { canAccessPath } from "@/lib/role-routes";
 import { cn } from "@/lib/utils";
+import { LiveNotifications } from "@/components/notifications/live-notifications";
+import { AdinnLogo } from "./adinn-logo";
 import { Header } from "./header";
+import { SidebarUser } from "./sidebar-user";
 import { SidebarNav } from "./sidebar-nav";
 
 function Brand({ collapsed }: { collapsed?: boolean }) {
   return (
-    <div className={cn("flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-5", collapsed && "justify-center px-0")}>
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/20">
-        <MonitorPlay className="size-5 text-white" aria-hidden />
-      </span>
-      {!collapsed && <span className="truncate text-sm font-semibold text-white">Adinn Recce CRM</span>}
+    <div className={cn("flex h-16 shrink-0 items-center border-b border-white/10 px-5", collapsed && "justify-center px-0")}>
+      <AdinnLogo compact={collapsed} className="text-2xl" />
+      {!collapsed && <span className="ml-3 truncate border-l border-white/20 pl-3 text-xs leading-tight text-white/70">Advertising Services Ltd.<br />Recce CRM</span>}
     </div>
   );
 }
@@ -47,7 +51,7 @@ export function ShellSkeleton() {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { status, sessionExpired } = useAuth();
+  const { status, user, sessionExpired } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -66,13 +70,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [status, sessionExpired, pathname, router]);
 
-  if (status !== "authenticated") return <ShellSkeleton />;
+  if (status !== "authenticated" || !user) return <ShellSkeleton />;
+  const allowed = canAccessPath(user.role, pathname);
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <LiveNotifications />
       <aside
         className={cn(
-          "hidden shrink-0 flex-col bg-primary transition-[width] duration-200 lg:flex",
+          "hidden shrink-0 flex-col bg-navy transition-[width] duration-200 lg:flex",
           collapsed ? "w-[72px]" : "w-64",
         )}
       >
@@ -80,6 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SidebarNav scope="desktop" collapsed={collapsed} onExpandRequest={() => setCollapsed(false)} />
         </div>
+        <SidebarUser collapsed={collapsed} />
       </aside>
 
       <AnimatePresence>
@@ -95,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <motion.aside
               role="dialog"
               aria-label="Navigation"
-              className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-primary"
+              className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-navy"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
@@ -115,6 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <SidebarNav scope="mobile" onNavigate={() => setMobileOpen(false)} />
               </div>
+              <SidebarUser />
             </motion.aside>
           </div>
         )}
@@ -122,7 +130,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} />
-        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-auto p-4 lg:p-6">
+          {allowed ? (
+            children
+          ) : (
+            <EmptyState
+              icon={ShieldAlert}
+              title="You don't have access to this page"
+              description="This area belongs to another role. Your account can only open its own screens."
+              action={
+                <Button onClick={() => router.replace(user.home || "/dashboard")}>Go to my dashboard</Button>
+              }
+            />
+          )}
+        </main>
       </div>
     </div>
   );

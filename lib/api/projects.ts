@@ -2,13 +2,25 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { api, apiPage } from "@/lib/api";
 import { qs, type Attachment, type Ref } from "./common";
 
-export const PROJECT_STATUSES = ["NEW", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
+export const PROJECT_STATUSES = [
+  "NEW", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED",
+  "DRAFT", "ENQUIRY", "RECCE_ASSIGNED", "PLANNING", "IN_PROGRESS", "CLIENT_APPROVAL",
+] as const;
+export const REQUIREMENT_TYPES = ["ASO", "SHOP_DETAILS", "SHOP_MEASUREMENT"] as const;
+export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export const SOURCES = ["EMAIL", "PHONE", "WHATSAPP", "REFERRAL", "MEETING", "OTHER"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export type Priority = (typeof PRIORITIES)[number];
 export type Source = (typeof SOURCES)[number];
 export type SiteDataScenario = "MEASUREMENT_REQUIRED" | "CLIENT_PROVIDED";
+
+export interface ProjectContact {
+  _id?: string;
+  name: string;
+  email: string;
+  phone: string;
+}
 
 export interface Requirement {
   _id?: string;
@@ -40,6 +52,14 @@ export interface Project {
   owner?: Ref | null;
   coordinator?: Ref | null;
   siteCount: number;
+  requirementType?: RequirementType;
+  startDate?: string;
+  district?: string;
+  instructions?: string;
+  expectedShops?: number | null;
+  contacts?: ProjectContact[];
+  assignedTo?: (Ref & { email?: string; phone?: string }) | null;
+  assignedAt?: string;
   createdAt: string;
   updatedAt: string;
   createdBy?: { name: string };
@@ -49,6 +69,7 @@ export interface Project {
 export interface ProjectSummary {
   total: number;
   newRequests: number;
+  overdue: number;
   byStatus: Record<string, number>;
 }
 
@@ -57,9 +78,15 @@ export interface ProjectListParams {
   limit?: number;
   q?: string;
   status?: string;
+  /** Comma separated list of statuses. */
+  statuses?: string;
   priority?: string;
   clientId?: string;
   ownerId?: string;
+  assigneeId?: string;
+  assigned?: "true" | "false";
+  requirementType?: string;
+  overdue?: "true";
   sort?: string;
 }
 

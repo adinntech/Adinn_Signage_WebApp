@@ -19,7 +19,7 @@ const STATS: { label: string; icon: LucideIcon; tone: string }[] = [
   { label: "Completed", icon: CheckCircle2, tone: "bg-success-soft text-success" },
 ];
 
-export function DashboardView() {
+export function DashboardView({ area }: { area?: string }) {
   const { user, can } = useAuth();
   const canProjects = can("projects:read");
   const summary = useProjectSummary(canProjects);
@@ -33,6 +33,7 @@ export function DashboardView() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-primary">Welcome back, {user?.name}</h1>
         {user && <RoleBadge role={user.role} />}
+        {area && <span className="text-sm text-muted-foreground">{area} dashboard</span>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

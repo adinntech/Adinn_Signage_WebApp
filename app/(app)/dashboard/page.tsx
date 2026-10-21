@@ -1,5 +1,5 @@
-import { DashboardView } from "./dashboard-view";
+import { DashboardRedirect } from "./dashboard-redirect";
 
 export default function DashboardPage() {
-  return <DashboardView />;
+  return <DashboardRedirect />;
 }

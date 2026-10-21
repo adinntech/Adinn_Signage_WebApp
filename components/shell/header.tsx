@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, ChevronRight, LogOut, Menu, PanelLeft, Search } from "lucide-react";
+import { ChevronRight, LogOut, Menu, PanelLeft, Search } from "lucide-react";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -86,9 +87,7 @@ export function Header({ onOpenMobile, onToggleCollapse }: { onOpenMobile: () =>
         />
       </div>
 
-      <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
-        <Bell className="size-5" aria-hidden />
-      </Button>
+      <NotificationBell />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

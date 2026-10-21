@@ -93,8 +93,8 @@ export const NAV: NavItem[] = [
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
-export function filterNav(can: (p?: string) => boolean): NavItem[] {
-  return NAV.flatMap((item) => {
+export function filterNav(can: (p?: string) => boolean, source: NavItem[] = NAV): NavItem[] {
+  return source.flatMap((item) => {
     if (item.children) {
       const children = item.children.filter((c) => can(c.permission));
       return children.length ? [{ ...item, children }] : [];
@@ -104,7 +104,7 @@ export function filterNav(can: (p?: string) => boolean): NavItem[] {
 }
 
 export function findNavTitle(pathname: string): { title: string; group?: string } | null {
-  for (const item of NAV) {
+  for (const item of [...NAV, ...Object.values(ROLE_NAV).flat()]) {
     if (item.href === pathname) return { title: item.label };
     for (const c of item.children ?? []) if (c.href === pathname) return { title: c.label, group: item.label };
   }
@@ -132,3 +132,34 @@ export const WORKFLOW = [
   "PO",
   "Handover",
 ];
+
+/** Role-specific sidebars (BD matches the ADINN reference). Roles not listed use the permission-filtered NAV. */
+export const ROLE_NAV: Record<string, NavItem[]> = {
+  BD: [
+    { label: "Dashboard", icon: LayoutDashboard, href: "/bd/dashboard", permission: "dashboard:view" },
+    { label: "Create Project", icon: FolderKanban, href: "/bd/projects/new", permission: "projects:write" },
+    { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
+    { label: "WhatsApp Group", icon: MessageSquare, href: "/bd/whatsapp", permission: "communications:read" },
+    { label: "Communication", icon: MessageSquare, href: "/communication", permission: "communications:read" },
+    { label: "Approvals", icon: ScanSearch, href: "/bd/approvals", permission: "projects:read" },
+    { label: "Reports", icon: BarChart3, href: "/reports", permission: "reports:read" },
+    { label: "Settings", icon: Settings, href: "/settings" },
+  ],
+};
+
+export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {
+  const own = role ? ROLE_NAV[role] : undefined;
+  return own ? filterNav(can, own) : filterNav(can);
+}
+
+const OPERATIONS_NAV: NavItem[] = [
+  { label: "Dashboard", icon: LayoutDashboard, href: "/operations/dashboard", permission: "dashboard:view" },
+  { label: "Projects", icon: FolderKanban, href: "/operations/projects", permission: "projects:read" },
+  { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
+  { label: "Vendors", icon: Store, href: "/operations/vendors", permission: "vendors:manage" },
+  { label: "Field Monitoring", icon: ScanSearch, href: "/operations/monitoring", permission: "sites:read" },
+  { label: "Approvals", icon: AlertTriangle, href: "/operations/approvals", permission: "verification:manage" },
+  { label: "Settings", icon: Settings, href: "/settings" },
+];
+ROLE_NAV.OPERATIONS = OPERATIONS_NAV;
+ROLE_NAV.RECCE_COORDINATOR = OPERATIONS_NAV;

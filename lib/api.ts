@@ -255,3 +255,69 @@ export async function logout(): Promise<void> {
     accessToken = null;
   }
 }
+
+/**
+ * Opens a Server-Sent Events stream with the same bearer token and refresh handling as every other call
+ * (the browser's EventSource cannot send an Authorization header). Reconnects with backoff, including after the
+ * server ends the stream when the access token expires. Returns a function that stops it.
+ */
+export function openEventStream(path: string, onEvent: (event: string, data: unknown) => void): () => void {
+  let stopped = false;
+  const ctrl = new AbortController();
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  (async () => {
+    let delay = 1000;
+    while (!stopped) {
+      try {
+        const h = new Headers({ Accept: "text/event-stream" });
+        if (accessToken) h.set("Authorization", `Bearer ${accessToken}`);
+        const res = await fetch(`${API_URL}${path}`, { headers: h, credentials: "include", signal: ctrl.signal });
+        if (res.status === 401) {
+          try {
+            await refreshSession();
+          } catch {
+            accessToken = null;
+            onSessionExpired?.();
+            return;
+          }
+          continue;
+        }
+        if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);
+        delay = 1000;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let i: number;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const ev = /^event: (.+)$/m.exec(block)?.[1];
+            const data = /^data: (.+)$/m.exec(block)?.[1];
+            if (ev && data) {
+              try {
+                onEvent(ev, JSON.parse(data));
+              } catch {
+                /* ignore a malformed frame */
+              }
+            }
+          }
+        }
+      } catch {
+        if (stopped) return;
+      }
+      if (stopped) return;
+      await wait(delay);
+      delay = Math.min(delay * 2, 30_000);
+    }
+  })();
+
+  return () => {
+    stopped = true;
+    ctrl.abort();
+  };
+}
