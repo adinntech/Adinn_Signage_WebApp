@@ -1,15 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
+import { useFileUploader } from "@/hooks/use-file-uploader";
 import { errorMessage } from "@/lib/api";
-import { openFile, useDeleteFile, useProjectFiles, useUploadFiles, type FileCategory, type StoredFile } from "@/lib/api/pipeline";
-import { formatDateTime } from "@/lib/format";
-import { FileDrop, FileRow, releasePicked, type PickedFile } from "./file-drop";
+import { useDeleteFile, useProjectFiles, type FileCategory, type StoredFile } from "@/lib/api/pipeline";
+import { FileDrop } from "./file-drop";
+import { FilePreviewDialog } from "./file-preview-dialog";
+import { StoredFileRow } from "./stored-file-row";
+import { UploadQueue } from "./upload-queue";
 
-/** Documents stored on the server for one project and category, with upload, open and delete. */
+/**
+ * Documents stored on the server for one project and category, with upload, preview, download and delete.
+ * New files are checked for duplicates the moment they are picked and upload with a live progress bar.
+ * Download saves the file under its original name.
+ */
 export function ProjectDocuments({
   projectId,
   category,
@@ -26,44 +33,37 @@ export function ProjectDocuments({
 }) {
   const toast = useToast();
   const files = useProjectFiles(projectId, category);
-  const upload = useUploadFiles(projectId, category);
+  const queue = useFileUploader({ projectId, category, autoStart: true });
   const del = useDeleteFile(projectId);
   const [toDelete, setToDelete] = useState<StoredFile | null>(null);
+  const [preview, setPreview] = useState<StoredFile | null>(null);
 
-  async function onFiles(picked: PickedFile[]) {
-    const res = await upload.mutateAsync(picked.map((p) => p.file));
-    picked.forEach(releasePicked);
-    const ok = res.filter((r) => r.ok).length;
-    if (ok) toast(`${ok} file${ok > 1 ? "s" : ""} uploaded`);
-    for (const r of res.filter((x) => !x.ok)) toast(`${r.file.name}: ${r.error}`, "error");
-  }
+  // Once a file is uploaded it appears in the stored list below, so drop it from the queue after a moment.
+  const hasDone = queue.items.some((i) => i.status === "done");
+  useEffect(() => {
+    if (!hasDone || queue.busy) return;
+    const t = setTimeout(queue.clearDone, 2500);
+    return () => clearTimeout(t);
+  }, [hasDone, queue.busy, queue.clearDone]);
 
   if (files.isError) return <ErrorState error={files.error} onRetry={() => files.refetch()} title="Could not load documents" />;
 
   return (
     <div className="space-y-3">
-      {uploader && <FileDrop onError={(m) => toast(m, "error")} onFiles={(p) => void onFiles(p)} />}
-      {upload.isPending && <p role="status" className="text-sm text-muted-foreground">Uploading…</p>}
+      {uploader && <FileDrop onError={(m) => toast(m, "error")} onFiles={(p) => void queue.addFiles(p)} />}
+      <UploadQueue items={queue.items} onRemove={queue.remove} onCancel={queue.cancel} onRetry={(id) => void queue.retry(id)} />
       {files.isPending ? (
         <p className="text-sm text-muted-foreground">Loading documents…</p>
       ) : files.data.length === 0 ? (
-        <EmptyState title={emptyText} />
+        queue.items.length === 0 && <EmptyState title={emptyText} />
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {files.data.map((f) => (
-            <FileRow
-              key={f.id}
-              name={f.originalName}
-              size={f.size}
-              kind={f.kind}
-              note={formatDateTime(f.createdAt)}
-              onOpen={() => openFile(f.id).catch((e) => toast(errorMessage(e), "error"))}
-              onRemove={canEdit ? () => setToDelete(f) : undefined}
-              removing={del.isPending}
-            />
+            <StoredFileRow key={f.id} file={f} onPreview={setPreview} onDelete={canEdit ? setToDelete : undefined} deleting={del.isPending} />
           ))}
         </ul>
       )}
+      <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
       <ConfirmDialog
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}

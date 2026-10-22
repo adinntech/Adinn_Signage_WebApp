@@ -241,7 +241,22 @@ test("ASO: the survey needs an area, rejects bad counts and duplicates, and stor
 
   await ops.locator('input[type="file"]').setInputFiles({ name: "ASO conversation report.pdf", mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(200, 3)]) });
   await expect(ops.getByText("ASO conversation report.pdf")).toBeVisible();
-  expect(storedFiles("Operations", "Amul_Dairy", "22070402", "Survey_Proof")).toHaveLength(1);
+  await expect.poll(() => storedFiles("Operations", "Amul_Dairy", "22070402", "Survey_Proof").length).toBe(1);
+
+  // A larger upload on a slow connection shows a live progress bar that moves from 0 to 100.
+  const cdp = await ops.context().newCDPSession(ops);
+  await cdp.send("Network.enable");
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: 1_000_000 });
+  const big = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(4 * 1024 * 1024, 7)]);
+  await ops.locator('input[type="file"]').setInputFiles({ name: "Large site report.pdf", mimeType: "application/pdf", buffer: big });
+  const bar = ops.getByRole("progressbar", { name: "Uploading Large site report.pdf" });
+  await expect(bar).toBeVisible();
+  const early = Number(await bar.getAttribute("aria-valuenow"));
+  await expect.poll(async () => Number((await bar.getAttribute("aria-valuenow").catch(() => "100")) ?? 100), { timeout: 30_000 }).toBeGreaterThan(early);
+  await expect(ops.getByText("Large site report.pdf")).toBeVisible();
+  await expect(bar).toHaveCount(0, { timeout: 30_000 }); // finished
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await expect.poll(() => storedFiles("Operations", "Amul_Dairy", "22070402", "Survey_Proof").length).toBe(2);
 
   await ops.getByRole("tab", { name: "Overview" }).click();
   await ops.getByRole("button", { name: /Start Recce/ }).click();

@@ -138,7 +138,76 @@ test("the dashboard lists the project from the database and the drawer shows its
   await expect(page.getByRole("dialog")).toContainText("Shop front.png");
   await expect(page.getByRole("dialog")).toContainText("suresh@cocacola.example");
   await expect(page.getByRole("dialog")).toContainText("9876543210"); // +91 98765 43210 stored normalised
+
+  // A file identical to one already stored is flagged as soon as it is picked, and nothing is sent to the server.
+  await page.getByRole("dialog").locator('input[type="file"]').setInputFiles({ name: "Client Brief - copy.xlsx", mimeType: "application/octet-stream", buffer: xlsxLike(1) });
+  const flagged = page.getByRole("dialog").getByTestId("upload-item");
+  await expect(flagged).toHaveAttribute("data-status", "duplicate");
+  await expect(flagged).toContainText('Already uploaded to this project as "Client Brief.xlsx"');
+  expect(storedFiles("BD", "Client_Details", "Coca_Cola", CODE)).toHaveLength(2);
   await page.keyboard.press("Escape");
+});
+
+test("a stored file previews in place and downloads under its original name", async () => {
+  await page.getByRole("button", { name: `View project ${CODE}` }).click();
+  const dialog = page.getByRole("dialog");
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    dialog.getByRole("button", { name: "Download Client Brief.xlsx" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("Client Brief.xlsx");
+
+  await dialog.getByRole("button", { name: "Preview Shop front.png" }).first().click();
+  const img = page.getByTestId("preview-image");
+  await expect(img).toBeVisible();
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+  await page.keyboard.press("Escape");
+
+  // A spreadsheet shows its rows as a table, with no "can't be shown" notice.
+  const csv = "Shop,Town\nAnand Stores,Dindigul\nBala Traders,Palani\n";
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "Dindigul list.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await dialog.getByRole("button", { name: "Preview Dindigul list.csv" }).first().click();
+  const sheet = page.getByTestId("preview-sheet");
+  await expect(sheet).toContainText("Anand Stores");
+  await expect(sheet).toContainText("Palani");
+  await expect(page.getByText("can't be shown in the browser")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+});
+
+test("a too-large image is turned away when picked, and a slow upload can be cancelled", async () => {
+  await page.goto("/bd/dashboard");
+  await page.getByRole("button", { name: `View project ${CODE}` }).click();
+  const dialog = page.getByRole("dialog");
+  const before = storedFiles("BD", "Client_Details", "Coca_Cola", CODE).length;
+
+  // Over the image limit: refused on the spot with a clear message, and nothing is queued or sent.
+  const huge = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4 * 1024 * 1024, 1)]);
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "Huge photo.jpg", mimeType: "image/jpeg", buffer: huge });
+  await expect(dialog.getByTestId("rejected-files")).toContainText("Huge photo.jpg is 4.0 MB, but images can be at most 3.0 MB");
+  await expect(dialog.getByTestId("upload-item")).toHaveCount(0);
+
+  // A slow upload shows Cancel; pressing it stops the upload and nothing is saved.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Network.enable");
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: 200_000 });
+  const slow = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2 * 1024 * 1024, 2)]);
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "Slow photo.jpg", mimeType: "image/jpeg", buffer: slow });
+  await expect(dialog.getByRole("progressbar", { name: "Uploading Slow photo.jpg" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel uploading Slow photo.jpg" }).click();
+  await expect(dialog.getByTestId("upload-item")).toHaveAttribute("data-status", "cancelled");
+  await expect(dialog.getByTestId("upload-item")).toContainText("Cancelled");
+  await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await page.waitForTimeout(500);
+  expect(storedFiles("BD", "Client_Details", "Coca_Cola", CODE)).toHaveLength(before);
+  await page.keyboard.press("Escape");
+});
+
+test("the collapsed sidebar shows the A-only logo", async () => {
+  await page.goto("/bd/dashboard");
+  await page.getByRole("button", { name: /collapse|toggle sidebar/i }).first().click();
+  await expect(page.locator('img[src*="Adinn_A_Only_Logo"]').first()).toBeVisible();
 });
 
 test("duplicate project code, duplicate campaign and a duplicate file are refused", async () => {
@@ -156,13 +225,22 @@ test("duplicate project code, duplicate campaign and a duplicate file are refuse
   await page.getByRole("button", { name: "Save as Draft" }).click();
   await expect(page.getByText(`Project code ${CODE} already exists`).first()).toBeVisible();
 
-  // a draft with a unique code saves, then the same file twice is refused by content
+  // The same file picked twice is flagged the moment it is picked, before anything is uploaded.
   await page.locator("#code").fill("22070300");
   await page.getByRole("button", { name: "Add Files" }).click();
   const dup = { name: "same.xlsx", mimeType: "application/octet-stream", buffer: xlsxLike(9) };
   await page.locator('input[type="file"]').setInputFiles([dup, { ...dup, name: "same-copy.xlsx" }]);
+  const items = page.getByTestId("upload-item");
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toHaveAttribute("data-status", "ready");
+  await expect(items.nth(1)).toHaveAttribute("data-status", "duplicate");
+  await expect(items.nth(1)).toContainText('Same file as "same.xlsx" in this selection');
+  await expect(items.nth(1)).toContainText("Duplicate, not uploaded");
+
+  // Saving uploads only the first; it shows as uploaded and the duplicate is reported as skipped.
   await page.getByRole("button", { name: "Save as Draft" }).click();
-  await expect(page.getByText(/was selected twice|already uploaded/).first()).toBeVisible();
+  await expect(page.getByText("1 duplicate file was skipped")).toBeVisible();
+  await expect.poll(() => storedFiles("BD", "Client_Details", "Coca_Cola", "22070300").length).toBe(1);
 });
 
 test("BD logs out", async () => {

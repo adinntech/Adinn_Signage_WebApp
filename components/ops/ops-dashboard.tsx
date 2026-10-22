@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ClipboardList, Eye, FileWarning, Loader, Map, PlayCircle, Search, ThumbsUp, X } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, ClipboardList, Eye, FileWarning, Loader, Map, PlayCircle, Search, ThumbsUp, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientHeader } from "@/components/ui/gradient-header";
@@ -12,6 +12,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { SortHeader, nextSort, type SortState } from "@/components/ui/sort-header";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
+import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
@@ -24,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { NotificationsPanel } from "./notifications-panel";
 
 const PAGE_SIZE = 8;
-type TabKey = "RECCE_ASSIGNED" | "PLANNING" | "IN_PROGRESS" | "CLIENT_APPROVAL" | "COMPLETED" | "OVERDUE" | "ALL";
+type TabKey = "RECCE_ASSIGNED" | "PLANNING" | "IN_PROGRESS" | "CLIENT_APPROVAL" | "COMPLETED" | "OVERDUE" | "CANCELLED" | "ALL";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "RECCE_ASSIGNED", label: "New Assigned" },
   { key: "PLANNING", label: "In Planning" },
@@ -32,6 +33,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "CLIENT_APPROVAL", label: "Pending Approval" },
   { key: "COMPLETED", label: "Completed" },
   { key: "OVERDUE", label: "Overdue" },
+  { key: "CANCELLED", label: "Cancelled" },
   { key: "ALL", label: "All" },
 ];
 type SortKey = "code" | "name" | "district" | "expectedShops" | "assignedAt" | "targetDate" | "priority";
@@ -64,7 +66,7 @@ export function OpsDashboard() {
   });
   const by = summary.data?.byStatus ?? {};
   const count = (k: TabKey) => (k === "ALL" ? undefined : k === "OVERDUE" ? summary.data?.overdue : by[k]);
-  const allAssigned = ["RECCE_ASSIGNED", "PLANNING", "IN_PROGRESS", "CLIENT_APPROVAL", "COMPLETED"].reduce((a, s) => a + (by[s] ?? 0), 0);
+  const allAssigned = ["RECCE_ASSIGNED", "PLANNING", "IN_PROGRESS", "CLIENT_APPROVAL", "COMPLETED", "CANCELLED"].reduce((a, s) => a + (by[s] ?? 0), 0);
   const show = (n: number | undefined) => (summary.data ? (n ?? 0) : "–");
 
   const rows = list.data?.data ?? [];
@@ -94,33 +96,27 @@ export function OpsDashboard() {
     <div className="mx-auto max-w-[1500px] space-y-5">
       <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
         <GradientHeader code="B" title="Operations / Coordinator" subtitle="Receive assigned tasks from BD and plan the recce" />
-        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-7">
           <KpiCard label="New Assigned" value={show(count("RECCE_ASSIGNED"))} icon={ClipboardList} color="blue" active={tab === "RECCE_ASSIGNED"} onClick={() => pickTab("RECCE_ASSIGNED")} />
           <KpiCard label="In Planning" value={show(count("PLANNING"))} icon={Map} color="teal" delay={0.04} active={tab === "PLANNING"} onClick={() => pickTab("PLANNING")} />
           <KpiCard label="In Progress" value={show(count("IN_PROGRESS"))} icon={Loader} color="orange" delay={0.08} active={tab === "IN_PROGRESS"} onClick={() => pickTab("IN_PROGRESS")} />
           <KpiCard label="Pending Approval" value={show(count("CLIENT_APPROVAL"))} icon={ThumbsUp} color="purple" delay={0.12} active={tab === "CLIENT_APPROVAL"} onClick={() => pickTab("CLIENT_APPROVAL")} />
           <KpiCard label="Completed" value={show(count("COMPLETED"))} icon={CheckCircle2} color="green" delay={0.16} active={tab === "COMPLETED"} onClick={() => pickTab("COMPLETED")} />
           <KpiCard label="Overdue" value={show(count("OVERDUE"))} icon={AlertTriangle} color="red" delay={0.2} active={tab === "OVERDUE"} onClick={() => pickTab("OVERDUE")} />
+          <KpiCard label="Cancelled" value={show(count("CANCELLED"))} icon={Ban} color="rose" delay={0.24} active={tab === "CANCELLED"} onClick={() => pickTab("CANCELLED")} />
         </div>
         {summary.isError && <p role="alert" className="px-4 pb-3 text-xs text-danger">Could not load the counts. <button type="button" className="underline" onClick={() => summary.refetch()}>Retry</button></p>}
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
-          <div role="tablist" aria-label="Task stage" className="flex gap-1 overflow-x-auto border-b border-border px-3 pt-2">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={tab === t.key}
-                onClick={() => pickTab(t.key)}
-                className={cn("whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1.5 text-sm font-medium transition-colors", tab === t.key ? "border-royal text-royal" : "border-transparent text-muted-foreground hover:text-foreground")}
-              >
-                {t.label}{" "}
-                <span className={cn("ml-1 rounded-full px-1.5 py-0.5 text-xs", tab === t.key ? "bg-royal/10" : "bg-muted")}>{t.key === "ALL" ? show(allAssigned) : show(count(t.key))}</span>
-              </button>
-            ))}
-          </div>
+          <Tabs
+            label="Task stage"
+            className="border-b border-border pt-2"
+            value={tab}
+            onChange={(k) => pickTab(k as TabKey)}
+            tabs={TABS.map((t) => ({ key: t.key, label: t.label, count: t.key === "ALL" ? show(allAssigned) : show(count(t.key)) }))}
+          />
 
           <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
             <div className="relative min-w-52 flex-1">
@@ -146,7 +142,7 @@ export function OpsDashboard() {
             )}
           </div>
 
-          <div className="max-h-[560px] min-h-0 overflow-auto">
+          <div className={cn("max-h-[560px] min-h-0 overflow-auto transition-opacity duration-150", list.isFetching && !list.isPending && "opacity-60")} aria-busy={list.isFetching}>
             {list.isPending ? (
               <RowsSkeleton rows={6} className="p-4" />
             ) : list.isError ? (

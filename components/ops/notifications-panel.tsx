@@ -86,7 +86,7 @@ export function NotificationsPanel() {
                       className="mt-2 bg-royal hover:bg-royal/90"
                       onClick={() => {
                         if (!n.read) markOne.mutate(n.id);
-                        router.push(notificationHref(user?.role, n.projectId));
+                        router.push(notificationHref(user?.role, n.projectId, n.kind));
                       }}
                     >
                       View

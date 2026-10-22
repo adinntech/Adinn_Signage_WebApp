@@ -321,3 +321,39 @@ export function openEventStream(path: string, onEvent: (event: string, data: unk
     ctrl.abort();
   };
 }
+
+/**
+ * Multipart upload with real progress (fetch cannot report upload progress, XMLHttpRequest can).
+ * Uses the same bearer token and refresh-once-on-401 handling as every other call.
+ */
+export function apiUpload<T>(path: string, body: FormData, opts: { onProgress?: (percent: number) => void; signal?: AbortSignal } = {}): Promise<T> {
+  const attempt = () =>
+    new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_URL}${path}`);
+      xhr.withCredentials = true;
+      if (accessToken) xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) opts.onProgress?.(Math.min(99, Math.round((e.loaded / e.total) * 100)));
+      };
+      xhr.onload = () => {
+        let b: { success?: boolean; data?: T; error?: { code?: string; message?: string; details?: unknown } } | null = null;
+        try {
+          b = JSON.parse(xhr.responseText);
+        } catch {
+          /* non-JSON response */
+        }
+        if (xhr.status >= 200 && xhr.status < 300 && b?.success !== false) {
+          opts.onProgress?.(100);
+          resolve(b?.data as T);
+        } else {
+          reject(new ApiError(xhr.status, b?.error?.code ?? "UNKNOWN_ERROR", b?.error?.message ?? "Upload failed. Please try again.", b?.error?.details));
+        }
+      };
+      xhr.onerror = () => reject(new ApiError(0, "NETWORK_ERROR", "Unable to reach the server. Check your connection and try again."));
+      xhr.onabort = () => reject(new ApiError(0, "ABORTED", "Upload cancelled."));
+      opts.signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+      xhr.send(body);
+    });
+  return withRefresh(attempt);
+}

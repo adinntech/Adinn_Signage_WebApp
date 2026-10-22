@@ -10,6 +10,7 @@ import { normalizeMobile } from "@/lib/validation";
 
 const EMAIL_TONE = { SENT: "success", QUEUED: "info", FAILED: "danger", SKIPPED: "neutral" } as const;
 const EMAIL_LABEL = { SENT: "Email sent", QUEUED: "Email sending", FAILED: "Email failed", SKIPPED: "Email not sent" } as const;
+const PUSH_LABEL = { SENT: "Chrome notification sent", QUEUED: "Chrome notification sending", FAILED: "Chrome notification failed", SKIPPED: "Chrome notification not sent" } as const;
 
 /**
  * WhatsApp cannot be sent automatically without a business API account, so BD gets a pre-filled click-to-chat
@@ -25,6 +26,7 @@ export function whatsappLink(project: Pick<Project, "code" | "campaign" | "clien
 
 function Row({ n }: { n: NotificationLogRow }) {
   const email = n.deliveries.find((d) => d.channel === "EMAIL");
+  const push = n.deliveries.find((d) => d.channel === "PUSH");
   return (
     <li className="rounded-lg border border-border p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -45,7 +47,13 @@ function Row({ n }: { n: NotificationLogRow }) {
             {email.status === "FAILED" ? ` (${email.attempts} tries)` : ""}
           </Badge>
         )}
+        {push && (
+          <Badge tone={EMAIL_TONE[push.status]} title={push.lastError ?? undefined}>
+            <Bell className="size-3" aria-hidden /> {PUSH_LABEL[push.status]}
+          </Badge>
+        )}
       </div>
+      {push && push.status !== "SENT" && push.lastError && <p className="mt-1 text-xs text-muted-foreground">{push.lastError}.</p>}
       {email?.status === "SKIPPED" && email.lastError && <p className="mt-1 text-xs text-muted-foreground">{email.lastError}.</p>}
       {email?.status === "FAILED" && email.lastError && <p className="mt-1 text-xs text-danger">{email.lastError}. It will be retried automatically.</p>}
     </li>

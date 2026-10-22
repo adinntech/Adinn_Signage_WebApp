@@ -3,8 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { CheckCircle2, ClipboardList, Clock3, Eye, FolderKanban, Inbox, Loader, Plus, Search, ThumbsUp, X } from "lucide-react";
+import { Ban, CheckCircle2, ClipboardList, Clock3, Eye, FolderKanban, Inbox, Loader, Plus, Search, ThumbsUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GradientHeader } from "@/components/ui/gradient-header";
 import { Input } from "@/components/ui/input";
@@ -20,12 +19,13 @@ import { useProject, useProjects, useProjectSummary, type Project } from "@/lib/
 import { formatDate, formatDateTime } from "@/lib/format";
 import { STATUS_META } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
+import { Tabs } from "@/components/ui/tabs";
 import { ProjectDrawer } from "./project-drawer";
 import { ProjectStatusBadge } from "./status-badge";
 
 const PAGE_SIZE = 8;
 
-type TabKey = "all" | "pending" | "assigned" | "progress" | "approval" | "completed";
+type TabKey = "all" | "pending" | "assigned" | "progress" | "approval" | "completed" | "cancelled";
 const TABS: { key: TabKey; label: string; statuses: string[] }[] = [
   { key: "all", label: "All Projects", statuses: [] },
   { key: "pending", label: "Recce Pending", statuses: ["DRAFT", "ENQUIRY", "NEW"] },
@@ -33,6 +33,7 @@ const TABS: { key: TabKey; label: string; statuses: string[] }[] = [
   { key: "progress", label: "In Progress", statuses: ["IN_PROGRESS"] },
   { key: "approval", label: "Client Approval", statuses: ["CLIENT_APPROVAL"] },
   { key: "completed", label: "Completed", statuses: ["COMPLETED"] },
+  { key: "cancelled", label: "Cancelled", statuses: ["CANCELLED"] },
 ];
 
 type SortKey = "code" | "name" | "expectedShops" | "startDate" | "targetDate" | "status";
@@ -109,36 +110,27 @@ export function BdDashboard() {
             </Button>
           }
         />
-        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-7">
           <KpiCard label="Total Projects" value={summary.data ? total : "–"} icon={FolderKanban} color="blue" active={tab === "all"} onClick={() => pickTab("all")} />
           <KpiCard label="New Enquiries" value={summary.data ? countOf(["ENQUIRY", "NEW"]) : "–"} icon={Inbox} color="rose" delay={0.04} active={tab === "pending"} onClick={() => pickTab("pending")} />
           <KpiCard label="Recce Assigned" value={summary.data ? countOf(["RECCE_ASSIGNED", "PLANNING"]) : "–"} icon={ClipboardList} color="teal" delay={0.08} active={tab === "assigned"} onClick={() => pickTab("assigned")} />
           <KpiCard label="In Progress" value={summary.data ? countOf(["IN_PROGRESS"]) : "–"} icon={Loader} color="green" delay={0.12} active={tab === "progress"} onClick={() => pickTab("progress")} />
           <KpiCard label="Awaiting Client Approval" value={summary.data ? countOf(["CLIENT_APPROVAL"]) : "–"} icon={ThumbsUp} color="orange" delay={0.16} active={tab === "approval"} onClick={() => pickTab("approval")} />
           <KpiCard label="Completed" value={summary.data ? countOf(["COMPLETED"]) : "–"} icon={CheckCircle2} color="purple" delay={0.2} active={tab === "completed"} onClick={() => pickTab("completed")} />
+          <KpiCard label="Cancelled" value={summary.data ? countOf(["CANCELLED"]) : "–"} icon={Ban} color="red" delay={0.24} active={tab === "cancelled"} onClick={() => pickTab("cancelled")} />
         </div>
         {summary.isError && <p role="alert" className="px-4 pb-3 text-xs text-danger">Could not load the counts. <button type="button" className="underline" onClick={() => summary.refetch()}>Retry</button></p>}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
-          <div role="tablist" aria-label="Project stage" className="flex gap-1 overflow-x-auto border-b border-border px-3 pt-2">
-            {TABS.map((t) => {
-              const on = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => pickTab(t.key)}
-                  className={cn("relative whitespace-nowrap px-3 pb-2.5 pt-1.5 text-sm font-medium transition-colors", on ? "text-royal" : "text-muted-foreground hover:text-foreground")}
-                >
-                  {t.label} <span className={cn("ml-1 rounded-full px-1.5 py-0.5 text-xs", on ? "bg-royal/10" : "bg-muted")}>{summary.data ? tabCount(t) : "–"}</span>
-                  {on && <motion.span layoutId="bd-tab" className="absolute inset-x-2 bottom-0 h-0.5 rounded bg-royal" />}
-                </button>
-              );
-            })}
-          </div>
+          <Tabs
+            label="Project stage"
+            className="border-b border-border pt-2"
+            value={tab}
+            onChange={(k) => pickTab(k as TabKey)}
+            tabs={TABS.map((t) => ({ key: t.key, label: t.label, count: summary.data ? tabCount(t) : "–" }))}
+          />
 
           <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
             <div className="relative min-w-52 flex-1">
@@ -164,7 +156,7 @@ export function BdDashboard() {
             )}
           </div>
 
-          <div className="max-h-[520px] min-h-0 overflow-auto">
+          <div className={cn("max-h-[520px] min-h-0 overflow-auto transition-opacity duration-150", list.isFetching && !list.isPending && "opacity-60")} aria-busy={list.isFetching}>
             {list.isPending ? (
               <RowsSkeleton rows={6} className="p-4" />
             ) : list.isError ? (

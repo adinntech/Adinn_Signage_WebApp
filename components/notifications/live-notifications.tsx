@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { openEventStream } from "@/lib/api";
 import { notificationHref, useMarkNotificationRead, type NotificationItem } from "@/lib/api/pipeline";
 import { useAuth } from "@/lib/auth";
+import { ensureSubscribed } from "@/lib/push";
 import { cn } from "@/lib/utils";
 import { KIND_META } from "./kind-meta";
 
@@ -16,8 +17,8 @@ const POPUP_MS = 15_000;
 
 /**
  * Keeps a live connection to the server while the CRM is open. When something is assigned to this person it:
- * refreshes the bell and the lists at once, shows a pop-up with a View button, and (if they allowed it and the tab is
- * in the background) raises a desktop alert. Offline people lose nothing: the notification waits in the database.
+ * refreshes the bell and the lists at once and shows a pop-up with a View button. Chrome notifications for when the tab is
+ * closed come from browser push (see lib/push.ts and public/sw.js). Offline people lose nothing: it waits in the database.
  */
 export function LiveNotifications() {
   const { status, user } = useAuth();
@@ -32,7 +33,7 @@ export function LiveNotifications() {
     (n: NotificationItem) => {
       markRead.mutate(n.id);
       dismiss(n.id);
-      router.push(notificationHref(role, n.projectId));
+      router.push(notificationHref(role, n.projectId, n.kind));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [role, router, dismiss],
@@ -49,16 +50,13 @@ export function LiveNotifications() {
       qc.invalidateQueries({ queryKey: ["files"] });
       qc.invalidateQueries({ queryKey: ["notification-log"] });
       setPopups((p) => [n, ...p.filter((x) => x.id !== n.id)].slice(0, 3));
-      if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
-        const alert = new Notification(n.title, { body: n.text, tag: n.id });
-        alert.onclick = () => {
-          window.focus();
-          router.push(notificationHref(role, n.projectId));
-          alert.close();
-        };
-      }
     });
-  }, [status, qc, router, role]);
+  }, [status, qc]);
+
+  // If this person already allowed notifications, make sure this browser is registered for the account that just signed in.
+  useEffect(() => {
+    if (status === "authenticated") void ensureSubscribed();
+  }, [status]);
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[55] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2.5" aria-live="polite">

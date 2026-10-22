@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, BellRing, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+import { usePush } from "@/hooks/use-push";
+import { errorMessage } from "@/lib/api";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
@@ -18,7 +20,8 @@ export function NotificationBell() {
   const q = useNotifications();
   const markOne = useMarkNotificationRead();
   const markAll = useMarkNotificationsRead();
-  const [perm, setPerm] = useState<NotificationPermission | "unsupported">(() => (typeof Notification === "undefined" ? "unsupported" : Notification.permission));
+  const toast = useToast();
+  const push = usePush();
   const unread = q.data?.unread ?? 0;
   const items = (q.data?.items ?? []).slice(0, 8);
 
@@ -55,7 +58,7 @@ export function NotificationBell() {
                     type="button"
                     onClick={() => {
                       if (!n.read) markOne.mutate(n.id);
-                      router.push(notificationHref(user?.role, n.projectId));
+                      router.push(notificationHref(user?.role, n.projectId, n.kind));
                     }}
                     className={cn("flex w-full gap-3 px-3 py-2.5 text-left hover:bg-muted", !n.read && "bg-[#f4f8ff]")}
                   >
@@ -76,15 +79,23 @@ export function NotificationBell() {
             })}
           </ul>
         )}
-        {perm !== "unsupported" && (
+        {push.state !== "unsupported" && push.state !== "unavailable" && push.state !== "loading" && (
           <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-            {perm === "granted" ? (
-              <span className="flex items-center gap-1.5"><BellRing className="size-3.5 text-finance" aria-hidden /> Desktop alerts are on (shown when this tab is in the background).</span>
-            ) : perm === "denied" ? (
-              "Desktop alerts are blocked in this browser. Allow them in the site settings to turn them on."
+            {push.state === "on" ? (
+              <span className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5"><BellRing className="size-3.5 text-finance" aria-hidden /> Chrome notifications are on, even when this tab is closed.</span>
+                <button type="button" className="shrink-0 font-medium text-royal hover:underline" disabled={push.busy} onClick={() => void push.disable()}>Turn off</button>
+              </span>
+            ) : push.state === "blocked" ? (
+              "Notifications are blocked in this browser. Allow them from the lock icon next to the address bar."
             ) : (
-              <button type="button" className="font-medium text-royal hover:underline" onClick={() => void Notification.requestPermission().then(setPerm)}>
-                Turn on desktop alerts
+              <button
+                type="button"
+                className="font-medium text-royal hover:underline"
+                disabled={push.busy}
+                onClick={() => push.enable().then((s) => s === "on" && toast("Notifications are on for this browser")).catch((e) => toast(errorMessage(e), "error"))}
+              >
+                Turn on Chrome notifications
               </button>
             )}
           </div>

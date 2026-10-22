@@ -29,13 +29,13 @@ export function levelsFor(role: string | undefined, can: (p?: string) => boolean
  * Independent two-level approval of shop details and board measurements before the recce:
  * Operations approves its own level, BD approves theirs. Used on the Operations project page and in the BD drawer.
  */
-export function ShopApprovals({ projectId, compact }: { projectId: string; compact?: boolean }) {
+export function ShopApprovals({ projectId, compact, readOnly }: { projectId: string; compact?: boolean; readOnly?: boolean }) {
   const { user, can } = useAuth();
   const toast = useToast();
   const sites = useApprovalSites(projectId);
   const set = useSetApproval(projectId);
   const all = useApproveAll(projectId);
-  const mine = levelsFor(user?.role, can);
+  const mine = readOnly ? [] : levelsFor(user?.role, can);
   const [correcting, setCorrecting] = useState<{ site: ApprovalSite; level: ApprovalLevel } | null>(null);
   const [note, setNote] = useState("");
 

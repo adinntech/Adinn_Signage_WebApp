@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileSpreadsheet, FileText, Image as ImageIcon, File as FileIcon, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, X, FileSpreadsheet, FileText, Image as ImageIcon, File as FileIcon, UploadCloud } from "lucide-react";
+import { useFileLimits } from "@/lib/api/pipeline";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -18,10 +19,6 @@ export interface PickedFile {
   previewUrl?: string;
 }
 
-const MAX_BYTES = 50 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
-const ACCEPT = ".xlsx,.csv,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp";
-
 export const kindOfName = (name: string): FileKind => {
   const n = name.toLowerCase();
   if (/\.(xlsx|csv)$/.test(n)) return "sheet";
@@ -32,17 +29,25 @@ export const kindOfName = (name: string): FileKind => {
 
 export const releasePicked = (p: PickedFile) => p.previewUrl && URL.revokeObjectURL(p.previewUrl);
 
-export function FileTypeIcon({ kind, className }: { kind: FileKind; className?: string }) {
-  const map = {
-    sheet: [FileSpreadsheet, "bg-[#e2f8ea] text-finance"],
-    document: [FileText, "bg-[#ffe8e8] text-loss"],
-    image: [ImageIcon, "bg-[#e8f0ff] text-royal"],
-    video: [FileIcon, "bg-muted text-muted-foreground"],
-  } as const;
-  const [Icon, tone] = map[kind];
+const EXT_STYLE: Record<string, { label: string; tone: string; icon: typeof FileText }> = {
+  pdf: { label: "PDF", tone: "bg-[#ffe8e8] text-loss", icon: FileText },
+  xlsx: { label: "XLSX", tone: "bg-[#e2f8ea] text-finance", icon: FileSpreadsheet },
+  xls: { label: "XLS", tone: "bg-[#e2f8ea] text-finance", icon: FileSpreadsheet },
+  csv: { label: "CSV", tone: "bg-[#dcf7f3] text-recce", icon: FileSpreadsheet },
+  docx: { label: "DOC", tone: "bg-[#e8f0ff] text-royal", icon: FileText },
+  pptx: { label: "PPT", tone: "bg-[#fff0e0] text-approval", icon: FileText },
+  mp4: { label: "MP4", tone: "bg-[#f1e6ff] text-vendor", icon: FileIcon },
+};
+
+/** File-type tile: a distinct colour and label per type (PDF, XLSX, CSV, DOC, PPT), or a picture icon for images. */
+export function FileTypeIcon({ kind, name, className }: { kind: FileKind; name?: string; className?: string }) {
+  const ext = name?.split(".").pop()?.toLowerCase() ?? "";
+  const s = EXT_STYLE[ext] ?? (kind === "image" ? { label: "IMG", tone: "bg-[#e8f0ff] text-royal", icon: ImageIcon } : { label: ext.slice(0, 4).toUpperCase() || "FILE", tone: "bg-muted text-muted-foreground", icon: FileIcon });
+  const Icon = kind === "image" ? ImageIcon : s.icon;
   return (
-    <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", tone, className)}>
-      <Icon className="size-5" aria-hidden />
+    <span className={cn("flex size-10 shrink-0 flex-col items-center justify-center rounded-lg", s.tone, className)} data-filetype={ext || kind}>
+      <Icon className="size-4" aria-hidden />
+      <span className="mt-0.5 text-[8px] font-bold leading-none tracking-wide">{s.label}</span>
     </span>
   );
 }
@@ -54,18 +59,31 @@ export function FileTypeIcon({ kind, className }: { kind: FileKind; className?: 
 export function FileDrop({ onFiles, onError }: { onFiles: (files: PickedFile[]) => void; onError?: (msg: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  /** Files turned away at selection time, shown under the drop zone until the next pick. */
+  const [rejected, setRejected] = useState<string[]>([]);
+  // Limits and allowed types come only from the server settings (.env); nothing is hard-coded here.
+  const limits = useFileLimits().data;
+  const maxImage = limits?.maxImageBytes ?? 0;
+  const maxOther = limits?.maxFileBytes ?? 0;
+  const accept = limits?.extensions.join(",") ?? "";
 
   function handle(list: FileList | null) {
-    if (!list?.length) return;
+    if (!list?.length || !limits) return;
     const out: PickedFile[] = [];
+    const turnedAway: string[] = [];
+    const reject = (msg: string) => {
+      turnedAway.push(msg);
+      onError?.(msg);
+    };
     for (const file of Array.from(list)) {
       const kind = kindOfName(file.name);
-      if (!ACCEPT.split(",").some((e) => file.name.toLowerCase().endsWith(e))) {
-        onError?.(`${file.name}: this file type is not allowed`);
+      if (!accept.split(",").some((e) => file.name.toLowerCase().endsWith(e))) {
+        reject(`${file.name}: this file type is not allowed`);
         continue;
       }
-      if (file.size > (kind === "image" ? MAX_IMAGE_BYTES : MAX_BYTES)) {
-        onError?.(`${file.name} is larger than ${kind === "image" ? "3 MB (images)" : "50 MB"}`);
+      const limit = kind === "image" ? maxImage : maxOther;
+      if (file.size > limit) {
+        reject(`${file.name} is ${formatBytes(file.size)}, but ${kind === "image" ? "images" : "files"} can be at most ${formatBytes(limit)}. It was not added.`);
         continue;
       }
       out.push({
@@ -77,11 +95,13 @@ export function FileDrop({ onFiles, onError }: { onFiles: (files: PickedFile[]) 
         previewUrl: kind === "image" ? URL.createObjectURL(file) : undefined,
       });
     }
+    setRejected(turnedAway);
     if (out.length) onFiles(out);
     if (input.current) input.current.value = "";
   }
 
   return (
+    <div className="space-y-2">
     <div
       onDragOver={(e) => {
         e.preventDefault();
@@ -102,70 +122,21 @@ export function FileDrop({ onFiles, onError }: { onFiles: (files: PickedFile[]) 
         <UploadCloud className="size-6" aria-hidden />
       </span>
       <p className="text-sm font-medium text-foreground">Drag &amp; drop Excel, PDF or images here</p>
-      <p className="text-xs text-muted-foreground">.xlsx .csv .pdf .docx .pptx .png .jpg &middot; images up to 3 MB, others up to 50 MB</p>
-      <button type="button" onClick={() => input.current?.click()} className="mt-1 rounded-lg bg-royal px-4 py-2 text-sm font-medium text-white hover:bg-royal/90">
+      <p className="text-xs text-muted-foreground">.xlsx .csv .pdf .docx .pptx .png .jpg &middot; {limits ? <>images up to {formatBytes(maxImage)}, others up to {formatBytes(maxOther)}</> : "loading limits…"}</p>
+      <button type="button" disabled={!limits} onClick={() => input.current?.click()} className="mt-1 disabled:opacity-60 rounded-lg bg-royal px-4 py-2 text-sm font-medium text-white hover:bg-royal/90">
         Browse files
       </button>
-      <input ref={input} type="file" multiple accept={ACCEPT} className="sr-only" onChange={(e) => handle(e.target.files)} aria-label="Upload documents" />
+      <input ref={input} type="file" multiple accept={accept} className="sr-only" onChange={(e) => handle(e.target.files)} aria-label="Upload documents" />
     </div>
-  );
-}
-
-/** One file line, for both not-yet-uploaded files and files already stored on the server. */
-export function FileRow({
-  name,
-  size,
-  kind,
-  previewUrl,
-  note,
-  onOpen,
-  onRemove,
-  removing,
-}: {
-  name: string;
-  size: number;
-  kind: FileKind;
-  previewUrl?: string;
-  note?: string;
-  onOpen?: () => void;
-  onRemove?: () => void;
-  removing?: boolean;
-}) {
-  const label = (
-    <>
-      <span className="block truncate text-sm font-medium text-foreground">{name}</span>
-      <span className="block text-xs text-muted-foreground">
-        {formatBytes(size)}
-        {note ? ` · ${note}` : ""}
-      </span>
-    </>
-  );
-  return (
-    <li className="flex items-center gap-3 rounded-lg border border-border bg-surface p-2">
-      {previewUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={previewUrl} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
-      ) : (
-        <FileTypeIcon kind={kind} />
-      )}
-      {onOpen ? (
-        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left hover:underline">
-          {label}
-        </button>
-      ) : (
-        <span className="min-w-0 flex-1">{label}</span>
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={removing}
-          aria-label={`Remove ${name}`}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger disabled:opacity-50"
-        >
-          <Trash2 className="size-4" aria-hidden />
-        </button>
-      )}
-    </li>
+    {rejected.length > 0 && (
+      <div role="alert" data-testid="rejected-files" className="rounded-lg border border-[#ffc9c9] bg-[#fff5f5] p-3 text-sm text-loss">
+        <div className="flex items-start justify-between gap-2">
+          <p className="flex items-center gap-1.5 font-medium"><AlertTriangle className="size-4" aria-hidden /> Not added</p>
+          <button type="button" onClick={() => setRejected([])} aria-label="Dismiss" className="rounded p-0.5 hover:bg-loss/10"><X className="size-4" aria-hidden /></button>
+        </div>
+        <ul className="mt-1 list-disc space-y-0.5 pl-5">{rejected.map((m) => <li key={m}>{m}</li>)}</ul>
+      </div>
+    )}
+    </div>
   );
 }

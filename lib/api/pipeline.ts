@@ -3,7 +3,7 @@
  * ASO survey areas, shop approvals and notifications. One module so the screens share query keys.
  */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiPage } from "@/lib/api";
+import { api, apiPage, apiUpload } from "@/lib/api";
 import { qs } from "./common";
 import type { Priority, Project, ProjectContact, ProjectStatus, RequirementType } from "./projects";
 import type { Site } from "./sites";
@@ -120,6 +120,9 @@ export interface StoredFile {
   kind: "image" | "video" | "document" | "sheet";
   size: number;
   storage: "local" | "space";
+  /** Full public URL (Spaces only). */
+  url?: string;
+  section?: string;
   createdAt: string;
 }
 
@@ -167,12 +170,38 @@ export function useDeleteFile(projectId: string | undefined) {
   });
 }
 
-/** Files are private; this returns a short-lived link and opens it. */
+export type Disposition = "inline" | "attachment";
+export interface FileLink {
+  url: string;
+  name: string;
+  mimeType?: string;
+}
+
+/** Files are private. This asks for a short-lived link: inline to view in the browser, attachment to save to disk. */
+export const fileLink = (id: string, disposition: Disposition = "inline") => api<FileLink>(`/files/${id}/url${qs({ disposition })}`);
+
+/** Opens the file in a new tab (browser viewer). */
 export async function openFile(id: string) {
-  const r = await api<{ url: string }>(`/files/${id}/url`);
+  const r = await fileLink(id);
   window.open(r.url, "_blank", "noopener,noreferrer");
 }
-export const fileLink = (id: string) => api<{ url: string; name: string; mimeType?: string }>(`/files/${id}/url`);
+
+/** Saves the file to the computer under its ORIGINAL name (the server sends it as an attachment with that name). */
+export async function downloadFile(id: string) {
+  const r = await fileLink(id, "attachment");
+  const a = document.createElement("a");
+  a.href = r.url;
+  a.download = r.name;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/** Short-lived viewing link for thumbnails and the preview window; cached for a few minutes (links last 10). */
+export function useFileUrl(id: string | undefined, enabled = true) {
+  return useQuery({ queryKey: ["file-url", id], queryFn: () => fileLink(id!), enabled: enabled && !!id, staleTime: 5 * 60_000 });
+}
 
 /* ------------------------------ ASO survey areas ---------------------------- */
 
@@ -245,7 +274,7 @@ export function useApproveAll(pid: string) {
 
 /* ------------------------------- notifications ------------------------------ */
 
-export type NotificationKindKey = "assigned" | "documents" | "imported" | "stage" | "approval" | "cancelled";
+export type NotificationKindKey = "activity" | "assigned" | "documents" | "imported" | "stage" | "approval" | "cancelled";
 
 export interface NotificationItem {
   id: string;
@@ -288,8 +317,9 @@ export function useMarkNotificationsRead() {
 }
 
 /** Where a notification should take this person: Operations opens the task, BD opens the project drawer. */
-export const notificationHref = (role: string | undefined, projectId: string) =>
-  role === "OPERATIONS" || role === "RECCE_COORDINATOR" ? `/operations/projects/${projectId}` : role === "BD" ? `/bd/dashboard?view=${projectId}` : "/dashboard";
+const OPS_TAB: Partial<Record<NotificationKindKey, string>> = { documents: "documents", imported: "work", approval: "approvals" };
+export const notificationHref = (role: string | undefined, projectId: string, kind?: NotificationKindKey) =>
+  role === "OPERATIONS" || role === "RECCE_COORDINATOR" ? `/operations/projects/${projectId}${kind && OPS_TAB[kind] ? `?tab=${OPS_TAB[kind]}` : ""}` : role === "BD" ? `/bd/dashboard?view=${projectId}` : "/dashboard";
 
 export interface NotificationLogRow {
   id: string;
@@ -298,7 +328,7 @@ export interface NotificationLogRow {
   at: string;
   recipient: { name: string; role: string; email: string } | null;
   readAt: string | null;
-  deliveries: { channel: "EMAIL"; status: "QUEUED" | "SENT" | "FAILED" | "SKIPPED"; to?: string; attempts: number; lastError: string | null; sentAt: string | null }[];
+  deliveries: { channel: "EMAIL" | "PUSH"; status: "QUEUED" | "SENT" | "FAILED" | "SKIPPED"; to?: string; attempts: number; lastError: string | null; sentAt: string | null }[];
 }
 
 /** Who was told about a project, whether they opened it, and the email outcome (BD and admins). */
@@ -309,4 +339,39 @@ export function useNotificationLog(projectId: string | undefined, enabled = true
     enabled: enabled && !!projectId,
     refetchInterval: 20_000,
   });
+}
+
+/* ---------------------- duplicate check + upload with progress ---------------------- */
+
+export interface DuplicateCheckRow {
+  sha256: string;
+  duplicate: boolean;
+  existingName: string | null;
+}
+
+/** Asks the server which of these file hashes are already stored for the project + category. */
+export const checkFileDuplicates = (projectId: string, category: FileCategory, hashes: string[]) =>
+  api<DuplicateCheckRow[]>(`/projects/${projectId}/files/check`, {
+    method: "POST",
+    body: JSON.stringify({ category, files: hashes.map((sha256) => ({ sha256 })) }),
+  });
+
+export interface FileLimits {
+  maxFileBytes: number;
+  maxImageBytes: number;
+  maxVideoBytes: number;
+  extensions: string[];
+}
+
+/** The server's size limits and allowed types, so files are checked the moment they are picked. */
+export function useFileLimits() {
+  return useQuery({ queryKey: ["file-limits"], queryFn: () => api<FileLimits>("/files/limits"), staleTime: 60 * 60_000 });
+}
+
+/** Uploads one file and reports 0-100 progress. Pass a signal to be able to cancel it. */
+export function uploadFileWithProgress(projectId: string, category: FileCategory, file: File, onProgress: (p: number) => void, signal?: AbortSignal) {
+  const fd = new FormData();
+  fd.set("category", category);
+  fd.append("files", file);
+  return apiUpload<StoredFile[]>(`/projects/${projectId}/files`, fd, signal ? { onProgress, signal } : { onProgress });
 }

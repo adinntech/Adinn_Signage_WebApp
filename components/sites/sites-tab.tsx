@@ -55,12 +55,12 @@ function loadColumns(): string[] {
 
 const NO_FILTER: FilterState = { district: "", scenario: "", missing: "", importBatchId: "" };
 
-export function SitesTab({ project }: { project: Project }) {
+export function SitesTab({ project, readOnly }: { project: Project; readOnly?: boolean }) {
   const pid = project._id;
   const { can } = useAuth();
   const toast = useToast();
   const reduce = useReducedMotion();
-  const canWrite = can("sites:write");
+  const canWrite = can("sites:write") && !readOnly;
   const defaultScenario: Scenario = project.requirement?.siteDataScenario ?? "MEASUREMENT_REQUIRED";
 
   const [q, setQ] = React.useState("");

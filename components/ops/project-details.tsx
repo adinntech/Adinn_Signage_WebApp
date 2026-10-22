@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, BarChart3, CalendarDays, ClipboardList, FileSpreadsheet, FileText, History, Mail, MapPin, Phone, Route, ShieldCheck, Store, Truck, type LucideIcon } from "lucide-react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowRight, BarChart3, Ban, CalendarDays, ClipboardList, FileSpreadsheet, FileText, History, Mail, MapPin, Phone, Route, ShieldCheck, Store, Truck, type LucideIcon } from "lucide-react";
 import { ProjectStatusBadge } from "@/components/bd/status-badge";
 import { ShopApprovals } from "@/components/approvals/shop-approvals";
 import { SitesTab } from "@/components/sites/sites-tab";
+import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientHeader } from "@/components/ui/gradient-header";
@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { AsoSurvey } from "./aso-survey";
 
 type TabKey = "overview" | "work" | "approvals" | "documents" | "history";
+const TAB_KEYS: TabKey[] = ["overview", "work", "approvals", "documents", "history"];
 
 function Info({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -65,7 +66,11 @@ export function ProjectDetails() {
   const project = useProject(id);
   const history = useProjectHistory(id);
   const advance = useAdvanceStage();
-  const [tab, setTab] = useState<TabKey>("overview");
+  // The selected tab lives in the address (?tab=documents), so a notification link opens the right tab even when this project is already on screen.
+  const router = useRouter();
+  const wanted = useSearchParams().get("tab");
+  const tab: TabKey = TAB_KEYS.includes(wanted as TabKey) ? (wanted as TabKey) : "overview";
+  const setTab = (k: TabKey) => router.replace(`?tab=${k}`, { scroll: false });
 
   if (project.isPending) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading project…</p>;
   if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} title="Could not load the project" />;
@@ -78,7 +83,8 @@ export function ProjectDetails() {
   const measure = p.requirementType === "SHOP_MEASUREMENT";
   const next = OPS_NEXT[p.status];
   const overdue = isOverdue(p);
-  const canWork = can("sites:write");
+  const cancelled = p.status === "CANCELLED";
+  const canWork = can("sites:write") && !cancelled;
   const workLabel = aso ? "Area Survey" : measure ? "Shops & Measurements" : "Shop List";
 
   const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
@@ -125,27 +131,23 @@ export function ProjectDetails() {
             <span className="text-muted-foreground">BD status:</span>
             <ProjectStatusBadge status={p.status} />
           </div>
-          {next && canWork && (
+          {next && canWork && !cancelled && (
             <Button className="bg-approval hover:bg-approval/90" loading={advance.isPending} onClick={advanceStage}>
               {next.label} <ArrowRight className="size-4" aria-hidden />
             </Button>
           )}
         </div>
-        <div role="tablist" aria-label="Project sections" className="flex gap-1 overflow-x-auto px-3 pt-1">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={tab === t.key}
-              onClick={() => setTab(t.key)}
-              className={cn("flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 pb-2.5 pt-2 text-sm font-medium", tab === t.key ? "border-royal text-royal" : "border-transparent text-muted-foreground hover:text-foreground")}
-            >
-              <t.icon className="size-4" aria-hidden /> {t.label}
-            </button>
-          ))}
-        </div>
+        <Tabs label="Project sections" value={tab} onChange={(k) => setTab(k as TabKey)} tabs={TABS.map((t) => ({ key: t.key, label: t.label, icon: t.icon }))} />
       </div>
 
+      {cancelled && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
+          <Ban className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p><strong>Cancelled by BD.</strong> {p.statusReason ?? "No reason recorded."} This project is read-only.</p>
+        </div>
+      )}
+
+      <TabPanel k={tab} className="space-y-5">
       {tab === "overview" && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <section className="space-y-5">
@@ -199,7 +201,7 @@ export function ProjectDetails() {
         </div>
       )}
 
-      {tab === "work" && (aso ? <AsoSurvey projectId={p._id} canEdit={canWork} /> : <SitesTab project={p} />)}
+      {tab === "work" && (aso ? <AsoSurvey projectId={p._id} canEdit={canWork} /> : <SitesTab project={p} readOnly={cancelled} />)}
 
       {tab === "approvals" && (
         <section className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
@@ -207,7 +209,7 @@ export function ProjectDetails() {
             <h2 className="text-sm font-semibold text-navy">Shop measurement approvals</h2>
             <p className="text-xs text-muted-foreground">Operations and BD approve independently. Every shop needs both before the recce can start. Changing a shop&apos;s size or board type sends it back to pending.</p>
           </div>
-          <ShopApprovals projectId={p._id} />
+          <ShopApprovals projectId={p._id} readOnly={cancelled} />
         </section>
       )}
 
@@ -238,6 +240,7 @@ export function ProjectDetails() {
           )}
         </section>
       )}
+      </TabPanel>
     </div>
   );
 }

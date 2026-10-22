@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { canAccessPath } from "@/lib/role-routes";
 import { cn } from "@/lib/utils";
 import { LiveNotifications } from "@/components/notifications/live-notifications";
+import { PushPrompt } from "@/components/notifications/push-prompt";
 import { AdinnLogo } from "./adinn-logo";
 import { Header } from "./header";
 import { SidebarUser } from "./sidebar-user";
@@ -18,9 +19,8 @@ import { SidebarNav } from "./sidebar-nav";
 
 function Brand({ collapsed }: { collapsed?: boolean }) {
   return (
-    <div className={cn("flex h-16 shrink-0 items-center border-b border-white/10 px-5", collapsed && "justify-center px-0")}>
-      <AdinnLogo compact={collapsed} className="text-2xl" />
-      {!collapsed && <span className="ml-3 truncate border-l border-white/20 pl-3 text-xs leading-tight text-white/70">Advertising Services Ltd.<br />Recce CRM</span>}
+    <div className={cn("flex h-[72px] shrink-0 items-center border-b border-white/10", collapsed ? "justify-center px-0" : "px-4")}>
+      <AdinnLogo compact={collapsed} />
     </div>
   );
 }
@@ -131,6 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} />
         <main className="flex-1 overflow-auto p-4 lg:p-6">
+          <PushPrompt />
           {allowed ? (
             children
           ) : (

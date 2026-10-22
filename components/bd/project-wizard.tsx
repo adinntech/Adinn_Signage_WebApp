@@ -7,7 +7,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, FileSpreadsheet, MapPinned, Plus, Ruler, Save, Send, Trash2, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -17,12 +16,13 @@ import { Select } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { FileDrop, FileRow, releasePicked, type PickedFile } from "@/components/upload/file-drop";
+import { FileDrop } from "@/components/upload/file-drop";
+import { UploadQueue } from "@/components/upload/upload-queue";
+import { useFileUploader } from "@/hooks/use-file-uploader";
 import { ProjectDocuments } from "@/components/upload/project-documents";
 import { Stepper } from "@/components/workflow/stepper";
 import { ApiError, errorMessage, fieldErrorsOf } from "@/lib/api";
 import {
-  uploadProjectFiles,
   useAssignees,
   useAssignProject,
   useCreatePipelineProject,
@@ -109,24 +109,29 @@ export function ProjectWizard() {
 function WizardForm({ existing }: { existing?: Project }) {
   const router = useRouter();
   const toast = useToast();
-  const qc = useQueryClient();
   const assignees = useAssignees();
   const createProject = useCreatePipelineProject();
   const updateProject = useUpdatePipelineProject();
   const assignProject = useAssignProject();
-  const [step, setStep] = useState(0);
-  const [pending, setPending] = useState<PickedFile[]>([]);
+  const [step, setStepRaw] = useState(0);
+  /** 1 when moving forward, -1 when going back, so the panel slides the way the user is heading. */
+  const [dir, setDir] = useState(1);
+  const setStep = (n: number) => {
+    setDir(n >= step ? 1 : -1);
+    setStepRaw(n);
+  };
   const [busy, setBusy] = useState(false);
   /** Set once the project exists on the server, so a retry updates it instead of creating a second one. */
   const savedRef = useRef<string | undefined>(existing?._id);
   const [savedId, setSavedId] = useState<string | undefined>(existing?._id);
+  const uploader = useFileUploader({ projectId: savedId, category: "BD_CLIENT_DETAILS" });
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onTouched",
     defaultValues: {
       code: existing?.code ?? "",
-      clientId: existing?.client._id ?? "",
+      clientId: existing?.client?._id ?? "",
       campaign: existing?.campaign ?? "",
       district: existing?.district ?? "",
       startDate: dateOnly(existing?.startDate) || new Date().toISOString().slice(0, 10),
@@ -149,7 +154,7 @@ function WizardForm({ existing }: { existing?: Project }) {
   const locked = !!existing && ["IN_PROGRESS", "CLIENT_APPROVAL", "COMPLETED", "CANCELLED"].includes(existing.status);
   const codeLocked = editing && wasAssigned;
   const clientList = useClientOptions();
-  const clientName = useMemo(() => existing?.client.name ?? clientList.data?.data.find((c) => c._id === v.clientId)?.name, [existing, clientList.data, v.clientId]);
+  const clientName = useMemo(() => existing?.client?.name ?? clientList.data?.data.find((c) => c._id === v.clientId)?.name, [existing, clientList.data, v.clientId]);
 
   const toBody = (x: FormValues, draft = false): PipelineProjectInput => ({
     code: x.code.trim() || undefined,
@@ -196,22 +201,23 @@ function WizardForm({ existing }: { existing?: Project }) {
     return created._id;
   }
 
-  /** Upload picked files; keeps the ones that failed so the user can retry without losing them. */
+  /** Uploads the picked files with live progress. Duplicates are skipped (and shown); failures keep their Retry button. */
   async function flushFiles(projectId: string): Promise<boolean> {
-    if (!pending.length) return true;
-    const res = await uploadProjectFiles(projectId, "BD_CLIENT_DETAILS", pending.map((p) => p.file));
-    // Anything showing this project's files (the sidebar here, the dashboard drawer) must refetch.
-    await qc.invalidateQueries({ queryKey: ["files", projectId] });
-    qc.invalidateQueries({ queryKey: ["notifications"] });
-    const failed = new Set(res.filter((r) => !r.ok).map((r) => r.file));
-    for (const r of res.filter((x) => !x.ok)) toast(`${r.file.name}: ${r.error}`, "error");
-    pending.filter((p) => !failed.has(p.file)).forEach(releasePicked);
-    setPending((all) => all.filter((p) => failed.has(p.file)));
-    return failed.size === 0;
+    await uploader.settled();
+    const r = await uploader.start(projectId);
+    if (r.failed) {
+      toast(`${r.failed} file${r.failed > 1 ? "s" : ""} failed to upload. Use Retry on the file, then continue.`, "error");
+      return false;
+    }
+    // Duplicates found while picking (flagged then) and any the server found just now are all left out.
+    const skipped = r.duplicates + uploader.items.filter((i) => i.status === "duplicate").length;
+    if (skipped) toast(`${skipped} duplicate file${skipped > 1 ? "s were" : " was"} skipped`, "info");
+    uploader.clearDone(); // the stored copies now show in the list above
+    return true;
   }
 
   async function next() {
-    if (await trigger(STEP_FIELDS[step])) setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    if (await trigger(STEP_FIELDS[step])) setStep(Math.min(step + 1, STEPS.length - 1));
   }
 
   async function saveDraft() {
@@ -303,7 +309,7 @@ function WizardForm({ existing }: { existing?: Project }) {
         >
           <div className="min-h-[420px] p-5">
             <AnimatePresence mode="wait" initial={false}>
-              <motion.div key={step} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: 0.15 }}>
+              <motion.div key={step} initial={{ opacity: 0, x: 16 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 * dir }} transition={{ duration: 0.16, ease: "easeOut" }}>
                 {step === 0 && (
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Project Code" htmlFor="code" error={errors.code?.message} hint={codeLocked ? "The code cannot change after assignment." : "Leave blank to auto-generate (SGN-CLIENT-YEAR-NNN)."}>
@@ -428,7 +434,7 @@ function WizardForm({ existing }: { existing?: Project }) {
                 {step === 3 && (
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">Upload the client brief, shop list (Excel/CSV), reference images or any requirement document. Files are stored against the client and project.</p>
-                    <FileDrop onError={(m) => toast(m, "error")} onFiles={(f) => setPending((a) => [...a, ...f])} />
+                    <FileDrop onError={(m) => toast(m, "error")} onFiles={(f) => void uploader.addFiles(f)} />
                   </div>
                 )}
 
@@ -469,25 +475,12 @@ function WizardForm({ existing }: { existing?: Project }) {
                   <ProjectDocuments projectId={savedId} category="BD_CLIENT_DETAILS" canEdit uploader={false} emptyText="No files uploaded yet." />
                 </div>
               )}
-              {pending.length === 0 ? (
+              {uploader.items.length === 0 ? (
                 !savedId && <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">No files yet. Add them in the Documents step.</p>
               ) : (
-                <ul className="max-h-60 space-y-2 overflow-y-auto">
-                  {pending.map((p) => (
-                    <FileRow
-                      key={p.id}
-                      name={p.name}
-                      size={p.size}
-                      kind={p.kind}
-                      previewUrl={p.previewUrl}
-                      note="not uploaded yet"
-                      onRemove={() => {
-                        releasePicked(p);
-                        setPending((all) => all.filter((x) => x.id !== p.id));
-                      }}
-                    />
-                  ))}
-                </ul>
+                <div className="max-h-72 overflow-y-auto">
+                  <UploadQueue items={uploader.items} onRemove={uploader.remove} onCancel={uploader.cancel} onRetry={(id) => void uploader.retry(id)} />
+                </div>
               )}
               {step !== 3 && (
                 <Button type="button" variant="outline" size="sm" className="mt-2 w-full" onClick={() => setStep(3)}>
