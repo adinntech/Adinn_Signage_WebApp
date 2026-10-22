@@ -12,6 +12,9 @@ import {
   Building2,
   Database,
   Settings,
+  KanbanSquare,
+  Mail,
+  ReceiptIndianRupee,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,7 +33,11 @@ export type Permission =
   | "verification:manage"
   | "vendors:manage"
   | "finance:manage"
-  | "reports:read";
+  | "reports:read"
+  | "sales:read"
+  | "sales:write"
+  | "templates:manage"
+  | "ratecards:manage";
 
 export interface NavLeaf {
   label: string;
@@ -48,6 +55,9 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard", permission: "dashboard:view" },
   { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
+  { label: "Sales Handling", icon: KanbanSquare, href: "/sales", permission: "sales:read" },
+  { label: "Email Templates", icon: Mail, href: "/email-templates", permission: "templates:manage" },
+  { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
   { label: "Projects", icon: FolderKanban, href: "/projects", permission: "projects:read" },
   { label: "Sites", icon: MapPin, href: "/sites", permission: "sites:read" },
   {

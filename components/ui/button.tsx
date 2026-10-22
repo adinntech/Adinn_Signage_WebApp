@@ -14,6 +14,9 @@ const buttonVariants = cva(
         outline: "border border-border bg-surface text-foreground hover:bg-muted",
         ghost: "text-foreground hover:bg-muted",
         destructive: "bg-danger text-white hover:bg-danger-hover",
+        // BD CRM screens; same look as default with the theme's brand tokens.
+        brand: "bg-brand text-white shadow-soft hover:bg-brand-hover",
+        "brand-outline": "border border-brand/40 bg-surface text-brand hover:bg-brand-soft",
       },
       size: { default: "h-10 px-4", sm: "h-8 px-3", lg: "h-11 px-6", icon: "size-9" },
     },
