@@ -134,6 +134,7 @@ export function AsoSurvey({ projectId, canEdit }: { projectId: string; canEdit: 
         </form>
       </Modal>
       <ConfirmDialog
+        autoClose
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Delete survey area?"

@@ -45,23 +45,46 @@ export function KpiCard({
   active,
   onClick,
   delay = 0,
+  hint,
+  loading,
 }: {
   label: string;
-  value: number | string;
+  value?: number | string;
   icon: LucideIcon;
-  color: KpiColor;
+  /** A palette name for the gradient tile, or any CSS colour (e.g. `var(--color-brand)`) for the plain count-up card. */
+  color: KpiColor | (string & {});
   active?: boolean;
   onClick?: () => void;
   delay?: number;
+  hint?: string;
+  loading?: boolean;
 }) {
-  const c = COLORS[color];
+  if (!(color in COLORS)) {
+    return (
+      <div className="flex items-center gap-4 rounded-xl border border-border bg-surface p-5 shadow-soft transition-shadow hover:shadow-card">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 12%, white)`, color }}>
+          <Icon className="size-6" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          {loading ? (
+            <Skeleton className="mt-1 h-8 w-16" />
+          ) : (
+            <p className="text-2xl font-bold tracking-tight text-foreground">{value === undefined ? "-" : typeof value === "number" ? <CountUp value={value} /> : value}</p>
+          )}
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
+      </div>
+    );
+  }
+  const c = COLORS[color as KpiColor];
   const body = (
     <>
       <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl shadow-soft", c.icon)}>
         <Icon className="size-5" aria-hidden />
       </span>
       <span className="min-w-0 text-left">
-        <span className={cn("block text-3xl font-bold leading-none tabular-nums", c.value)}>{value}</span>
+        <span className={cn("block text-3xl font-bold leading-none tabular-nums", c.value)}>{value ?? "-"}</span>
         <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">{label}</span>
       </span>
     </>

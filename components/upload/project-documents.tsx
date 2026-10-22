@@ -65,6 +65,7 @@ export function ProjectDocuments({
       )}
       <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />
       <ConfirmDialog
+        autoClose
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Delete document?"

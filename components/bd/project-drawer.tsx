@@ -226,6 +226,7 @@ export function ProjectDrawer({
       </Modal>
 
       <ConfirmDialog
+        autoClose
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete project?"

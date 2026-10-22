@@ -13,6 +13,7 @@ export function ConfirmDialog({
   destructive,
   loading,
   onConfirm,
+  autoClose,
   children,
 }: {
   open: boolean;
@@ -23,6 +24,8 @@ export function ConfirmDialog({
   destructive?: boolean;
   loading?: boolean;
   onConfirm: () => void;
+  /** Close right after `onConfirm` runs. For synchronous confirms; async confirms close themselves when done. */
+  autoClose?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -33,23 +36,20 @@ export function ConfirmDialog({
       description={description}
       className="max-w-md"
       footer={
-        <div className="flex justify-end gap-2">
+        <>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            variant={destructive ? "destructive" : "default"}
-            onClick={() => {
+          <Button variant={destructive ? "destructive" : "brand"} loading={loading} onClick={() => {
               onConfirm();
-              onOpenChange(false);
-            }}
-          >
+              if (autoClose) onOpenChange(false);
+            }}>
             {confirmLabel}
           </Button>
-        </div>
+        </>
       }
     >
-      <p className="text-sm text-muted-foreground">{description}</p>
+      {children ?? <p className="text-sm text-muted-foreground">{description}</p>}
     </Modal>
   );
 }
