@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/toast";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, formData, openFile } from "@/lib/api/files";
-import { useCompanyProfileTemplate, useRemoveTemplatePdf, useRestoreTemplate, useSaveTemplate, useTemplateHistory, useUploadTemplatePdf, type EmailTemplate } from "@/lib/api/templates";
+import { TEMPLATE_SLUG, useCompanyProfileTemplate, useRemoveTemplatePdf, useRestoreTemplate, useSaveTemplate, useTemplateHistory, useUploadTemplatePdf, type EmailTemplate } from "@/lib/api/templates";
 import { formatBytes, formatDateTime } from "@/lib/format";
 
 const PLACEHOLDERS = [
@@ -178,10 +178,10 @@ function Editor({ t }: { t: EmailTemplate }) {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => run(() => openFile(t.pdf!.fileId))}>
+                <Button variant="outline" size="sm" onClick={() => run(() => openFile(t.pdf!.fileId, { templateSlug: TEMPLATE_SLUG }))}>
                   <Eye className="size-4" aria-hidden /> View PDF
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => run(() => downloadFile(t.pdf!.fileId, t.pdf!.name))}>
+                <Button variant="outline" size="sm" onClick={() => run(() => downloadFile(t.pdf!.fileId, { templateSlug: TEMPLATE_SLUG }, t.pdf!.name))}>
                   <Download className="size-4" aria-hidden /> Download
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(true)}>
@@ -253,7 +253,7 @@ function Editor({ t }: { t: EmailTemplate }) {
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title="Remove the Company Profile PDF?"
-        description="New Company Profile emails cannot be sent until a PDF is uploaded again. Emails already sent keep their original attachment."
+        description="New Company Profile emails cannot be sent until a PDF is uploaded again. If no email has used this PDF it is permanently deleted from storage; emails already sent keep their original attachment."
         confirmLabel="Remove PDF"
         destructive
         loading={removePdf.isPending}

@@ -269,6 +269,16 @@ export function useAddComment(id: string) {
   });
 }
 
+/** Deletes a whole comment (with `fileId`: only that attachment). The files are erased from storage. */
+export function useDeleteComment(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ commentId, fileId }: { commentId: string; fileId?: string }) =>
+      api<unknown>(`/sales/orders/${id}/comments/${commentId}${fileId ? `/attachments/${fileId}` : ""}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "order", id, "comments"] }),
+  });
+}
+
 export function useCompanyProfileDraft(id: string, enabled = true) {
   return useQuery({
     queryKey: ["sales", "order", id, "profile-draft"],
@@ -316,6 +326,15 @@ export function useUpdateApproval(id: string) {
   return useMutation({
     mutationFn: ({ docId, ...body }: { docId: string; approvalDate?: string | null; remarks?: string | null }) =>
       api<ApprovalDoc>(`/sales/approval/documents/${docId}`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "order", id, "approval"] }),
+  });
+}
+
+/** Deletes an approval document and erases its file (only before approval is complete). */
+export function useDeleteApproval(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => api<ApprovalOverview>(`/sales/approval/documents/${docId}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "order", id, "approval"] }),
   });
 }

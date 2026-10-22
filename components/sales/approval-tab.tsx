@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BadgeCheck, Building2, CheckCircle2, CircleAlert, Download, Eye, FileText, History, PencilLine, RefreshCw, ShieldCheck, Upload } from "lucide-react";
+import { BadgeCheck, Building2, CheckCircle2, CircleAlert, Download, Eye, FileText, History, PencilLine, RefreshCw, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { ClientTypeBadge } from "@/components/clients/client-type-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile, formData, openFile } from "@/lib/api/files";
-import { APPROVAL_DOC_TYPES, useApproval, useCompleteApproval, useUpdateApproval, useUploadApproval, type ApprovalDoc, type ApprovalDocType } from "@/lib/api/sales";
+import { APPROVAL_DOC_TYPES, useApproval, useCompleteApproval, useDeleteApproval, useUpdateApproval, useUploadApproval, type ApprovalDoc, type ApprovalDocType } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, toDateInput } from "@/lib/format";
 
@@ -144,7 +144,9 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
   const [editing, setEditing] = useState<ApprovalDoc | null>(null);
   const [historyOf, setHistoryOf] = useState<ApprovalDoc | "all" | null>(null);
   const [confirm, setConfirm] = useState(false);
-  const run = (fn: () => Promise<void>) => fn().catch((e) => toast(errorMessage(e), "error"));
+  const [deletingDoc, setDeletingDoc] = useState<ApprovalDoc | null>(null);
+  const removeDoc = useDeleteApproval(orderId);
+  const run =(fn: () => Promise<void>) => fn().catch((e) => toast(errorMessage(e), "error"));
 
   if (q.isPending) return <Skeleton className="h-96" />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
@@ -197,7 +199,7 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
             </DetailItem>
             <DetailItem label="Latest Rate Card Revision">
               {latestRevision ? (
-                <button type="button" className="inline-flex items-center gap-1 text-brand hover:underline" onClick={() => latestRevision.pdf?.fileId && run(() => openFile(latestRevision.pdf!.fileId))}>
+                <button type="button" className="inline-flex items-center gap-1 text-brand hover:underline" onClick={() => latestRevision.pdf?.fileId && run(() => openFile(latestRevision.pdf!.fileId, { orderId }))}>
                   <FileText className="size-4" aria-hidden /> {latestRevision.label}
                 </button>
               ) : undefined}
@@ -277,10 +279,10 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
                     <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTime(d.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => run(() => openFile(d.file.fileId))}>
+                        <Button variant="ghost" size="sm" onClick={() => run(() => openFile(d.file.fileId, { orderId }))}>
                           <Eye className="size-4" aria-hidden /> Preview
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => run(() => downloadFile(d.file.fileId, d.file.name))}>
+                        <Button variant="ghost" size="sm" onClick={() => run(() => downloadFile(d.file.fileId, { orderId }, d.file.name))}>
                           <Download className="size-4" aria-hidden /> Download
                         </Button>
                         {editable && (
@@ -290,6 +292,9 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
                             </Button>
                             <Button variant="ghost" size="sm" onClick={() => setReplacing(d)}>
                               <RefreshCw className="size-4" aria-hidden /> Replace
+                            </Button>
+                            <Button variant="ghost" size="sm" className="text-danger hover:text-danger" onClick={() => setDeletingDoc(d)}>
+                              <Trash2 className="size-4" aria-hidden /> Delete
                             </Button>
                           </>
                         )}
@@ -322,13 +327,32 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
                 </span>
               </span>
               {d.supersededAt ? <Badge>Replaced {formatDate(d.supersededAt)}</Badge> : <Badge tone="success">Current</Badge>}
-              <Button variant="ghost" size="sm" onClick={() => run(() => openFile(d.file.fileId))}>
+              <Button variant="ghost" size="sm" onClick={() => run(() => openFile(d.file.fileId, { orderId }))}>
                 <Eye className="size-4" aria-hidden /> View
               </Button>
             </li>
           ))}
         </ul>
       </Modal>
+      <ConfirmDialog
+        open={!!deletingDoc}
+        onOpenChange={(o) => !o && setDeletingDoc(null)}
+        title="Delete this approval document?"
+        description={`${deletingDoc?.file.name ?? "The document"} will be permanently deleted from storage.${deletingDoc?.replaces ? " The version it replaced becomes the current document again." : ""}`}
+        confirmLabel="Delete"
+        destructive
+        loading={removeDoc.isPending}
+        onConfirm={async () => {
+          if (!deletingDoc) return;
+          try {
+            await removeDoc.mutateAsync(deletingDoc._id);
+            toast("Approval document deleted");
+            setDeletingDoc(null);
+          } catch (e) {
+            toast(errorMessage(e), "error");
+          }
+        }}
+      />
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}

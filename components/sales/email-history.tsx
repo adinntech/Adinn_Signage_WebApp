@@ -75,7 +75,7 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
                   {kind === "RATE_CARD" && e.revisionLabel && <Badge tone="info" className="mb-1">{e.revisionLabel}</Badge>}
                   {e.attachments.map((a) => (
                     <div key={a.fileId}>
-                      <AttachmentChip file={a} />
+                      <AttachmentChip file={a} source={{ orderId }} />
                     </div>
                   ))}
                 </td>
@@ -122,7 +122,7 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
             </div>
             <div className="flex flex-wrap gap-2">
               {view.attachments.map((a) => (
-                <AttachmentChip key={a.fileId} file={a} />
+                <AttachmentChip key={a.fileId} file={a} source={{ orderId }} />
               ))}
             </div>
           </div>

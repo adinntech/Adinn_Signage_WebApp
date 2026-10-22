@@ -65,6 +65,7 @@ export function CompanyProfileTab({ orderId }: { orderId: string }) {
           <ErrorState error={draft.error} onRetry={() => draft.refetch()} />
         ) : (
           <EmailComposer
+            orderId={orderId}
             key={`${draft.data.templateVersion}-${draft.dataUpdatedAt}`}
             idPrefix="cp-mail"
             from={draft.data.from}

@@ -32,6 +32,7 @@ export interface ComposerDraft {
  */
 export function EmailComposer({
   idPrefix,
+  orderId,
   from,
   mailEnabled,
   draft,
@@ -43,6 +44,7 @@ export function EmailComposer({
   sending,
 }: {
   idPrefix: string;
+  orderId: string;
   from: string | null;
   mailEnabled: boolean;
   draft: ComposerDraft;
@@ -118,7 +120,7 @@ export function EmailComposer({
         {attachments.length ? (
           <div className="flex flex-wrap gap-2">
             {attachments.map((a) => (
-              <AttachmentChip key={a.fileId} file={a} />
+              <AttachmentChip key={a.fileId} file={a} source={{ orderId }} />
             ))}
           </div>
         ) : (

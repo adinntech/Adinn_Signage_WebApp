@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { MessageSquare, Paperclip, Send } from "lucide-react";
+import { MessageSquare, Paperclip, Send, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { formData, openFile, type FileRef } from "@/lib/api/files";
-import { ORDER_STAGES, STAGE_META, useAddComment, useComments, useOrderHistory, type HistoryEntry, type OrderStage } from "@/lib/api/sales";
+import { formData, openFile, type FileRef, type FileSource } from "@/lib/api/files";
+import { ORDER_STAGES, STAGE_META, useAddComment, useComments, useDeleteComment, useOrderHistory, type HistoryEntry, type OrderComment, type OrderStage } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -25,26 +26,37 @@ function stageAt(history: HistoryEntry[], at: string): OrderStage {
   return hit?.toStage ?? "NEW_ORDER";
 }
 
-export function AttachmentChip({ file }: { file: FileRef }) {
+export function AttachmentChip({ file, source, onRemove }: { file: FileRef; source: FileSource; onRemove?: () => void }) {
   const toast = useToast();
   return (
-    <button
-      type="button"
-      onClick={() => openFile(file.fileId).catch((e) => toast(errorMessage(e), "error"))}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium hover:border-brand/50 hover:text-brand"
-    >
-      <Paperclip className="size-3.5 shrink-0" aria-hidden />
-      <span className="truncate">{file.name}</span>
-      {file.size ? <span className="text-muted-foreground">{formatBytes(file.size)}</span> : null}
-    </button>
+    <span className="inline-flex max-w-full items-center rounded-lg border border-border bg-background text-xs font-medium hover:border-brand/50">
+      <button
+        type="button"
+        onClick={() => openFile(file.fileId, source).catch((e) => toast(errorMessage(e), "error"))}
+        className="inline-flex min-w-0 items-center gap-1.5 px-2.5 py-1 hover:text-brand"
+      >
+        <Paperclip className="size-3.5 shrink-0" aria-hidden />
+        <span className="truncate">{file.name}</span>
+        {file.size ? <span className="text-muted-foreground">{formatBytes(file.size)}</span> : null}
+      </button>
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="mr-1 rounded p-0.5 text-muted-foreground hover:bg-danger/10 hover:text-danger" aria-label={`Delete ${file.name ?? "attachment"}`} title="Delete file">
+          <X className="size-3.5" aria-hidden />
+        </button>
+      )}
+    </span>
   );
 }
 
 /** Comments tab: internal notes with optional attachments, latest first. */
 export function OrderComments({ orderId }: { orderId: string }) {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const toast = useToast();
   const list = useComments(orderId);
+  const remove = useDeleteComment(orderId);
+  const [deleting, setDeleting] = useState<{ comment: OrderComment; file?: FileRef } | null>(null);
+  // Same rule as the API: only the author (or a Super Admin) deletes a comment or its files.
+  const canDelete = (c: OrderComment) => can("sales:write") && (c.createdBy?._id === user?.id || user?.role === "SUPER_ADMIN");
   const history = useOrderHistory(orderId);
   const [stage, setStage] = useState<OrderStage | "ALL">("ALL");
   const withStage = (list.data ?? []).map((c) => ({ ...c, stage: stageAt(history.data ?? [], c.createdAt) }));
@@ -117,12 +129,17 @@ export function OrderComments({ orderId }: { orderId: string }) {
                       <RoleBadge role={c.role} />
                       <span className="text-xs text-muted-foreground">{formatDateTime(c.createdAt)}</span>
                       <StageBadge stage={c.stage} className="ml-auto" />
+                      {canDelete(c) && (
+                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-danger" aria-label="Delete comment" title="Delete comment" onClick={() => setDeleting({ comment: c })}>
+                          <Trash2 className="size-4" aria-hidden />
+                        </Button>
+                      )}
                     </div>
                     {c.body && <p className="mt-1 whitespace-pre-wrap text-sm">{c.body}</p>}
                     {c.attachments.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {c.attachments.map((a) => (
-                          <AttachmentChip key={a.fileId} file={a} />
+                          <AttachmentChip key={a.fileId} file={a} source={{ orderId }} onRemove={canDelete(c) ? () => setDeleting({ comment: c, file: a }) : undefined} />
                         ))}
                       </div>
                     )}
@@ -133,6 +150,31 @@ export function OrderComments({ orderId }: { orderId: string }) {
           </ul>
         )}
       </Card>
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={deleting?.file ? "Delete this file?" : "Delete this comment?"}
+        description={
+          deleting?.file
+            ? `${deleting.file.name ?? "The file"} will be removed from the comment and permanently deleted from storage.`
+            : deleting?.comment.attachments.length
+              ? `The comment and its ${deleting.comment.attachments.length} attached file(s) will be permanently deleted.`
+              : "The comment will be permanently deleted."
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={remove.isPending}
+        onConfirm={async () => {
+          if (!deleting) return;
+          try {
+            await remove.mutateAsync({ commentId: deleting.comment._id, fileId: deleting.file?.fileId });
+            toast(deleting.file ? "File deleted" : "Comment deleted");
+            setDeleting(null);
+          } catch (e) {
+            toast(errorMessage(e), "error");
+          }
+        }}
+      />
     </div>
   );
 }

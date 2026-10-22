@@ -29,7 +29,8 @@ export interface TemplateChange {
   at: string;
 }
 
-const SLUG = "company-profile";
+export const TEMPLATE_SLUG = "company-profile";
+const SLUG = TEMPLATE_SLUG;
 const KEY = ["email-templates", SLUG] as const;
 
 export function useCompanyProfileTemplate() {

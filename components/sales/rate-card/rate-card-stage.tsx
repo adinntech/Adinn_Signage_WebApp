@@ -156,7 +156,7 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="xl:sticky xl:top-0 xl:h-[max(600px,calc(100dvh-17rem))]">
-          <QuotationPreview values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} latest={data.latest} dirty={dirty} />
+          <QuotationPreview orderId={orderId} values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} latest={data.latest} dirty={dirty} />
         </div>
 
         <Card className="min-w-0 p-5 sm:p-6">
@@ -375,7 +375,7 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
               variant="outline"
               disabled={!data.latest?.pdf?.fileId}
               title={dirty ? "Opens the last saved PDF; save to include your changes" : undefined}
-              onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId).catch((err) => toast(errorMessage(err), "error"))}
+              onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId, { orderId }).catch((err) => toast(errorMessage(err), "error"))}
             >
               <Eye className="size-4" aria-hidden /> Preview PDF
             </Button>
@@ -411,12 +411,13 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
             ]}
           />
           <div id="rc-bottom-panel" role="tabpanel">
-            {tab === "history" && <EditHistory revisions={data.revisions} />}
+            {tab === "history" && <EditHistory orderId={orderId} revisions={data.revisions} />}
             {tab === "send" &&
               (data.latest && data.emailDraft ? (
                 <>
                   {dirty && <p className="mb-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">You have unsaved edits. The email attaches saved revision {data.latest.label}; save first to send the revised PDF.</p>}
                   <EmailComposer
+                    orderId={orderId}
                     key={data.latest._id}
                     idPrefix="rc-mail"
                     from={data.from}

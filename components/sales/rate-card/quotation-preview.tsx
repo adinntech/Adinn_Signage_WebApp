@@ -141,12 +141,14 @@ function Page({ v, spec, n, total, quotationRef, clientName, revisionLabel }: { 
 
 /** Live preview of the quotation from the current editor values, with page thumbnails, zoom and saved-PDF actions. */
 export function QuotationPreview({
+  orderId,
   values,
   quotationRef,
   clientName,
   latest,
   dirty,
 }: {
+  orderId: string;
   values: QuotationValues;
   quotationRef: string;
   clientName: string;
@@ -195,10 +197,10 @@ export function QuotationPreview({
           <Plus className="size-4" aria-hidden />
         </Button>
         <div className="ml-auto flex gap-1.5">
-          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, `${quotationRef}.pdf`))}>
+          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, { orderId }, `${quotationRef}.pdf`))}>
             <Download className="size-4" aria-hidden /> Download
           </Button>
-          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Prints the last saved revision" : undefined} onClick={() => pdfId && run(() => printFile(pdfId))}>
+          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Prints the last saved revision" : undefined} onClick={() => pdfId && run(() => printFile(pdfId, { orderId }))}>
             <Printer className="size-4" aria-hidden /> Print
           </Button>
         </div>
