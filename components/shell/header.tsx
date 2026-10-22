@@ -26,7 +26,7 @@ function useBreadcrumbs() {
   const segs = pathname.split("/").filter(Boolean);
   return segs.map((seg, i) => {
     const href = "/" + segs.slice(0, i + 1).join("/");
-    return { href, label: findNavTitle(href)?.title ?? (/^[a-fd]{24}$/i.test(seg) ? "Details" : prettify(seg)), last: i === segs.length - 1 };
+    return { href, label: findNavTitle(href)?.title ?? (/^[a-f\d]{24}$/i.test(seg) ? "Details" : prettify(seg)), last: i === segs.length - 1 };
   });
 }
 

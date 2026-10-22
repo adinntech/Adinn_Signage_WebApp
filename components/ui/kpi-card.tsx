@@ -1,8 +1,27 @@
 "use client";
 
-import { motion } from "framer-motion";
-import type { LucideIcon } from "lucide-react";
+import * as React from "react";
+import { animate, useReducedMotion, motion } from "framer-motion";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
+
+function CountUp({ value }: { value: number }) {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const reduce = useReducedMotion();
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (reduce) {
+      el.textContent = formatNumber(value);
+      return;
+    }
+    const c = animate(0, value, { duration: 0.8, ease: "easeOut", onUpdate: (v) => (el.textContent = formatNumber(Math.round(v))) });
+    return () => c.stop();
+  }, [value, reduce]);
+  return <span ref={ref}>{formatNumber(value)}</span>;
+}
 
 export type KpiColor = "blue" | "rose" | "teal" | "green" | "orange" | "purple" | "red";
 const COLORS: Record<KpiColor, { card: string; icon: string; value: string }> = {
@@ -16,6 +35,8 @@ const COLORS: Record<KpiColor, { card: string; icon: string; value: string }> = 
 };
 
 /** Colorful KPI tile. Clickable when `onClick` is given (used as a quick filter). */
+
+/** KPI stat card with an icon chip and count-up value. */
 export function KpiCard({
   label,
   value,

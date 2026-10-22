@@ -103,7 +103,8 @@ export function SidebarNav({ collapsed = false, scope, onNavigate, onExpandReque
           );
         }
 
-        const active = pathname === item.href;
+        // Sub-pages (e.g. /clients/new, /sales/<id>) keep their module highlighted.
+        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <div key={item.label} className="relative">
             {active && (
