@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { Controller, useFieldArray, useForm, type FieldPath, type UseFormReturn } from "react-hook-form";
+import { Controller, useFieldArray, useForm, type FieldPath, type UseFormRegisterReturn, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { Building2, Plus, Star, Trash2, Users } from "lucide-react";
@@ -11,13 +10,12 @@ import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/page-header";
-import { SearchSelect } from "@/components/ui/search-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { fieldErrorsOf } from "@/lib/api";
 import type { Client, ClientContact } from "@/lib/api/clients";
 import { cn } from "@/lib/utils";
-import industries from "@/constants/industries.json";
+import { CitySelect, IndustrySelect, StateSelect } from "./master-selects";
 
 /** Same normalisation as the backend (common/validators/contact.ts): +91 / leading 0 / spaces are accepted. */
 export const normalizeMobile = (raw: string) => {
@@ -26,20 +24,24 @@ export const normalizeMobile = (raw: string) => {
   else if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
   return d;
 };
-const MOBILE_MSG = "Enter a 10-digit mobile number (starting 6-9)";
-const isMobile = (v: string) => /^[6-9]\d{9}$/.test(normalizeMobile(v));
+const MOBILE_MSG = "Enter a valid 10-digit mobile number (starting 6-9)";
+const isMobile = (v: string) => /^[6-9]\d{9}$/.test(v);
+const TEN_DIGITS_MSG = "Mobile number must be exactly 10 digits";
+const LETTERS = /^[A-Za-z ]+$/;
+const LETTERS_MSG = "Use letters and spaces only";
 const isEmail = (v: string) => z.email().safeParse(v).success;
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
 
-/** Industry / Business Category options: edit constants/industries.json to add or rename one. */
-export const INDUSTRIES: string[] = industries;
-const STATES = ["Andhra Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Tamil Nadu", "Telangana", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
 
 const contactSchema = z.object({
-  name: z.string().trim().min(1, "Enter the contact person name").max(120),
-  designation: z.string().trim().max(120),
-  phone: z.string().trim().min(1, "Enter the mobile number").refine(isMobile, MOBILE_MSG),
-  alternatePhone: z.string().trim().refine((v) => !v || isMobile(v), MOBILE_MSG),
+  name: z.string().trim().min(1, "Enter the contact person name").max(120).regex(LETTERS, LETTERS_MSG),
+  designation: z.string().trim().max(120).refine((v) => !v || LETTERS.test(v), LETTERS_MSG),
+  phone: z.string().trim().min(1, "Enter the mobile number").regex(/^\d{10}$/, TEN_DIGITS_MSG).refine(isMobile, MOBILE_MSG),
+  alternatePhone: z
+    .string()
+    .trim()
+    .refine((v) => !v || /^\d{10}$/.test(v), TEN_DIGITS_MSG)
+    .refine((v) => !v || isMobile(v), MOBILE_MSG),
   email: z.string().trim().refine((v) => !v || isEmail(v), "Enter a valid email address"),
   alternateEmail: z.string().trim().refine((v) => !v || isEmail(v), "Enter a valid email address"),
   isPrimary: z.boolean(),
@@ -53,7 +55,7 @@ export const companySchema = z.object({
   city: z.string().trim().max(80),
   district: z.string().trim().max(80),
   state: z.string().trim().max(80),
-  pincode: z.string().trim().refine((v) => !v || /^\d{6}$/.test(v), "Pincode must be 6 digits"),
+  pincode: z.string().trim().refine((v) => !v || /^\d{6}$/.test(v), "Pincode must be exactly 6 digits"),
   gstin: z.string().trim().toUpperCase().refine((v) => !v || GSTIN.test(v), "Invalid GST number (e.g. 27ABCDE1234F1Z5)"),
   contacts: z
     .array(contactSchema)
@@ -134,6 +136,21 @@ export function applyServerErrors(form: UseFormReturn<CompanyValues>, err: unkno
   return mapped;
 }
 
+/** Drops what a field does not accept as it is typed or pasted (e.g. letters in a mobile number). */
+const digitsOnly = (max: number) => (v: string) => v.replace(/\D/g, "").slice(0, max);
+const lettersOnly = (v: string) => v.replace(/[^A-Za-z ]/g, "").replace(/ {2,}/g, " ");
+function filtered(r: UseFormRegisterReturn, clean: (v: string) => string): UseFormRegisterReturn {
+  return {
+    ...r,
+    onChange: (ev) => {
+      const t = ev.target as HTMLInputElement;
+      const v = clean(t.value);
+      if (v !== t.value) t.value = v;
+      return r.onChange(ev);
+    },
+  };
+}
+
 function errAt(form: UseFormReturn<CompanyValues>, path: string) {
   return path.split(".").reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], form.formState.errors) as { message?: string } | undefined;
 }
@@ -143,6 +160,7 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
   const { register, control, setValue, watch, formState } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "contacts" });
   const contacts = watch("contacts");
+  const state = watch("state");
   useUnsavedWarning(formState.isDirty && !formState.isSubmitSuccessful);
   const e = (p: string) => errAt(form, p)?.message;
   const id = (k: string) => `${idPrefix}-${k}`;
@@ -168,33 +186,46 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
             <Input id={id("name")} placeholder="e.g. Acme Retail Pvt. Ltd." aria-invalid={!!e("name")} {...register("name")} />
           </Field>
           <Field label="Company Email Address" htmlFor={id("email")} required error={e("email")}>
-            <Input id={id("email")} type="email" placeholder="info@company.com" aria-invalid={!!e("email")} {...register("email")} />
+            <Input id={id("email")} type="email" placeholder="e.g. info@company.com" aria-invalid={!!e("email")} {...register("email")} />
           </Field>
           {/* id avoids address/company words so Chrome does not offer autofill on this picker. */}
           <Field label="Industry / Business Category" htmlFor={id("biz-category")} error={e("industry")}>
-            <Controller control={control} name="industry" render={({ field }) => <IndustrySelect id={id("biz-category")} value={field.value} onChange={field.onChange} />} />
+            <Controller control={control} name="industry" render={({ field }) => <IndustrySelect id={id("biz-category")} value={field.value} onChange={(v) => field.onChange(v)} invalid={!!e("industry")} />} />
           </Field>
           <Field label="Company Address" htmlFor={id("address")} error={e("address")} className="sm:col-span-2 xl:col-span-4">
             <Textarea id={id("address")} className="min-h-16" placeholder="Building, street, area" {...register("address")} />
           </Field>
-          <Field label="City" htmlFor={id("city")} error={e("city")}>
-            <Input id={id("city")} {...register("city")} />
+          {/* District is no longer asked for; a stored value stays in the form values and is saved back unchanged. */}
+          <Field label="State" htmlFor={id("loc-state")} error={e("state")}>
+            <Controller
+              control={control}
+              name="state"
+              render={({ field }) => (
+                <StateSelect
+                  id={id("loc-state")}
+                  value={field.value}
+                  invalid={!!e("state")}
+                  onChange={(v) => {
+                    if (v === field.value) return;
+                    field.onChange(v);
+                    // A city belongs to one state: changing the state clears it.
+                    setValue("city", "", { shouldDirty: true });
+                  }}
+                />
+              )}
+            />
           </Field>
-          <Field label="District" htmlFor={id("district")} error={e("district")}>
-            <Input id={id("district")} {...register("district")} />
-          </Field>
-          <Field label="State" htmlFor={id("state")} error={e("state")}>
-            <Input id={id("state")} list={id("states")} {...register("state")} />
-            <datalist id={id("states")}>
-              {STATES.map((x) => (
-                <option key={x} value={x} />
-              ))}
-            </datalist>
+          <Field label="City" htmlFor={id("loc-city")} error={e("city")}>
+            <Controller
+              control={control}
+              name="city"
+              render={({ field }) => <CitySelect id={id("loc-city")} state={state} value={field.value} invalid={!!e("city")} onChange={(v) => field.onChange(v)} />}
+            />
           </Field>
           <Field label="Pincode" htmlFor={id("pincode")} error={e("pincode")}>
-            <Input id={id("pincode")} inputMode="numeric" maxLength={6} aria-invalid={!!e("pincode")} {...register("pincode")} />
+            <Input id={id("pincode")} inputMode="numeric" maxLength={6} placeholder="Enter 6-digit pincode" aria-invalid={!!e("pincode")} {...filtered(register("pincode"), digitsOnly(6))} />
           </Field>
-          <Field label="GST Number" htmlFor={id("gstin")} error={e("gstin")} className="sm:col-span-2">
+          <Field label="GST Number" htmlFor={id("gstin")} error={e("gstin")}>
             <Input id={id("gstin")} className="uppercase" maxLength={15} placeholder="27ABCDE1234F1Z5" aria-invalid={!!e("gstin")} {...register("gstin")} />
           </Field>
         </div>
@@ -257,22 +288,22 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <Field label="Contact Person Name" htmlFor={id(`k${i}-name`)} required error={e(`contacts.${i}.name`)}>
-                      <Input id={id(`k${i}-name`)} aria-invalid={!!e(`contacts.${i}.name`)} {...register(`contacts.${i}.name`)} />
+                      <Input id={id(`k${i}-name`)} maxLength={120} placeholder="Enter contact person name" aria-invalid={!!e(`contacts.${i}.name`)} {...filtered(register(`contacts.${i}.name`), lettersOnly)} />
                     </Field>
                     <Field label="Designation" htmlFor={id(`k${i}-des`)} error={e(`contacts.${i}.designation`)}>
-                      <Input id={id(`k${i}-des`)} placeholder="e.g. Purchase Head" {...register(`contacts.${i}.designation`)} />
+                      <Input id={id(`k${i}-des`)} maxLength={120} placeholder="e.g. Purchase Manager" aria-invalid={!!e(`contacts.${i}.designation`)} {...filtered(register(`contacts.${i}.designation`), lettersOnly)} />
                     </Field>
                     <Field label="Mobile Number" htmlFor={id(`k${i}-phone`)} required error={e(`contacts.${i}.phone`)}>
-                      <Input id={id(`k${i}-phone`)} inputMode="tel" placeholder="98765 43210" aria-invalid={!!e(`contacts.${i}.phone`)} {...register(`contacts.${i}.phone`)} />
+                      <Input id={id(`k${i}-phone`)} inputMode="numeric" maxLength={10} placeholder="Enter 10-digit mobile number" aria-invalid={!!e(`contacts.${i}.phone`)} {...filtered(register(`contacts.${i}.phone`), digitsOnly(10))} />
                     </Field>
                     <Field label="Alternate Mobile Number" htmlFor={id(`k${i}-aphone`)} error={e(`contacts.${i}.alternatePhone`)}>
-                      <Input id={id(`k${i}-aphone`)} inputMode="tel" aria-invalid={!!e(`contacts.${i}.alternatePhone`)} {...register(`contacts.${i}.alternatePhone`)} />
+                      <Input id={id(`k${i}-aphone`)} inputMode="numeric" maxLength={10} placeholder="Enter alternate 10-digit mobile number" aria-invalid={!!e(`contacts.${i}.alternatePhone`)} {...filtered(register(`contacts.${i}.alternatePhone`), digitsOnly(10))} />
                     </Field>
                     <Field label="Email Address" htmlFor={id(`k${i}-email`)} error={e(`contacts.${i}.email`)}>
-                      <Input id={id(`k${i}-email`)} type="email" aria-invalid={!!e(`contacts.${i}.email`)} {...register(`contacts.${i}.email`)} />
+                      <Input id={id(`k${i}-email`)} type="email" placeholder="Enter contact email address" aria-invalid={!!e(`contacts.${i}.email`)} {...register(`contacts.${i}.email`)} />
                     </Field>
                     <Field label="Alternate Email Address" htmlFor={id(`k${i}-aemail`)} error={e(`contacts.${i}.alternateEmail`)}>
-                      <Input id={id(`k${i}-aemail`)} type="email" aria-invalid={!!e(`contacts.${i}.alternateEmail`)} {...register(`contacts.${i}.alternateEmail`)} />
+                      <Input id={id(`k${i}-aemail`)} type="email" placeholder="Enter alternate email address" aria-invalid={!!e(`contacts.${i}.alternateEmail`)} {...register(`contacts.${i}.alternateEmail`)} />
                     </Field>
                   </div>
                 </motion.fieldset>
@@ -293,31 +324,6 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
         </button>
       </Card>
     </div>
-  );
-}
-
-/** Industry picker over the JSON list. A saved value that is no longer in the list is still shown and kept. */
-function IndustrySelect({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
-  const [query, setQuery] = useState("");
-  const all = value && !INDUSTRIES.includes(value) ? [...INDUSTRIES, value] : INDUSTRIES;
-  const q = query.trim().toLowerCase();
-  const options = all.filter((x) => !q || x.toLowerCase().includes(q)).map((x) => ({ value: x, label: x }));
-  return (
-    <SearchSelect
-      id={id}
-      value={value ? { value, label: value } : null}
-      options={options}
-      query={query}
-      onQueryChange={setQuery}
-      onSelect={(o) => {
-        onChange(o.value);
-        setQuery("");
-      }}
-      onClear={() => onChange("")}
-      placeholder="Select industry"
-      emptyText="No matching industry"
-      inputClassName="h-10"
-    />
   );
 }
 
