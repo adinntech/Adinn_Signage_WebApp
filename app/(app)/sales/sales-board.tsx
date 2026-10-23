@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { CalendarClock, CheckCircle2, IndianRupee, KanbanSquare, Plus, RotateCcw, Search, UserRound } from "lucide-react";
 import { ClientTypeBadge } from "@/components/clients/client-type-badge";
 import { UserSelect } from "@/components/pickers";
+import type { OrderTab } from "@/components/sales/order-detail-view";
 import { OrderModal } from "@/components/sales/order-modal";
 import { STAGE_ICONS } from "@/components/sales/stage";
 import { Button } from "@/components/ui/button";
@@ -186,6 +187,7 @@ function Column({
 /** Screen 06: Sales Handling Kanban (New Order -> Company Profile -> Rate Card -> Client Approval Proof). */
 export function SalesBoard() {
   const params = useSearchParams();
+  const router = useRouter();
   const { can } = useAuth();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [ownerId, setOwnerId] = useState("");
@@ -200,8 +202,34 @@ export function SalesBoard() {
   const move = useBoardMove(boardParams);
   const toast = useToast();
   const filtered = !!(q || ownerId || clientType || preset);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // `/sales?order=<id>` (after Create New Order) opens that order's modal on Overview. It is read from the URL on every
+  // render, because Next keeps this page mounted between visits (React Activity) and initial state would be stale.
+  // Card clicks keep using local state and do not touch the URL.
+  const orderParam = params.get("order");
+  const linkedOrder = orderParam && /^[a-f\d]{24}$/i.test(orderParam) ? orderParam : null;
+  const [cardId, setCardId] = useState<string | null>(null);
   const [dragging, setDragging] = useState<OrderCard | null>(null);
+  const openId = linkedOrder ?? cardId;
+  const openTab: OrderTab | null = linkedOrder ? "overview" : null;
+
+  const clearOrderParam = useCallback(() => {
+    const rest = new URLSearchParams(params.toString());
+    rest.delete("order");
+    const s = rest.toString();
+    router.replace(s ? `/sales?${s}` : "/sales", { scroll: false });
+  }, [params, router]);
+
+  // A malformed id never opens the modal; drop it from the URL (runs once, the param is then gone).
+  useEffect(() => {
+    if (orderParam && !linkedOrder) clearOrderParam();
+  }, [orderParam, linkedOrder, clearOrderParam]);
+
+  const openCard = (id: string) => setCardId(id);
+  const closeModal = () => {
+    setCardId(null);
+    // Drop ?order= so refresh and Back do not reopen the modal; other params (q) stay.
+    if (orderParam) clearOrderParam();
+  };
 
   const drag: DragProps = {
     dragging,
@@ -299,10 +327,10 @@ export function SalesBoard() {
         <div className="flex min-h-[480px] flex-1 gap-4 overflow-x-auto pb-2">
           {board.isPending
             ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-full min-h-[480px] w-[300px] shrink-0 rounded-2xl lg:w-auto lg:flex-1" />)
-            : board.data.columns.map((c) => <Column key={c.stage} col={c} canAdd={can("clients:write")} onOpen={setOpenId} drag={drag} onDropCard={dropCard} />)}
+            : board.data.columns.map((c) => <Column key={c.stage} col={c} canAdd={can("clients:write")} onOpen={openCard} drag={drag} onDropCard={dropCard} />)}
         </div>
       )}
-      <OrderModal orderId={openId} onClose={() => setOpenId(null)} />
+      <OrderModal orderId={openId} initialTab={openTab} onClose={closeModal} />
     </div>
   );
 }

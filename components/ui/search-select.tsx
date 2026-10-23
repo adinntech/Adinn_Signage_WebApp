@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Loader2, Search } from "lucide-react";
+import { Check, ChevronDown, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SearchOption {
@@ -22,6 +22,8 @@ export function SearchSelect({
   placeholder = "Search...",
   emptyText = "No matches",
   invalid,
+  onClear,
+  inputClassName,
 }: {
   id: string;
   value: SearchOption | null;
@@ -33,6 +35,9 @@ export function SearchSelect({
   placeholder?: string;
   emptyText?: string;
   invalid?: boolean;
+  /** Shows a clear (×) button while a value is selected (for optional fields). */
+  onClear?: () => void;
+  inputClassName?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(0);
@@ -86,8 +91,25 @@ export function SearchSelect({
             pick(options[active]!);
           } else if (e.key === "Escape") setOpen(false);
         }}
-        className="flex h-11 w-full rounded-lg border border-border bg-surface pl-9 pr-9 text-sm shadow-soft placeholder:text-muted-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring aria-[invalid=true]:border-danger"
+        className={cn(
+          "flex h-11 w-full rounded-lg border border-border bg-surface pl-9 pr-9 text-sm shadow-soft placeholder:text-muted-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring aria-[invalid=true]:border-danger",
+          onClear && value && "pr-16",
+          inputClassName,
+        )}
       />
+      {onClear && value && (
+        <button
+          type="button"
+          aria-label="Clear selection"
+          onClick={() => {
+            onClear();
+            onQueryChange("");
+          }}
+          className="absolute right-8 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      )}
       {loading ? (
         <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden />
       ) : (

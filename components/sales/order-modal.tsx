@@ -2,10 +2,10 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
-import { OrderDetailView } from "./order-detail-view";
+import { OrderDetailView, type OrderTab } from "./order-detail-view";
 
 /** Large centered order popup opened from a Kanban card: fixed header and tabs, scrollable content. */
-export function OrderModal({ orderId, onClose }: { orderId: string | null; onClose: () => void }) {
+export function OrderModal({ orderId, onClose, initialTab }: { orderId: string | null; onClose: () => void; initialTab?: OrderTab | null }) {
   const open = !!orderId;
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -25,7 +25,7 @@ export function OrderModal({ orderId, onClose }: { orderId: string | null; onClo
                   transition={{ duration: 0.18 }}
                 >
                   <Dialog.Title className="sr-only">Order details</Dialog.Title>
-                  <OrderDetailView key={orderId} id={orderId!} modal onClose={onClose} />
+                  <OrderDetailView key={orderId} id={orderId!} modal initialTab={initialTab} onClose={onClose} />
                 </motion.div>
               </Dialog.Content>
             </div>

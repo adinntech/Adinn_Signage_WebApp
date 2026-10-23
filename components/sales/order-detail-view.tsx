@@ -95,7 +95,17 @@ export function OrderDetailView({
         <Skeleton className="h-96" />
       </div>
     );
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
+  if (q.isError)
+    return (
+      <div className="relative">
+        {modal && onClose && (
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close" className="absolute right-3 top-3">
+            <X className="size-5" aria-hidden />
+          </Button>
+        )}
+        <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not load this order" />
+      </div>
+    );
   const o = q.data;
 
   const items: TabItem<OrderTab>[] = [

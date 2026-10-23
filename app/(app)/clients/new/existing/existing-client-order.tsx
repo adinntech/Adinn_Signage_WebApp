@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -31,6 +31,17 @@ export function ExistingClientOrder() {
   const create = useCreateOrder();
   const requestKey = useRef(newRequestKey());
 
+  // Next keeps visited routes mounted (React Activity), so state survives leaving the page. Start every visit fresh:
+  // the cleanup runs when the page is hidden (navigating away, including after Create New Order), not on re-renders.
+  useLayoutEffect(
+    () => () => {
+      setSelected(null);
+      setQuery("");
+      requestKey.current = newRequestKey();
+    },
+    [],
+  );
+
   const opts: SearchOption[] = (options.data?.data ?? []).map((c) => ({ value: c._id, label: c.name, sublabel: [c.clientNo, c.city, c.email].filter(Boolean).join(" · ") }));
 
   const onCreate = async () => {
@@ -38,7 +49,8 @@ export function ExistingClientOrder() {
     try {
       const r = await create.mutateAsync({ clientId: selected._id, requestKey: requestKey.current });
       toast(`Order ${r.order.orderNo} created for ${selected.name} in New Order.`);
-      router.push(`/sales/${r.order._id}`);
+      // Open the new order in the Sales Handling modal; replace so Back does not return to the submitted form.
+      router.replace(`/sales?order=${r.order._id}`);
     } catch (e) {
       toast(errorMessage(e), "error");
     }

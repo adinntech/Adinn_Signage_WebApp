@@ -1,6 +1,7 @@
 "use client";
 
-import { useFieldArray, useForm, type FieldPath, type UseFormReturn } from "react-hook-form";
+import { useState } from "react";
+import { Controller, useFieldArray, useForm, type FieldPath, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { Building2, Plus, Star, Trash2, Users } from "lucide-react";
@@ -10,11 +11,13 @@ import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/page-header";
+import { SearchSelect } from "@/components/ui/search-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { fieldErrorsOf } from "@/lib/api";
 import type { Client, ClientContact } from "@/lib/api/clients";
 import { cn } from "@/lib/utils";
+import industries from "@/constants/industries.json";
 
 /** Same normalisation as the backend (common/validators/contact.ts): +91 / leading 0 / spaces are accepted. */
 export const normalizeMobile = (raw: string) => {
@@ -28,7 +31,8 @@ const isMobile = (v: string) => /^[6-9]\d{9}$/.test(normalizeMobile(v));
 const isEmail = (v: string) => z.email().safeParse(v).success;
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
 
-export const INDUSTRIES = ["Retail & FMCG", "Automobile", "Banking & Finance", "Telecom", "Real Estate", "Healthcare", "Education", "Hospitality", "Petroleum & Energy", "Consumer Electronics", "Government", "Other"];
+/** Industry / Business Category options: edit constants/industries.json to add or rename one. */
+export const INDUSTRIES: string[] = industries;
 const STATES = ["Andhra Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Tamil Nadu", "Telangana", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
 
 const contactSchema = z.object({
@@ -166,13 +170,9 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
           <Field label="Company Email Address" htmlFor={id("email")} required error={e("email")}>
             <Input id={id("email")} type="email" placeholder="info@company.com" aria-invalid={!!e("email")} {...register("email")} />
           </Field>
-          <Field label="Industry / Business Category" htmlFor={id("industry")} error={e("industry")}>
-            <Input id={id("industry")} list={id("industries")} placeholder="Select or type" {...register("industry")} />
-            <datalist id={id("industries")}>
-              {INDUSTRIES.map((x) => (
-                <option key={x} value={x} />
-              ))}
-            </datalist>
+          {/* id avoids address/company words so Chrome does not offer autofill on this picker. */}
+          <Field label="Industry / Business Category" htmlFor={id("biz-category")} error={e("industry")}>
+            <Controller control={control} name="industry" render={({ field }) => <IndustrySelect id={id("biz-category")} value={field.value} onChange={field.onChange} />} />
           </Field>
           <Field label="Company Address" htmlFor={id("address")} error={e("address")} className="sm:col-span-2 xl:col-span-4">
             <Textarea id={id("address")} className="min-h-16" placeholder="Building, street, area" {...register("address")} />
@@ -293,6 +293,31 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
         </button>
       </Card>
     </div>
+  );
+}
+
+/** Industry picker over the JSON list. A saved value that is no longer in the list is still shown and kept. */
+function IndustrySelect({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  const [query, setQuery] = useState("");
+  const all = value && !INDUSTRIES.includes(value) ? [...INDUSTRIES, value] : INDUSTRIES;
+  const q = query.trim().toLowerCase();
+  const options = all.filter((x) => !q || x.toLowerCase().includes(q)).map((x) => ({ value: x, label: x }));
+  return (
+    <SearchSelect
+      id={id}
+      value={value ? { value, label: value } : null}
+      options={options}
+      query={query}
+      onQueryChange={setQuery}
+      onSelect={(o) => {
+        onChange(o.value);
+        setQuery("");
+      }}
+      onClear={() => onChange("")}
+      placeholder="Select industry"
+      emptyText="No matching industry"
+      inputClassName="h-10"
+    />
   );
 }
 
