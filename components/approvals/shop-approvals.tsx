@@ -21,7 +21,7 @@ export function levelsFor(role: string | undefined, can: (p?: string) => boolean
   if (role === "SUPER_ADMIN") return ["ops", "bd"];
   const out: ApprovalLevel[] = [];
   if (can("verification:manage")) out.push("ops");
-  if (can("projects:write")) out.push("bd");
+  if (can("approvals:client")) out.push("bd");
   return out;
 }
 

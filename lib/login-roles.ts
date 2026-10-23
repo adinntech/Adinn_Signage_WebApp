@@ -1,11 +1,11 @@
-import { Briefcase, ScanSearch, ShieldCheck, Store, Wallet, Workflow, type LucideIcon } from "lucide-react";
+import { Briefcase, ScanSearch, ShieldCheck, Handshake, Store, Workflow, type LucideIcon } from "lucide-react";
 import type { Role } from "@/lib/api";
 
 /**
  * Role cards on the login screen. This is a navigation preference only: the backend
  * decides the real role/permissions, and the selection is never sent to the API.
  */
-export type LoginRoleKey = "BD" | "RECCE" | "VENDOR" | "OPERATIONS" | "ACCOUNTS" | "ADMIN";
+export type LoginRoleKey = "BD" | "RECCE" | "VENDOR" | "OPERATIONS" | "CLIENT_SERVICING" | "ADMIN";
 
 export interface LoginRoleOption {
   key: LoginRoleKey;
@@ -25,7 +25,7 @@ export const LOGIN_ROLES: LoginRoleOption[] = [
   { key: "RECCE", label: "Recce", hint: "Field execution", icon: ScanSearch, roles: ["RECCE_EXECUTIVE"], accent: "#0D9488", mobileOnly: true },
   { key: "VENDOR", label: "Vendor", hint: "Field vendors", icon: Store, roles: ["VENDOR"], accent: "#9333EA", mobileOnly: true },
   { key: "OPERATIONS", label: "Operations", hint: "Recce tasks & handover", icon: Workflow, roles: ["OPERATIONS", "RECCE_COORDINATOR"], accent: "#EA580C" },
-  { key: "ACCOUNTS", label: "Accounts", hint: "Bills & payments", icon: Wallet, roles: ["FINANCE"], accent: "#059669" },
+  { key: "CLIENT_SERVICING", label: "Client Servicing", hint: "Client communication & approvals", icon: Handshake, roles: ["CLIENT_SERVICING"], accent: "#059669" },
   { key: "ADMIN", label: "Admin", hint: "Admin & management", icon: ShieldCheck, roles: ["SUPER_ADMIN", "MANAGEMENT"], accent: "#102449" },
 ];
 
@@ -60,6 +60,6 @@ export function writeLoginPref(pref: LoginPref | null) {
 export const WEB_REGISTER_ROLES: { role: Role; key: LoginRoleKey; hint: string }[] = [
   { role: "BD", key: "BD", hint: "Clients & projects" },
   { role: "OPERATIONS", key: "OPERATIONS", hint: "Recce tasks & handover" },
-  { role: "FINANCE", key: "ACCOUNTS", hint: "Bills & payments" },
+  { role: "CLIENT_SERVICING", key: "CLIENT_SERVICING", hint: "Client communication & approvals" },
   { role: "SUPER_ADMIN", key: "ADMIN", hint: "System access" },
 ];

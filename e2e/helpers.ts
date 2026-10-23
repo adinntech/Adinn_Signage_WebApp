@@ -8,7 +8,7 @@ export const USERS = {
   bd: { email: "bd@e2e.test", card: "BD", home: "/bd/dashboard" },
   ops: { email: "ops@e2e.test", card: "OPERATIONS", home: "/operations/dashboard" },
   ops2: { email: "ops2@e2e.test", card: "OPERATIONS", home: "/operations/dashboard" },
-  fin: { email: "fin@e2e.test", card: "ACCOUNTS", home: "/finance/dashboard" },
+  fin: { email: "fin@e2e.test", card: "CLIENT_SERVICING", home: "/client-servicing/dashboard" },
 } as const;
 
 export async function login(page: Page, who: keyof typeof USERS) {

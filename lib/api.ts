@@ -3,6 +3,7 @@ export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:400
 export type Role =
   | "SUPER_ADMIN"
   | "BD"
+  | "CLIENT_SERVICING"
   | "RECCE_COORDINATOR"
   | "RECCE_EXECUTIVE"
   | "VENDOR"
