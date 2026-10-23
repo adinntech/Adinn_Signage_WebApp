@@ -37,7 +37,8 @@ export type Permission =
   | "sales:read"
   | "sales:write"
   | "templates:manage"
-  | "ratecards:manage";
+  | "ratecards:manage"
+  | "approvals:client";
 
 export interface NavLeaf {
   label: string;
@@ -159,6 +160,9 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
     { label: "Settings", icon: Settings, href: "/settings" },
   ],
 };
+
+// Client Servicing has no modules yet: only Settings.
+ROLE_NAV.CLIENT_SERVICING = [{ label: "Settings", icon: Settings, href: "/settings" }];
 
 export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {
   const own = role ? ROLE_NAV[role] : undefined;
