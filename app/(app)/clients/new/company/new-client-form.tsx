@@ -9,24 +9,21 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { newRequestKey, useRegisterClient } from "@/lib/api/sales";
+import { useRegisterCompany } from "@/lib/api/clients";
 
-/** Screen 03: New Client Creation -> company + contacts + first New Order card. */
+/** Add Client: company + contact persons only. Orders for the client are created in Order Management. */
 export function NewClientForm() {
   const router = useRouter();
   const toast = useToast();
   const form = useCompanyForm(EMPTY_COMPANY);
-  const registerClient = useRegisterClient();
-  // One key per filled-in form: a double click or retry returns the same order instead of creating another.
-  const [requestKey, setRequestKey] = useState(newRequestKey);
+  const register = useRegisterCompany();
   const [addAnother, setAddAnother] = useState(false);
 
   const save = async (v: CompanyValues, another: boolean) => {
     try {
-      const r = await registerClient.mutateAsync({ ...companyToApi(v), requestKey });
-      toast(`${r.client.name} registered as ${r.client.clientNo}. Order ${r.order.orderNo} added to New Order.`);
+      const c = await register.mutateAsync(companyToApi(v));
+      toast(`${c.name} registered as ${c.clientNo}.`);
       if (another) {
-        setRequestKey(newRequestKey());
         form.reset(EMPTY_COMPANY);
         document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
       } else {
@@ -42,7 +39,7 @@ export function NewClientForm() {
     setAddAnother(another);
     void form.handleSubmit((v) => save(v, another))();
   };
-  const busy = registerClient.isPending;
+  const busy = register.isPending;
 
   return (
     <form
@@ -55,8 +52,8 @@ export function NewClientForm() {
     >
       <PageHeader
         icon={UserPlus}
-        title="New Client Creation"
-        subtitle="Enter company and contact details. Saving creates the client and its first order."
+        title="Add Client"
+        subtitle="Enter the company and its contact persons. Orders for this client are created in Order Management."
         className="mb-5"
         actions={
           <Button variant="ghost" asChild>
@@ -68,7 +65,7 @@ export function NewClientForm() {
       />
       <CompanyFormFields form={form} idPrefix="new" />
       <FormActionBar note={<>Fields marked <span className="text-danger">*</span> are required.</>}>
-        <Button type="button" variant="outline" onClick={() => router.push("/clients/new")} disabled={busy}>
+        <Button type="button" variant="outline" onClick={() => router.push("/clients")} disabled={busy}>
           Cancel
         </Button>
         <Button type="button" variant="brand-outline" onClick={() => submit(true)} loading={busy && addAnother} disabled={busy}>

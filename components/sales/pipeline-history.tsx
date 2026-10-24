@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle2, GitBranch, PlusCircle, UserCog } from "lucide-react";
+import { ArrowRight, CheckCircle2, GitBranch, Handshake, PlusCircle, UserCog } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
@@ -20,7 +20,7 @@ export function PipelineHistory({ orderId }: { orderId: string }) {
     <Card className="p-5 sm:p-6">
       <ol className="relative space-y-5 border-l-2 border-border pl-6">
         {q.data.map((h, i) => {
-          const Icon = h.action === "APPROVAL_COMPLETE" ? CheckCircle2 : h.action === "ASSIGN" ? UserCog : h.action === "CREATE" ? PlusCircle : GitBranch;
+          const Icon = h.action === "APPROVAL_COMPLETE" ? CheckCircle2 : h.action === "ASSIGN" ? UserCog : h.action === "HANDOVER" ? Handshake : h.action === "CREATE" ? PlusCircle : GitBranch;
           return (
             <motion.li key={h.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.04, 0.4) }} className="relative">
               <span className="absolute -left-[37px] flex size-7 items-center justify-center rounded-full border-2 border-surface bg-brand text-white">

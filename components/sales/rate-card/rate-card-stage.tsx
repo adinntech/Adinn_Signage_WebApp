@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, Trash2, UserRound } from "lucide-react";
+import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, Trash2, UserRound } from "lucide-react";
 import { z } from "zod";
 import { normalizeMobile } from "@/components/clients/company-form";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { openFile } from "@/lib/api/files";
+import { downloadFile, openFile } from "@/lib/api/files";
 import { RATE_UNITS, useQuotation, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit } from "@/lib/api/ratecards";
 import { useSendEmail } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
@@ -57,8 +57,8 @@ const schema = z.object({
   items: z.array(line).min(1, "Add at least one signage item").max(100),
   terms: z.string(),
   regards: z.object({
-    name: z.string().trim().min(1, "Enter the name"),
-    designation: z.string().trim().min(1, "Enter the designation"),
+    name: z.string().trim().min(1, "Enter the business analyst name"),
+    designation: z.string().trim(),
     mobile: z.string().trim().refine((v) => /^[6-9]\d{9}$/.test(normalizeMobile(v)), "Enter a 10-digit mobile number"),
     email: z.string().trim().refine(email, "Enter a valid email address"),
   }),
@@ -98,7 +98,7 @@ const toApi = (v: FormValues): QuotationValues => ({
 
 type BottomTab = "history" | "send" | "emails";
 
-function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
+function Editor({ data, orderId, withEmail }: { data: QuotationState; orderId: string; withEmail: boolean }) {
   const toast = useToast();
   const { can } = useAuth();
   const editable = data.editable && can("sales:write");
@@ -156,7 +156,7 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="xl:sticky xl:top-0 xl:h-[max(600px,calc(100dvh-17rem))]">
-          <QuotationPreview orderId={orderId} values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} latest={data.latest} dirty={dirty} />
+          <QuotationPreview orderId={orderId} values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} company={data.company} latest={data.latest} dirty={dirty} />
         </div>
 
         <Card className="min-w-0 p-5 sm:p-6">
@@ -217,7 +217,7 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
                     <Input id="rc-date" type="date" className="pl-9" aria-invalid={!!e("quotationDate")} {...register("quotationDate")} />
                   </div>
                 </Field>
-                <Field label="Client Address" htmlFor="rc-address" error={e("clientAddress")}>
+                <Field label="Bill To (City / Address)" htmlFor="rc-address" error={e("clientAddress")}>
                   <div className="relative">
                     <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     <Input id="rc-address" className="pl-9" {...register("clientAddress")} />
@@ -346,19 +346,16 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
                 />
               </section>
               <section>
-                <SectionTitle icon={UserRound} title="Best Regards Details" />
+                <SectionTitle icon={UserRound} title="Quote & Contact" description="Business Analyst details printed on the rate card." />
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Name" htmlFor="rc-rname" required error={e("regards.name")}>
+                  <Field label="Business Analyst" htmlFor="rc-rname" required error={e("regards.name")} className="sm:col-span-2">
                     <Input id="rc-rname" aria-invalid={!!e("regards.name")} {...register("regards.name")} />
                   </Field>
-                  <Field label="Designation" htmlFor="rc-rdes" required error={e("regards.designation")}>
-                    <Input id="rc-rdes" aria-invalid={!!e("regards.designation")} {...register("regards.designation")} />
-                  </Field>
-                  <Field label="Mobile Number" htmlFor="rc-rmob" required error={e("regards.mobile")}>
-                    <Input id="rc-rmob" inputMode="tel" aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
-                  </Field>
-                  <Field label="Email Address" htmlFor="rc-remail" required error={e("regards.email")}>
+                  <Field label="Email ID" htmlFor="rc-remail" required error={e("regards.email")}>
                     <Input id="rc-remail" type="email" aria-invalid={!!e("regards.email")} {...register("regards.email")} />
+                  </Field>
+                  <Field label="Phone Number" htmlFor="rc-rmob" required error={e("regards.mobile")}>
+                    <Input id="rc-rmob" inputMode="numeric" maxLength={10} aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
                   </Field>
                 </div>
               </section>
@@ -372,6 +369,17 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
               </Button>
             )}
             <Button
+              variant="brand-outline"
+              disabled={!data.latest?.pdf?.fileId}
+              title={dirty ? "Downloads the last saved revision; save to include your changes" : undefined}
+              onClick={() =>
+                data.latest?.pdf?.fileId &&
+                downloadFile(data.latest.pdf.fileId, { orderId }, `${data.orderNo}_Rate_Card_${data.latest.label}.pdf`).catch((err) => toast(errorMessage(err), "error"))
+              }
+            >
+              <Download className="size-4" aria-hidden /> Download PDF
+            </Button>
+            <Button
               variant="outline"
               disabled={!data.latest?.pdf?.fileId}
               title={dirty ? "Opens the last saved PDF; save to include your changes" : undefined}
@@ -382,7 +390,7 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
             <Button variant="outline" onClick={() => setCompareOpen(true)} disabled={!watched.items?.length}>
               <BarChart3 className="size-4" aria-hidden /> Compare Rates
             </Button>
-            {can("sales:write") && (
+            {withEmail && can("sales:write") && (
               <Button variant="outline" onClick={() => goBottom("send")} disabled={!data.latest}>
                 <Send className="size-4" aria-hidden /> Send Email
               </Button>
@@ -390,9 +398,11 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
             <Button variant="outline" onClick={() => goBottom("history")}>
               <History className="size-4" aria-hidden /> View Edit History
             </Button>
-            <Button variant="outline" onClick={() => goBottom("emails")}>
-              <MailCheck className="size-4" aria-hidden /> View Email History
-            </Button>
+            {withEmail && (
+              <Button variant="outline" onClick={() => goBottom("emails")}>
+                <MailCheck className="size-4" aria-hidden /> View Email History
+              </Button>
+            )}
           </div>
         </Card>
       </div>
@@ -406,8 +416,8 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
             onChange={setTab}
             items={[
               { key: "history", label: "Edit History", icon: History },
-              ...(can("sales:write") ? [{ key: "send" as const, label: "Email Sending", icon: Mail }] : []),
-              { key: "emails", label: "Email History", icon: MailCheck },
+              ...(withEmail && can("sales:write") ? [{ key: "send" as const, label: "Email Sending", icon: Mail }] : []),
+              ...(withEmail ? [{ key: "emails" as const, label: "Email History", icon: MailCheck }] : []),
             ]}
           />
           <div id="rc-bottom-panel" role="tabpanel">
@@ -447,8 +457,11 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
   );
 }
 
-/** Screen 11: Rate Card stage (left live PDF preview, right editor, bottom history / email tabs). */
-export function RateCardStage({ orderId }: { orderId: string }) {
+/**
+ * Rate card for an order: left live PDF preview, right editor, bottom edit history (previous vs updated values).
+ * `withEmail` adds the email composer / history tabs (old Sales Handling screen); Order Management only downloads the PDF.
+ */
+export function RateCardStage({ orderId, withEmail = false }: { orderId: string; withEmail?: boolean }) {
   const q = useQuotation(orderId);
   if (q.isPending)
     return (
@@ -458,5 +471,5 @@ export function RateCardStage({ orderId }: { orderId: string }) {
       </div>
     );
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
-  return <Editor data={q.data} orderId={orderId} />;
+  return <Editor data={q.data} orderId={orderId} withEmail={withEmail} />;
 }

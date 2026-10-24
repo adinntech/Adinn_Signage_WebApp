@@ -68,7 +68,11 @@ export interface ClientSummary {
   newClientOrders: number;
   existingClientOrders: number;
   totalClients: number;
+  activeClients: number;
+  clientsThisMonth: number;
 }
+/** Add Client form body: company + contact persons (no order). */
+export type CompanyInput = Omit<ClientInput, "code" | "status" | "notes">;
 
 export const clientTypeOf = (c: Pick<Client, "clientType">): ClientType => c.clientType ?? "EXISTING";
 export const primaryContact = (c: Pick<Client, "contacts">) => c.contacts?.find((k) => k.isPrimary) ?? c.contacts?.[0];
@@ -112,6 +116,15 @@ export function useSaveClient() {
       }
       return api<Client>("/clients", { method: "POST", body: JSON.stringify(body) });
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+  });
+}
+
+/** Client Management "Add Client": registers the company with its contacts and a Client ID. Orders are created in Order Management. */
+export function useRegisterCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CompanyInput) => api<Client>("/clients/company", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
   });
 }

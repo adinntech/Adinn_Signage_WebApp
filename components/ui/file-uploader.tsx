@@ -60,7 +60,9 @@ export function FileUploader({
           if (!disabled) add(e.dataTransfer.files);
         }}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border bg-background text-center transition-colors hover:border-brand/50 hover:bg-brand-soft/40",
+          // relative: keeps the visually hidden (absolute) file input inside this box. Without it the input is placed
+          // against the page, below the bounded app shell, and clicking it scrolls the whole window to a blank area.
+          "relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border bg-background text-center transition-colors hover:border-brand/50 hover:bg-brand-soft/40",
           compact ? "px-3 py-3" : "px-4 py-6",
           drag && "border-brand bg-brand-soft/60",
           (invalid || error) && "border-danger",

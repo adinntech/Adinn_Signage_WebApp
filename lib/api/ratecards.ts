@@ -102,12 +102,20 @@ export interface Revision {
   editedBy?: { _id: string; name: string; role?: string };
   createdAt: string;
 }
+/** ADINN's own details printed on the rate card (from the backend, so the preview and the PDF always agree). */
+export interface CompanyInfo {
+  name: string;
+  gstin: string;
+  address: string[];
+  website: string;
+}
 export interface QuotationState {
   orderId: string;
   orderNo: string;
   stage: string;
   editable: boolean;
   quotationRef: string;
+  company: CompanyInfo;
   clientName: string;
   contacts: ClientContact[];
   latest: Revision | null;
@@ -116,6 +124,33 @@ export interface QuotationState {
   emailDraft: { to: string[]; cc: string[]; subject: string; body: string } | null;
   from: string | null;
   mailEnabled: boolean;
+}
+
+/* Same text rules as the PDF (backend ratecards/quotation.pdf.ts). */
+
+const num = (n: number) => String(Math.round(n * 100) / 100);
+/** Rate column text, e.g. "70/ sqft", "120/ Running Feet", "3000/ Unit", "12 Per Km". */
+export const rateText = (rate: number, unit: RateUnit) =>
+  unit === "KM" ? `${num(rate)} Per Km` : `${num(rate)}/ ${({ SQFT: "sqft", RFT: "Running Feet", UNIT: "Unit" } as Record<string, string>)[unit] ?? unit}`;
+
+const htmlToText = (html: string) =>
+  html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h3|h4|ul|ol)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+
+/** Terms editor HTML -> one entry per numbered term row (list items, else lines), without typed numbering. */
+export function termsList(html?: string | null): string[] {
+  const src = String(html ?? "");
+  const items = [...src.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((m) => htmlToText(m[1]!));
+  const lines = items.length ? items : htmlToText(src).split(/\n+/);
+  return lines.map((t) => t.replace(/\s+/g, " ").trim().replace(/^(?:\d{1,2}\s*[.)]|\d{2}\s|[-•*])\s*/, "")).filter(Boolean);
 }
 
 export function useQuotation(orderId: string) {

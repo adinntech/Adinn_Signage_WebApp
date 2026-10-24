@@ -7,7 +7,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Building2, Info, Pencil, Star, Trash2, UserPlus, Users } from "lucide-react";
 import { z } from "zod";
-import { ClientTypeBadge } from "@/components/clients/client-type-badge";
 import { contactToApi, contactToForm, normalizeMobile } from "@/components/clients/company-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -201,9 +200,6 @@ export function ClientDetailsView() {
           <dl className="grid grid-cols-2 gap-5">
             <DetailItem label="Client ID">
               <span className="font-mono text-brand">{c.clientNo ?? c.code}</span>
-            </DetailItem>
-            <DetailItem label="Client Type">
-              <ClientTypeBadge type={c.clientType} />
             </DetailItem>
             <DetailItem label="Created Date">{formatDate(c.createdAt)}</DetailItem>
             <DetailItem label="Created By">{c.createdBy?.name}</DetailItem>

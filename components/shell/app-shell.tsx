@@ -74,7 +74,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const allowed = canAccessPath(user.role, pathname);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    // fixed inset-0: the shell is the visible screen and the containing block for anything absolutely positioned inside
+    // it, so nothing (e.g. a visually hidden input deep in a long page) can extend the window and make it scroll.
+    <div className="fixed inset-0 flex overflow-hidden">
       <LiveNotifications />
       <aside
         className={cn(

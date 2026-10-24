@@ -12,8 +12,7 @@ import {
   Building2,
   Database,
   Settings,
-  KanbanSquare,
-  Mail,
+  ClipboardList,
   ReceiptIndianRupee,
   type LucideIcon,
 } from "lucide-react";
@@ -56,8 +55,7 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard", permission: "dashboard:view" },
   { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
-  { label: "Sales Handling", icon: KanbanSquare, href: "/sales", permission: "sales:read" },
-  { label: "Email Templates", icon: Mail, href: "/email-templates", permission: "templates:manage" },
+  { label: "Order Management", icon: ClipboardList, href: "/orders", permission: "sales:read" },
   { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
   { label: "Projects", icon: FolderKanban, href: "/projects", permission: "projects:read" },
   { label: "Sites", icon: MapPin, href: "/sites", permission: "sites:read" },
@@ -125,6 +123,7 @@ export function findNavTitle(pathname: string): { title: string; group?: string 
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
   BD: "Business Development",
+  CLIENT_SERVICING: "Client Servicing",
   RECCE_COORDINATOR: "Recce Coordinator",
   RECCE_EXECUTIVE: "Recce Executive",
   VENDOR: "Vendor",
@@ -150,8 +149,7 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
     { label: "Dashboard", icon: LayoutDashboard, href: "/bd/dashboard", permission: "dashboard:view" },
     { label: "Create Project", icon: FolderKanban, href: "/bd/projects/new", permission: "projects:write" },
     { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
-    { label: "Sales Handling", icon: KanbanSquare, href: "/sales", permission: "sales:read" },
-    { label: "Email Templates", icon: Mail, href: "/email-templates", permission: "templates:manage" },
+    { label: "Order Management", icon: ClipboardList, href: "/orders", permission: "sales:read" },
     { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
     { label: "WhatsApp Group", icon: MessageSquare, href: "/bd/whatsapp", permission: "communications:read" },
     { label: "Communication", icon: MessageSquare, href: "/communication", permission: "communications:read" },
@@ -161,8 +159,11 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
   ],
 };
 
-// Client Servicing has no modules yet: only Settings.
-ROLE_NAV.CLIENT_SERVICING = [{ label: "Settings", icon: Settings, href: "/settings" }];
+// Client Servicing: the orders BD handed over to them.
+ROLE_NAV.CLIENT_SERVICING = [
+  { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" },
+  { label: "Settings", icon: Settings, href: "/settings" },
+];
 
 export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {
   const own = role ? ROLE_NAV[role] : undefined;

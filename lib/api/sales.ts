@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, apiBlob, apiPage, saveBlob } from "@/lib/api";
 import type { Client, ClientContact, ClientType } from "./clients";
 import { qs } from "./common";
 import type { FileRef } from "./files";
@@ -35,8 +35,26 @@ export interface OrderCard {
   approvalStatus: "PENDING" | "COMPLETED";
   createdAt: string;
 }
+/** BD -> Client Servicing handover details on an order (null until handed over). */
+export interface HandoverInfo {
+  assignedBy?: string | UserRef;
+  assignedAt?: string;
+  note?: string;
+  seenAt?: string;
+}
+export interface ShopListSummary {
+  fileId: string;
+  fileName: string;
+  total: number;
+  valid: number;
+  warning: number;
+  error: number;
+  uploadedAt: string;
+}
 export interface Order extends Omit<OrderCard, "client"> {
   client: Client;
+  csAssignee?: UserRef | null;
+  handover?: HandoverInfo | null;
   stageLabel: string;
   stageChangedAt?: string;
   createdBy?: UserRef | null;
@@ -156,6 +174,34 @@ interface CreatedOrder {
   order: Order;
   replayed: boolean;
 }
+/** Order Management list row. */
+export interface OrderRow {
+  _id: string;
+  orderNo: string;
+  client: Pick<Client, "_id" | "name" | "clientNo" | "city">;
+  /** New / Existing client flag chosen when the order was created. */
+  clientType: ClientType;
+  owner?: UserRef | null;
+  currentRevision?: number;
+  rateCardLabel: string | null;
+  rateCardPdf?: FileRef | null;
+  csAssignee?: UserRef | null;
+  handover?: HandoverInfo | null;
+  shopList?: ShopListSummary | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface OrderListParams {
+  page?: number;
+  limit?: number;
+  q?: string;
+  clientType?: string;
+  /** BD: ASSIGNED (handed over to Client Servicing) or PENDING. */
+  handover?: string;
+  ownerId?: string;
+  clientId?: string;
+  sort?: string;
+}
 
 /** One key per form session: a retried or double-clicked submit returns the first result instead of a duplicate. */
 export const newRequestKey = () =>
@@ -169,6 +215,7 @@ const keys = {
 /** Everything that may change when an order changes. */
 function invalidateOrder(qc: ReturnType<typeof useQueryClient>, id?: string) {
   qc.invalidateQueries({ queryKey: ["sales", "board"] });
+  qc.invalidateQueries({ queryKey: ["sales", "orders"] });
   qc.invalidateQueries({ queryKey: ["clients"] });
   if (id) qc.invalidateQueries({ queryKey: ["sales", "order", id] });
 }
@@ -181,11 +228,22 @@ export function useRegisterClient() {
   });
 }
 
+/** Creates an order for a registered client; `clientType` is the New / Existing client flag (server suggests one when omitted). */
 export function useCreateOrder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { clientId: string; requestKey: string }) => api<CreatedOrder>("/sales/orders", { method: "POST", body: JSON.stringify(body) }),
+    mutationFn: (body: { clientId: string; clientType?: ClientType; requestKey: string }) =>
+      api<CreatedOrder>("/sales/orders", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => invalidateOrder(qc),
+  });
+}
+
+/** Order Management list (paginated, newest first). */
+export function useOrders(params: OrderListParams) {
+  return useQuery({
+    queryKey: ["sales", "orders", params],
+    queryFn: () => apiPage<OrderRow>(`/sales/orders${qs(params)}`),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -239,6 +297,96 @@ export function useBoardMove(params: BoardParams) {
     },
     onSettled: (_d, _e, v) => invalidateOrder(qc, v.id),
   });
+}
+
+/* --------------------------- BD -> Client Servicing handover --------------------------- */
+
+export interface HandoverDoc {
+  _id: string;
+  kind: "DOCUMENT" | "SHOP_LIST";
+  file: FileRef;
+  afterHandover?: boolean;
+  uploadedBy?: UserRef;
+  role?: string;
+  createdAt: string;
+}
+export interface HandoverState {
+  orderId: string;
+  orderNo: string;
+  assignee: UserRef | null;
+  handover: (Omit<HandoverInfo, "assignedBy"> & { assignedBy?: UserRef }) | null;
+  shopList: ShopListSummary | null;
+  documents: HandoverDoc[];
+}
+export type ShopState = "VALID" | "WARNING" | "ERROR";
+export interface HandoverShop {
+  rowNumber: number;
+  shopName?: string;
+  dealerName?: string;
+  location?: string;
+  district?: string;
+  address1?: string;
+  address2?: string;
+  pincode?: string;
+  mobile?: string;
+  contactPerson?: string;
+  width?: number;
+  height?: number;
+  unit?: string;
+  quantity?: number;
+  boardType?: string;
+  remarks?: string;
+  state: ShopState;
+  issues: string[];
+}
+
+const handoverKey = (id: string) => ["sales", "order", id, "handover"] as const;
+
+export function useHandover(id: string) {
+  return useQuery({ queryKey: handoverKey(id), queryFn: () => api<HandoverState>(`/sales/orders/${id}/handover`) });
+}
+
+export function useHandoverShops(id: string, params: { page: number; limit: number; state?: ShopState | "" }, enabled = true) {
+  return useQuery({
+    queryKey: [...handoverKey(id), "shops", params],
+    queryFn: () => apiPage<HandoverShop>(`/sales/orders/${id}/handover/shops${qs(params)}`),
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+/** Every handover change refreshes the handover tab, the order header and the order list. */
+function useHandoverMutation<V>(id: string, fn: (v: V) => Promise<HandoverState>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (data) => {
+      qc.setQueryData(handoverKey(id), data);
+      qc.invalidateQueries({ queryKey: [...handoverKey(id), "shops"] });
+      invalidateOrder(qc, id);
+    },
+  });
+}
+
+export const useUploadShopList = (id: string) =>
+  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/shops`, { method: "POST", body }));
+export const useRemoveShopList = (id: string) => useHandoverMutation(id, () => api<HandoverState>(`/sales/orders/${id}/handover/shops`, { method: "DELETE" }));
+export const useAddHandoverDocs = (id: string) =>
+  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/documents`, { method: "POST", body }));
+export const useRemoveHandoverDoc = (id: string) =>
+  useHandoverMutation(id, (docId: string) => api<HandoverState>(`/sales/orders/${id}/handover/documents/${docId}`, { method: "DELETE" }));
+export const useAssignClientServicing = (id: string) =>
+  useHandoverMutation(id, (body: { csUserId: string; note?: string }) => api<HandoverState>(`/sales/orders/${id}/handover/assign`, { method: "POST", body: JSON.stringify(body) }));
+
+/** Active Client Servicing people (handover dropdown). */
+export function useClientServicingUsers(enabled = true) {
+  return useQuery({ queryKey: ["sales", "cs-users"], queryFn: () => api<UserRef[]>("/sales/client-servicing-users"), enabled, staleTime: 5 * 60_000 });
+}
+
+/** Blank shop list in the columns the import understands. */
+export async function downloadShopTemplate() {
+  const { blob, fileName } = await apiBlob("/sales/shop-list-template");
+  saveBlob(blob, fileName ?? "shop-list-template.xlsx");
 }
 
 /** Whether a company profile email has been delivered for the order (used to warn when skipping ahead). */

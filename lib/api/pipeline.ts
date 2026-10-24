@@ -274,7 +274,7 @@ export function useApproveAll(pid: string) {
 
 /* ------------------------------- notifications ------------------------------ */
 
-export type NotificationKindKey = "activity" | "assigned" | "documents" | "imported" | "stage" | "approval" | "cancelled";
+export type NotificationKindKey = "activity" | "assigned" | "documents" | "imported" | "stage" | "approval" | "cancelled" | "order";
 
 export interface NotificationItem {
   id: string;
@@ -283,7 +283,10 @@ export interface NotificationItem {
   text: string;
   at: string;
   projectId: string;
+  /** Project code, or the order number for sales order notifications. */
   projectCode: string;
+  /** Set for sales order notifications (e.g. an order handed over to Client Servicing). */
+  orderId?: string | null;
   client: string;
   read: boolean;
 }
@@ -318,8 +321,10 @@ export function useMarkNotificationsRead() {
 
 /** Where a notification should take this person: Operations opens the task, BD opens the project drawer. */
 const OPS_TAB: Partial<Record<NotificationKindKey, string>> = { documents: "documents", imported: "work", approval: "approvals" };
-export const notificationHref = (role: string | undefined, projectId: string, kind?: NotificationKindKey) =>
-  role === "OPERATIONS" || role === "RECCE_COORDINATOR" ? `/operations/projects/${projectId}${kind && OPS_TAB[kind] ? `?tab=${OPS_TAB[kind]}` : ""}` : role === "BD" ? `/bd/dashboard?view=${projectId}` : "/dashboard";
+export const notificationHref = (role: string | undefined, projectId: string, kind?: NotificationKindKey, orderId?: string | null) =>
+  orderId
+    ? `/orders/${orderId}?tab=handover`
+    : role === "OPERATIONS" || role === "RECCE_COORDINATOR" ? `/operations/projects/${projectId}${kind && OPS_TAB[kind] ? `?tab=${OPS_TAB[kind]}` : ""}` : role === "BD" ? `/bd/dashboard?view=${projectId}` : "/dashboard";
 
 export interface NotificationLogRow {
   id: string;

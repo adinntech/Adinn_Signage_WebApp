@@ -1,8 +1,6 @@
-import { ExistingClientOrder } from "./existing-client-order";
+import { redirect } from "next/navigation";
 
-// Pages here render only after the client-side sign-in check in AppShell, so the server cannot prerender them for instant navigation.
-export const instant = false;
-
+/** Old link: orders for a registered client are now created in Order Management. */
 export default function ExistingClientPage() {
-  return <ExistingClientOrder />;
+  redirect("/orders");
 }

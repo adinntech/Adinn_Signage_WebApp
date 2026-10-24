@@ -58,7 +58,7 @@ export function NotificationBell() {
                     type="button"
                     onClick={() => {
                       if (!n.read) markOne.mutate(n.id);
-                      router.push(notificationHref(user?.role, n.projectId, n.kind));
+                      router.push(notificationHref(user?.role, n.projectId, n.kind, n.orderId));
                     }}
                     className={cn("flex w-full gap-3 px-3 py-2.5 text-left hover:bg-muted", !n.read && "bg-[#f4f8ff]")}
                   >

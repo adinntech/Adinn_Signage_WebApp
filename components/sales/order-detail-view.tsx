@@ -166,7 +166,7 @@ export function OrderDetailView({
       >
         {active === "overview" && <OrderOverview order={o} onOpenTab={select} />}
         {active === "profile" && <CompanyProfileTab orderId={o._id} />}
-        {active === "ratecard" && <RateCardStage orderId={o._id} />}
+        {active === "ratecard" && <RateCardStage orderId={o._id} withEmail />}
         {active === "approval" && <ApprovalTab orderId={o._id} />}
         {active === "comments" && <OrderComments orderId={o._id} />}
         {active === "history" && <PipelineHistory orderId={o._id} />}
