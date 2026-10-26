@@ -134,8 +134,11 @@ function DetailsDialog({ orderId, doc, onOpenChange }: { orderId: string; doc: A
   );
 }
 
-/** Screen 12: Client Approval Proof stage. */
-export function ApprovalTab({ orderId }: { orderId: string }) {
+/**
+ * Screen 12: Client Approval Proof stage. In Lead Management (`inLead`) the documents are uploaded in Client Rate
+ * Approval and the stage's own Complete button finishes the lead, so the separate "Mark Complete" is hidden.
+ */
+export function ApprovalTab({ orderId, inLead = false }: { orderId: string; inLead?: boolean }) {
   const { can } = useAuth();
   const toast = useToast();
   const q = useApproval(orderId);
@@ -152,7 +155,9 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const { order, documents, history, missing, latestRevision } = q.data;
   const done = order.approvalStatus === "COMPLETED";
-  const editable = can("sales:write") && !done && order.stage === "CLIENT_APPROVAL";
+  // Same rule as the API: a lead's own stage decides, older orders use the pipeline stage.
+  const inStage = order.lead ? order.lead.stage === "CLIENT_APPROVAL" && order.lead.status === "OPEN" : order.stage === "CLIENT_APPROVAL";
+  const editable = can("sales:write") && !done && inStage;
   const isNew = order.clientType === "NEW";
 
   // Versions of one document: walk the replaces chain back from the current one.
@@ -211,7 +216,7 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
           <ul className="space-y-2 text-sm">
             <li className="flex items-start gap-2">
               {missing.length ? <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />}
-              {isNew ? "New client: a valid Purchase Order is mandatory. Supporting documents are optional." : "Existing client: at least one written approval (PO, email, WhatsApp or other written approval)."}
+              {isNew ? "New client: the Purchase Order is mandatory. Supporting documents and photos are optional." : "Existing client: upload at least one approval document or photo (PO, email, WhatsApp, photo or supporting document)."}
             </li>
             {missing.map((m) => (
               <li key={m} className="rounded-lg bg-warning-soft px-3 py-2 text-xs font-medium text-warning">
@@ -219,7 +224,8 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
               </li>
             ))}
           </ul>
-          {can("sales:write") && !done && (
+          {inLead && !done && !missing.length && <p className="mt-3 text-xs text-success">All set: use Approve &amp; Complete Lead below.</p>}
+          {can("sales:write") && !done && !inLead && (
             <Button variant="brand" className="mt-4 w-full" disabled={!!missing.length || !editable} onClick={() => setConfirm(true)}>
               <ShieldCheck className="size-4" aria-hidden /> Mark Client Approval Complete
             </Button>
@@ -229,7 +235,7 @@ export function ApprovalTab({ orderId }: { orderId: string }) {
 
       {editable && (
         <Card className="p-5 sm:p-6">
-          <SectionTitle icon={Upload} title="Approval Document Upload" description="Supported proof: Purchase Order, Email Approval, WhatsApp Approval, Other Written Approval." />
+          <SectionTitle icon={Upload} title="Approval Document Upload" description="Purchase Order, Email / WhatsApp / other written approval, photos or supporting documents." />
           <UploadForm orderId={orderId} />
         </Card>
       )}

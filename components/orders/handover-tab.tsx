@@ -5,29 +5,40 @@ import {
   AlertTriangle,
   BadgeCheck,
   Building2,
+  Camera,
   CheckCircle2,
+  CircleAlert,
+  Copy,
   Download,
   Eye,
   FileSpreadsheet,
   FileText,
   Handshake,
   Info,
+  Loader2,
   Paperclip,
+  PhoneCall,
   RefreshCw,
+  Ruler,
   Send,
+  ShieldCheck,
   Star,
   Store,
   Trash2,
   Upload,
+  UserPlus,
   Users,
   XCircle,
 } from "lucide-react";
+import { ContactDialog } from "@/components/clients/contact-dialog";
+import { AttachmentChip } from "@/components/sales/order-comments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
+import { Input } from "@/components/ui/input";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
@@ -38,6 +49,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, formData, openFile } from "@/lib/api/files";
 import {
+  HANDOVER_TYPES,
   downloadShopTemplate,
   useAddHandoverDocs,
   useAssignClientServicing,
@@ -46,8 +58,14 @@ import {
   useHandoverShops,
   useRemoveHandoverDoc,
   useRemoveShopList,
+  useSetHandoverType,
+  useSetShopTotal,
+  useShopFiles,
   useUploadShopList,
+  useVerifyShops,
+  type HandoverShop,
   type HandoverState,
+  type HandoverType,
   type Order,
   type ShopState,
 } from "@/lib/api/sales";
@@ -57,13 +75,72 @@ import { cn } from "@/lib/utils";
 
 const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.docx,.pptx,.xlsx,.csv";
 
-/** Company and contact persons, straight from Client Management (nothing to type again). */
-function ClientSection({ order }: { order: Order }) {
+const TYPE_ICON: Record<HandoverType, typeof Store> = { ASO: PhoneCall, SHOP_DETAILS: FileSpreadsheet, SHOP_MEASUREMENT: Ruler };
+
+/** ASO / Shop Details Only / Shop + Measurement: decides what the BD shares and what is checked before handover. */
+function TypeSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
+  const toast = useToast();
+  const set = useSetHandoverType(orderId);
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionTitle icon={Handshake} title="Handover Type" description={editable ? "Choose what you hand over to Client Servicing." : "What the BD handed over."} />
+      <div role="radiogroup" aria-label="Handover type" className="grid gap-3 md:grid-cols-3">
+        {(Object.keys(HANDOVER_TYPES) as HandoverType[]).map((k) => {
+          const on = data.type === k;
+          const Icon = TYPE_ICON[k];
+          return (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              disabled={!editable || set.isPending}
+              onClick={() => !on && set.mutateAsync(k).then(() => toast(`Handover type: ${HANDOVER_TYPES[k].label}`), (e) => toast(errorMessage(e), "error"))}
+              className={cn(
+                "flex items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default",
+                on ? "border-approval bg-[#fff7ed]" : "border-border hover:bg-muted/60",
+                !editable && !on && "opacity-50",
+              )}
+            >
+              <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", on ? "bg-approval text-white" : "bg-muted text-muted-foreground")}>
+                {set.isPending && set.variables === k ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Icon className="size-5" aria-hidden />}
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  {HANDOVER_TYPES[k].label}
+                  {on && <CheckCircle2 className="size-4 text-approval" aria-hidden />}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{HANDOVER_TYPES[k].hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {editable && data.shopList && data.type && <p className="mt-3 text-xs text-muted-foreground">To change the type, remove the uploaded shop list first (it is checked by the type).</p>}
+    </Card>
+  );
+}
+
+/** Company and contact persons, straight from Client Management. New contact persons can be added here (saved on the client). */
+function ClientSection({ order, canAddContact, aso }: { order: Order; canAddContact: boolean; aso: boolean }) {
   const c = order.client;
+  const [adding, setAdding] = useState(false);
   const address = [c.address, c.city, c.state].filter(Boolean).join(", ") + (c.pincode ? ` - ${c.pincode}` : "");
   return (
     <Card className="p-5 sm:p-6">
-      <SectionTitle icon={Building2} title="Client & Contact Persons" description="Auto-filled from Client Management." />
+      <SectionTitle
+        icon={Building2}
+        title="Client & Contact Persons"
+        description={aso ? "ASO: Client Servicing calls these contacts to collect the shop details. Add anyone they should speak to." : "Auto-filled from Client Management."}
+        action={
+          canAddContact && (
+            <Button variant="brand-outline" size="sm" onClick={() => setAdding(true)}>
+              <UserPlus className="size-4" aria-hidden /> Add Contact Person
+            </Button>
+          )
+        }
+      />
+      <ContactDialog client={c} index={null} open={adding} onOpenChange={setAdding} />
       <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Client ID">
@@ -90,7 +167,7 @@ function ClientSection({ order }: { order: Order }) {
             {c.contacts.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
-                  No contact persons. Add them in Client Management.
+                  No contact persons yet.
                 </td>
               </tr>
             )}
@@ -127,8 +204,129 @@ const STATE_FILTERS: { key: ShopState | ""; label: string }[] = [
 const sizeOf = (s: { width?: number; height?: number; unit?: string; quantity?: number }) =>
   s.width && s.height ? `${s.width} × ${s.height} ${s.unit ?? "ft"}${s.quantity && s.quantity > 1 ? ` × ${s.quantity}` : ""}` : "-";
 
-/** Optional shop list: template, upload (parsed with the project site import rules), summary and the rows. */
+/** Total Shops typed by the BD vs the rows in the Excel; Verify locks in that they match. */
+function VerifyPanel({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
+  const toast = useToast();
+  const setTotal = useSetShopTotal(orderId);
+  const verify = useVerifyShops(orderId);
+  const [total, setTotalText] = useState(data.declaredShopTotal ? String(data.declaredShopTotal) : "");
+  const excel = data.shopList?.total ?? null;
+  const declared = data.declaredShopTotal;
+  const match = declared !== null && excel !== null && declared === excel;
+  const dirty = total !== (declared ? String(declared) : "");
+
+  const save = () => {
+    const n = Number(total);
+    if (!Number.isInteger(n) || n < 1) return toast("Enter the total number of shops", "error");
+    setTotal.mutateAsync(n).then(() => toast("Total Shops saved"), (e) => toast(errorMessage(e), "error"));
+  };
+
+  return (
+    <div className={cn("rounded-xl border-2 p-4", data.verified ? "border-success/40 bg-success-soft/40" : match ? "border-brand/30 bg-brand-soft/30" : "border-warning/40 bg-warning-soft/40")}>
+      <div className="flex flex-wrap items-end gap-4">
+        <Field label="Total Shops" htmlFor="ho-total" hint="As told by the client" className="w-44">
+          <Input
+            id="ho-total"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="e.g. 50"
+            disabled={!editable}
+            value={total}
+            onChange={(e) => setTotalText(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && dirty && save()}
+          />
+        </Field>
+        {editable && dirty && (
+          <Button variant="brand-outline" onClick={save} loading={setTotal.isPending}>
+            Save Total
+          </Button>
+        )}
+        <div className="flex items-center gap-3 text-sm">
+          <span className="rounded-lg bg-surface px-3 py-2 shadow-soft">
+            Entered <b className="tabular-nums">{declared ?? "-"}</b>
+          </span>
+          <span className={cn("font-bold", match ? "text-success" : "text-warning")}>{match ? "=" : "≠"}</span>
+          <span className="rounded-lg bg-surface px-3 py-2 shadow-soft">
+            In Excel <b className="tabular-nums">{excel ?? "-"}</b>
+          </span>
+        </div>
+        <div className="ml-auto">
+          {data.verified ? (
+            <Badge tone="success">
+              <ShieldCheck className="size-3.5" aria-hidden /> Verified {formatDate(data.verified.at)}
+              {data.verified.by ? ` by ${data.verified.by}` : ""}
+            </Badge>
+          ) : (
+            editable && (
+              <Button
+                variant="brand"
+                disabled={!match || dirty}
+                loading={verify.isPending}
+                title={!match ? "Total Shops and the Excel must match" : undefined}
+                onClick={() => verify.mutateAsync(undefined).then(() => toast("Shop list verified"), (e) => toast(errorMessage(e), "error"))}
+              >
+                <ShieldCheck className="size-4" aria-hidden /> Verify Shop List
+              </Button>
+            )
+          )}
+        </div>
+      </div>
+      {!match && declared !== null && excel !== null && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+          <CircleAlert className="size-3.5" aria-hidden /> The Excel has {excel} shop{excel === 1 ? "" : "s"} but {declared} {declared === 1 ? "was" : "were"} entered. Correct the count or replace the file.
+        </p>
+      )}
+      {data.shopList?.duplicates ? (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+          <Copy className="size-3.5" aria-hidden /> {data.shopList.duplicates} duplicate row{data.shopList.duplicates === 1 ? "" : "s"} in the Excel (marked below). They still count as shops; remove them from the file if they are mistakes.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Shop + Measurement: the client's photos / documents for one shop. */
+function RowFiles({ orderId, shop, editable }: { orderId: string; shop: HandoverShop; editable: boolean }) {
+  const toast = useToast();
+  const { add, remove } = useShopFiles(orderId);
+  const busy = add.isPending && add.variables?.row === shop.rowNumber;
+  return (
+    <div className="flex min-w-48 flex-wrap items-center gap-1.5">
+      {(shop.attachments ?? []).map((a) => (
+        <AttachmentChip
+          key={a.fileId}
+          file={a}
+          source={{ orderId }}
+          onRemove={editable ? () => remove.mutateAsync({ row: shop.rowNumber, fileId: a.fileId }).then(() => toast("File removed"), (e) => toast(errorMessage(e), "error")) : undefined}
+        />
+      ))}
+      {editable && (
+        // relative: keeps the visually hidden input inside this label (see FileUploader).
+        <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-lg border border-dashed border-brand/40 px-2 py-1 text-xs font-medium text-brand hover:bg-brand-soft">
+          {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Camera className="size-3.5" aria-hidden />} Add
+          <input
+            type="file"
+            multiple
+            accept=".jpg,.jpeg,.png,.webp,.pdf,.docx"
+            className="sr-only"
+            aria-label={`Add photos or documents for row ${shop.rowNumber}`}
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              if (!files.length) return;
+              add.mutateAsync({ row: shop.rowNumber, body: formData(files) }).then(() => toast(`${files.length} file${files.length === 1 ? "" : "s"} added to row ${shop.rowNumber}`), (err) => toast(errorMessage(err), "error"));
+            }}
+          />
+        </label>
+      )}
+      {!editable && !(shop.attachments ?? []).length && <span className="text-xs text-muted-foreground">-</span>}
+    </div>
+  );
+}
+
+/** Shop list: template, upload (parsed with the project site import rules), Total Shops verification, summary and the rows. */
 function ShopSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
+  const measurement = data.type === "SHOP_MEASUREMENT";
   const toast = useToast();
   const [file, setFile] = useState<File[]>([]);
   const [state, setState] = useState<ShopState | "">("");
@@ -154,7 +352,14 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
 
   const uploader = editable && (
     <div className="space-y-3">
-      <FileUploader id="ho-shop-file" files={file} onChange={setFile} accept=".xlsx,.csv" hint="Excel (.xlsx) or CSV. Columns are matched automatically, like the project site import." compact={!!list} />
+      <FileUploader
+        id="ho-shop-file"
+        files={file}
+        onChange={setFile}
+        accept=".xlsx,.csv"
+        hint={`Excel (.xlsx) or CSV, matched like the project site import.${measurement ? " Width and Height (or Size) are required." : ""}${list && data.shopFiles ? " Replacing removes the shop photos already added." : ""}`}
+        compact={!!list}
+      />
       <div className="flex flex-wrap gap-2">
         <Button variant="brand" onClick={doUpload} disabled={!file[0]} loading={upload.isPending}>
           <Upload className="size-4" aria-hidden /> {list ? "Replace Shop List" : "Upload Shop List"}
@@ -170,8 +375,8 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
     <Card className="p-5 sm:p-6">
       <SectionTitle
         icon={Store}
-        title="Shop Details"
-        description="Optional. Skip it for ASO orders where the shop count is not known yet."
+        title={measurement ? "Shop Details + Measurement" : "Shop Details"}
+        description={measurement ? "Shop list with sizes. Add the client's photos and documents to each shop." : "The client's shop list. Enter the Total Shops and verify the count."}
         action={
           list && (
             <div className="flex flex-wrap gap-2">
@@ -189,18 +394,24 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
       />
       {!list ? (
         editable ? (
-          uploader
+          <div className="space-y-4">
+            <VerifyPanel key={`none-${data.declaredShopTotal}`} orderId={orderId} data={data} editable={editable} />
+            {uploader}
+          </div>
         ) : (
           <EmptyState icon={Store} title="No shop list" description="The BD did not share a shop list for this order." />
         )
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-4">
+          <VerifyPanel key={`${list.fileId}-${data.declaredShopTotal}`} orderId={orderId} data={data} editable={editable} />
+          <div className={cn("grid gap-3 sm:grid-cols-3", measurement ? "xl:grid-cols-6" : "xl:grid-cols-5")}>
             {[
               { label: "Total Shops", value: list.total, icon: Store, tone: "bg-brand-soft text-brand" },
               { label: "Valid", value: list.valid, icon: CheckCircle2, tone: "bg-success-soft text-success" },
               { label: "With Warnings", value: list.warning, icon: AlertTriangle, tone: "bg-warning-soft text-warning" },
               { label: "With Errors", value: list.error, icon: XCircle, tone: "bg-danger-soft text-danger" },
+              { label: "Duplicates", value: list.duplicates ?? 0, icon: Copy, tone: "bg-warning-soft text-warning" },
+              ...(measurement ? [{ label: "Shops with Photos", value: data.shopsWithFiles, icon: Camera, tone: "bg-[#fff7ed] text-approval" }] : []),
             ].map((k) => (
               <div key={k.label} className="flex items-center gap-3 rounded-xl border border-border bg-background p-3">
                 <span className={cn("flex size-9 items-center justify-center rounded-lg", k.tone)}>
@@ -256,12 +467,13 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
                       <th className="px-3 py-2.5">Mobile</th>
                       <th className="px-3 py-2.5">Size</th>
                       <th className="px-3 py-2.5">Status</th>
+                      {measurement && <th className="px-3 py-2.5">Photos &amp; Documents</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {rows.data?.data.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={measurement ? 7 : 6} className="px-3 py-6 text-center text-muted-foreground">
                           No shops in this filter.
                         </td>
                       </tr>
@@ -289,6 +501,11 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
                             </ul>
                           )}
                         </td>
+                        {measurement && (
+                          <td className="px-3 py-2.5">
+                            <RowFiles orderId={orderId} shop={s} editable={editable} />
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -431,10 +648,20 @@ function AssignSection({ orderId, data, order }: { orderId: string; data: Handov
     .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
     .map((u) => ({ value: u._id, label: u.name, sublabel: [u.email, u.phone].filter(Boolean).join(" · ") }));
   const docs = data.documents.filter((d) => d.kind === "DOCUMENT").length;
+  const ready = data.missing.length === 0;
 
   return (
     <Card className="border-brand/30 p-5 sm:p-6">
       <SectionTitle icon={Handshake} title="Assign to Client Servicing" description="After handover, Client Servicing handles this client. It cannot be reassigned." />
+      {!ready && (
+        <ul className="mb-4 space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm">
+          {data.missing.map((m) => (
+            <li key={m} className="flex items-center gap-2">
+              <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden /> {m}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         <Field label="Client Servicing Person" htmlFor="ho-cs" required error={error}>
           <SearchSelect
@@ -461,9 +688,11 @@ function AssignSection({ orderId, data, order }: { orderId: string; data: Handov
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Info className="size-3.5" aria-hidden /> Shares the client, {order.client.contacts.length} contact person{order.client.contacts.length === 1 ? "" : "s"}, {data.shopList ? `${data.shopList.total} shops` : "no shop list"} and {docs} document{docs === 1 ? "" : "s"}.
+          <Info className="size-3.5" aria-hidden /> {data.type ? HANDOVER_TYPES[data.type].label : "No type chosen"}: the client, {order.client.contacts.length} contact person{order.client.contacts.length === 1 ? "" : "s"}
+          {data.type !== "ASO" && `, ${data.shopList ? `${data.shopList.total} shops` : "no shop list"}`}
+          {data.type === "SHOP_MEASUREMENT" && `, ${data.shopFiles} shop photo${data.shopFiles === 1 ? "" : "s"}/document${data.shopFiles === 1 ? "" : "s"}`} and {docs} document{docs === 1 ? "" : "s"}.
         </p>
-        <Button variant="brand" onClick={() => (cs ? setConfirm(true) : setError("Choose the Client Servicing person"))}>
+        <Button variant="brand" disabled={!ready} onClick={() => (cs ? setConfirm(true) : setError("Choose the Client Servicing person"))}>
           <Send className="size-4" aria-hidden /> Assign to Client Servicing
         </Button>
       </div>
@@ -500,8 +729,8 @@ function StatusBanner({ data }: { data: HandoverState }) {
       <div className="flex items-start gap-3 rounded-xl border border-brand/20 bg-brand-soft/50 px-4 py-3 text-sm">
         <Info className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
         <p>
-          <b>Not handed over yet.</b> Check the client details, add the shop list and documents if you have them (both optional), then assign the order to Client
-          Servicing.
+          <b>Not handed over yet.</b> Choose the handover type, complete what it needs (contacts for ASO; a verified shop list for the shop types), add any
+          documents, then assign the order to Client Servicing.
         </p>
       </div>
     );
@@ -549,13 +778,22 @@ export function HandoverTab({ order }: { order: Order }) {
   return (
     <div className="space-y-4">
       <StatusBanner data={data} />
-      <ClientSection order={order} />
-      <ShopSection orderId={order._id} data={data} editable={canWrite && open} />
+      <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
+      <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.type === "ASO"} />
+      {data.type === "ASO" && data.shopList && open && (
+        <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+          <AlertTriangle className="size-4" aria-hidden /> A shop list was uploaded earlier. ASO hands over without one: remove it below, or choose a shop type.
+        </p>
+      )}
+      {/* Shop types always show the list; otherwise it is shown only when one exists (older orders, or one to remove for ASO). */}
+      {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || data.shopList) && (
+        <ShopSection orderId={order._id} data={data} editable={canWrite && open} />
+      )}
       <DocumentsSection orderId={order._id} data={data} canAdd={canWrite} canDelete={canWrite && open} />
       {canWrite && open && <AssignSection orderId={order._id} data={data} order={order} />}
       {!open && canWrite && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <RefreshCw className="size-3.5" aria-hidden /> The rate card stays with you: keep negotiating and download new PDFs from the Rate Card tab.
+          <RefreshCw className="size-3.5" aria-hidden /> The rate card stays with you: keep negotiating and download new PDFs in Lead Management.
         </p>
       )}
     </div>

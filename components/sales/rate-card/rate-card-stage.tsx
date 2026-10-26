@@ -166,16 +166,19 @@ function Editor({ data, orderId, withEmail }: { data: QuotationState; orderId: s
               <p className="text-xs text-muted-foreground">Update client details, signage items, pricing and terms. Changes reflect in the PDF preview.</p>
             </div>
             {!data.editable ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground" title={data.lockedReason ?? undefined}>
                 <Lock className="size-3.5" aria-hidden /> Locked
               </span>
-            ) : data.latest ? (
+            ) : data.latest && data.leadStage !== "RATE_CARD" ? (
               <span className="rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">Negotiation in progress · {data.latest.label}</span>
+            ) : data.latest ? (
+              <span className="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand">Saved · {data.latest.label}</span>
             ) : (
               <span className="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand">Not saved yet</span>
             )}
           </div>
 
+          {data.lockedReason && <p className="-mt-2 mb-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">{data.lockedReason}</p>}
           {/* min-w-0: a fieldset is min-content wide by default, which pushed the fields past the card edge. */}
           <fieldset disabled={!editable} className="min-w-0 space-y-6">
             <section>

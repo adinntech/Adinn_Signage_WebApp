@@ -33,7 +33,8 @@ export function ConfirmDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={title}
-      description={description}
+      // Without custom content the description is the body; showing it in the header too would repeat it.
+      description={children ? description : undefined}
       className="max-w-md"
       footer={
         <>

@@ -49,8 +49,17 @@ export interface ShopListSummary {
   valid: number;
   warning: number;
   error: number;
+  /** Rows repeating an earlier row of the same file. */
+  duplicates?: number;
   uploadedAt: string;
 }
+/** What the BD hands to Client Servicing. */
+export const HANDOVER_TYPES = {
+  ASO: { label: "ASO", hint: "Client and contact persons only. Client Servicing calls the client and collects the shop details." },
+  SHOP_DETAILS: { label: "Shop Details Only", hint: "Upload the client's shop list (Excel), enter the Total Shops and verify the count." },
+  SHOP_MEASUREMENT: { label: "Shop + Measurement", hint: "Shop list with sizes, plus photos and documents for each shop the client shared." },
+} as const;
+export type HandoverType = keyof typeof HANDOVER_TYPES;
 export interface Order extends Omit<OrderCard, "client"> {
   client: Client;
   csAssignee?: UserRef | null;
@@ -61,6 +70,10 @@ export interface Order extends Omit<OrderCard, "client"> {
   approvalCompletedAt?: string;
   approvalCompletedBy?: UserRef | null;
   latestRevision: number | null;
+  /** PDF of the latest saved rate card revision. */
+  rateCardPdf?: FileRef | null;
+  /** Lead Management state (null until the order is taken up as a lead). */
+  lead?: { stage: string; status: "OPEN" | "CLOSED" | "COMPLETED" } | null;
   updatedAt: string;
 }
 export interface BoardColumn {
@@ -97,7 +110,7 @@ export interface OrderComment {
 export type DeliveryStatus = "SENT" | "FAILED" | "SKIPPED";
 export interface SentEmail {
   _id: string;
-  kind: "COMPANY_PROFILE" | "RATE_CARD";
+  kind: "COMPANY_PROFILE" | "RATE_CARD" | "ONBOARDING";
   from: string;
   to: string[];
   cc: string[];
@@ -134,6 +147,8 @@ export const APPROVAL_DOC_TYPES = {
   EMAIL_APPROVAL: "Email Approval",
   WHATSAPP_APPROVAL: "WhatsApp Approval",
   OTHER_WRITTEN: "Other Written Approval",
+  PHOTO: "Photo",
+  SUPPORTING_DOCUMENT: "Supporting Document",
 } as const;
 export type ApprovalDocType = keyof typeof APPROVAL_DOC_TYPES;
 export interface ApprovalDoc {
@@ -158,6 +173,7 @@ export interface ApprovalOverview {
 }
 export interface RegisterInput {
   name: string;
+  clientName?: string;
   email: string;
   industry?: string;
   address?: string;
@@ -178,7 +194,7 @@ interface CreatedOrder {
 export interface OrderRow {
   _id: string;
   orderNo: string;
-  client: Pick<Client, "_id" | "name" | "clientNo" | "city">;
+  client: Pick<Client, "_id" | "name" | "clientName" | "clientNo" | "city">;
   /** New / Existing client flag chosen when the order was created. */
   clientType: ClientType;
   owner?: UserRef | null;
@@ -315,8 +331,16 @@ export interface HandoverState {
   orderNo: string;
   assignee: UserRef | null;
   handover: (Omit<HandoverInfo, "assignedBy"> & { assignedBy?: UserRef }) | null;
+  type: HandoverType | null;
   shopList: ShopListSummary | null;
+  /** Total Shops typed by the BD (must match the list to verify). */
+  declaredShopTotal: number | null;
+  verified: { at: string; by: string | null } | null;
+  shopsWithFiles: number;
+  shopFiles: number;
   documents: HandoverDoc[];
+  /** Still needed before the order can be handed over (from the server). */
+  missing: string[];
 }
 export type ShopState = "VALID" | "WARNING" | "ERROR";
 export interface HandoverShop {
@@ -338,6 +362,8 @@ export interface HandoverShop {
   remarks?: string;
   state: ShopState;
   issues: string[];
+  /** Shop + Measurement: photos / documents for this shop. */
+  attachments?: FileRef[];
 }
 
 const handoverKey = (id: string) => ["sales", "order", id, "handover"] as const;
@@ -375,6 +401,29 @@ export const useAddHandoverDocs = (id: string) =>
   useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/documents`, { method: "POST", body }));
 export const useRemoveHandoverDoc = (id: string) =>
   useHandoverMutation(id, (docId: string) => api<HandoverState>(`/sales/orders/${id}/handover/documents/${docId}`, { method: "DELETE" }));
+export const useSetHandoverType = (id: string) =>
+  useHandoverMutation(id, (type: HandoverType) => api<HandoverState>(`/sales/orders/${id}/handover/type`, { method: "PATCH", body: JSON.stringify({ type }) }));
+export const useSetShopTotal = (id: string) =>
+  useHandoverMutation(id, (total: number) => api<HandoverState>(`/sales/orders/${id}/handover/shop-total`, { method: "PATCH", body: JSON.stringify({ total }) }));
+export const useVerifyShops = (id: string) => useHandoverMutation(id, () => api<HandoverState>(`/sales/orders/${id}/handover/verify`, { method: "POST", body: "{}" }));
+
+/** Photos / documents of one shop row (Shop + Measurement). Refreshes the rows and the handover counts. */
+export function useShopFiles(id: string) {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: handoverKey(id) });
+  };
+  const add = useMutation({
+    mutationFn: ({ row, body }: { row: number; body: FormData }) => api<unknown>(`/sales/orders/${id}/handover/shops/${row}/files`, { method: "POST", body }),
+    onSuccess: refresh,
+  });
+  const remove = useMutation({
+    mutationFn: ({ row, fileId }: { row: number; fileId: string }) => api<unknown>(`/sales/orders/${id}/handover/shops/${row}/files/${fileId}`, { method: "DELETE" }),
+    onSuccess: refresh,
+  });
+  return { add, remove };
+}
+
 export const useAssignClientServicing = (id: string) =>
   useHandoverMutation(id, (body: { csUserId: string; note?: string }) => api<HandoverState>(`/sales/orders/${id}/handover/assign`, { method: "POST", body: JSON.stringify(body) }));
 
@@ -457,6 +506,12 @@ export function useResendEmail(id: string) {
   });
 }
 
+/** Approval proof changes the approval tab and the lead's Client Rate Approval checklist. */
+function refreshApproval(qc: ReturnType<typeof useQueryClient>, id: string) {
+  qc.invalidateQueries({ queryKey: ["sales", "order", id, "approval"] });
+  qc.invalidateQueries({ queryKey: ["leads", "lead", id], exact: true });
+}
+
 export function useApproval(id: string) {
   return useQuery({ queryKey: ["sales", "order", id, "approval"], queryFn: () => api<ApprovalOverview>(`/sales/orders/${id}/approval`) });
 }
@@ -465,7 +520,7 @@ export function useUploadApproval(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: FormData) => api<ApprovalDoc>(`/sales/orders/${id}/approval/documents`, { method: "POST", body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "order", id, "approval"] }),
+    onSuccess: () => refreshApproval(qc, id),
   });
 }
 
@@ -474,7 +529,7 @@ export function useUpdateApproval(id: string) {
   return useMutation({
     mutationFn: ({ docId, ...body }: { docId: string; approvalDate?: string | null; remarks?: string | null }) =>
       api<ApprovalDoc>(`/sales/approval/documents/${docId}`, { method: "PATCH", body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "order", id, "approval"] }),
+    onSuccess: () => refreshApproval(qc, id),
   });
 }
 
@@ -483,7 +538,7 @@ export function useDeleteApproval(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (docId: string) => api<ApprovalOverview>(`/sales/approval/documents/${docId}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "order", id, "approval"] }),
+    onSuccess: () => refreshApproval(qc, id),
   });
 }
 

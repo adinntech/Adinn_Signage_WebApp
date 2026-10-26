@@ -14,6 +14,7 @@ import {
   Settings,
   ClipboardList,
   ReceiptIndianRupee,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 
@@ -54,6 +55,7 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard", permission: "dashboard:view" },
+  { label: "Lead Management", icon: Waypoints, href: "/leads", permission: "sales:write" },
   { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
   { label: "Order Management", icon: ClipboardList, href: "/orders", permission: "sales:read" },
   { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
@@ -147,6 +149,7 @@ export const WORKFLOW = [
 export const ROLE_NAV: Record<string, NavItem[]> = {
   BD: [
     { label: "Dashboard", icon: LayoutDashboard, href: "/bd/dashboard", permission: "dashboard:view" },
+    { label: "Lead Management", icon: Waypoints, href: "/leads", permission: "sales:write" },
     { label: "Create Project", icon: FolderKanban, href: "/bd/projects/new", permission: "projects:write" },
     { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
     { label: "Order Management", icon: ClipboardList, href: "/orders", permission: "sales:read" },

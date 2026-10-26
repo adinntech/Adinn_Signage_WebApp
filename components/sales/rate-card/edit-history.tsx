@@ -65,7 +65,10 @@ export function EditHistory({ orderId, revisions }: { orderId: string; revisions
           >
             <FileText className="size-4 text-brand" aria-hidden />
             <span className="min-w-0">
-              <span className="block text-sm font-bold">{r.label}</span>
+              <span className="flex items-center gap-1.5 text-sm font-bold">
+                {r.label}
+                {r.phase === "NEGOTIATION" && <span className="rounded-full bg-[#fff1f2] px-1.5 py-0.5 text-[10px] font-semibold text-[#e11d48]">Negotiation</span>}
+              </span>
               <span className="block truncate text-xs text-muted-foreground">
                 {formatDateTime(r.createdAt)} · {r.editedBy?.name}
               </span>

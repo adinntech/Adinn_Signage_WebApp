@@ -99,6 +99,8 @@ export interface Revision {
   regards?: { name?: string; designation?: string; mobile?: string; email?: string };
   changes: RevisionChange[];
   pdf?: FileRef;
+  /** Saved while preparing the rate card or during negotiation (Lead Management). */
+  phase?: "PREPARATION" | "NEGOTIATION";
   editedBy?: { _id: string; name: string; role?: string };
   createdAt: string;
 }
@@ -114,6 +116,10 @@ export interface QuotationState {
   orderNo: string;
   stage: string;
   editable: boolean;
+  /** Why it cannot be edited now (null when editable). */
+  lockedReason: string | null;
+  /** Lead Management stage of the order, or null outside Lead Management. */
+  leadStage: string | null;
   quotationRef: string;
   company: CompanyInfo;
   clientName: string;
@@ -163,6 +169,8 @@ export function useSaveQuotation(orderId: string) {
     mutationFn: (body: QuotationValues) => api<{ saved: boolean; revision: Revision }>(`/sales/orders/${orderId}/rate-card`, { method: "PUT", body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sales", "order", orderId] });
+      // The lead's checklist, rate card badge and negotiation rounds change with every save.
+      qc.invalidateQueries({ queryKey: ["leads", "lead", orderId], exact: true });
     },
   });
 }

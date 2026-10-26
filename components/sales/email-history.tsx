@@ -30,7 +30,7 @@ export function DeliveryBadge({ e }: { e: Pick<SentEmail, "status" | "error"> })
   );
 }
 
-/** Sent history for one order and email kind (company profile or rate card). */
+/** Sent history for one order and email kind (company profile, rate card or customer onboarding form). */
 export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: string; kind: SentEmail["kind"]; allowResend?: boolean }) {
   const { can } = useAuth();
   const toast = useToast();
@@ -46,7 +46,7 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
   return (
     <>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Sent By</th>
@@ -67,11 +67,11 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
                   {e.cc.length > 0 && <span className="block text-xs text-muted-foreground">CC: {e.cc.join(", ")}</span>}
                   {e.from && <span className="block text-xs text-muted-foreground">From: {e.from}</span>}
                 </td>
-                <td className="max-w-64 px-4 py-3">
+                <td className="max-w-48 px-4 py-3">
                   <span className="line-clamp-2">{e.subject}</span>
                   {e.resentFrom && <span className="text-xs text-muted-foreground">Resent</span>}
                 </td>
-                <td className="px-4 py-3">
+                <td className="max-w-56 px-4 py-3">
                   {kind === "RATE_CARD" && e.revisionLabel && <Badge tone="info" className="mb-1">{e.revisionLabel}</Badge>}
                   {e.attachments.map((a) => (
                     <div key={a.fileId}>
@@ -82,16 +82,16 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
                 <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTime(e.sentAt)}</td>
                 <td className="px-4 py-3">
                   <DeliveryBadge e={e} />
-                  {e.error && <span className="mt-1 block max-w-48 text-xs text-muted-foreground">{e.error}</span>}
+                  {e.error && <span className="mt-1 line-clamp-3 max-w-40 text-xs text-muted-foreground" title={e.error}>{e.error}</span>}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setView(e)}>
-                      <Eye className="size-4" aria-hidden /> View
+                    <Button variant="ghost" size="sm" aria-label="View email" title="View" onClick={() => setView(e)}>
+                      <Eye className="size-4" aria-hidden /> <span className="hidden 2xl:inline">View</span>
                     </Button>
                     {allowResend && can("sales:write") && (
-                      <Button variant="ghost" size="sm" onClick={() => setAgain(e)}>
-                        <RotateCw className="size-4" aria-hidden /> Resend
+                      <Button variant="ghost" size="sm" aria-label="Resend email" title="Resend" onClick={() => setAgain(e)}>
+                        <RotateCw className="size-4" aria-hidden /> <span className="hidden 2xl:inline">Resend</span>
                       </Button>
                     )}
                   </div>
@@ -140,7 +140,7 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
           if (!again) return;
           try {
             const r = await resend.mutateAsync(again._id);
-            toast(r.status === "SENT" ? "Email resent" : r.status === "SKIPPED" ? "Recorded, but not sent: SMTP is not configured" : `Resend failed: ${r.error}`, r.status === "SENT" ? "success" : "error");
+            toast(r.status === "SENT" ? "Email resent" : r.status === "SKIPPED" ? `Recorded, but not sent: ${r.error ?? "email is not configured"}` : `Resend failed: ${r.error}`, r.status === "SENT" ? "success" : "error");
             setAgain(null);
           } catch (e) {
             toast(errorMessage(e), "error");

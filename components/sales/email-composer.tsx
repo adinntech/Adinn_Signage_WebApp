@@ -42,6 +42,7 @@ export function EmailComposer({
   showNotes,
   onSend,
   sending,
+  notConfigured = "Email delivery is not configured on the server (SMTP). Sending will be recorded as \"Not sent\" until it is set up.",
 }: {
   idPrefix: string;
   orderId: string;
@@ -54,6 +55,8 @@ export function EmailComposer({
   showNotes?: boolean;
   onSend: (v: EmailInput) => Promise<SentEmail>;
   sending: boolean;
+  /** Warning shown while the mail transport for this email is not configured. */
+  notConfigured?: string;
 }) {
   const toast = useToast();
   const [v, setV] = useState(draft);
@@ -76,7 +79,7 @@ export function EmailComposer({
       const r = await onSend({ to: v.to, cc: v.cc, subject: v.subject.trim(), body, requestKey: requestKey.current });
       requestKey.current = newRequestKey();
       if (r.status === "SENT") toast(`Email sent to ${r.to.join(", ")}`);
-      else if (r.status === "SKIPPED") toast("Saved in history, but not sent: email (SMTP) is not configured on the server.", "error");
+      else if (r.status === "SKIPPED") toast(`Saved in history, but not sent: ${r.error ?? "email is not configured on the server"}.`, "error");
       else toast(`Sending failed: ${r.error ?? "unknown error"}. It is recorded in history.`, "error");
       if (r.status === "SENT") setNotes("");
     } catch (err) {
@@ -90,7 +93,7 @@ export function EmailComposer({
       {!mailEnabled && (
         <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-          Email delivery is not configured on the server (SMTP). Sending will be recorded as &quot;Not sent&quot; until it is set up.
+          {notConfigured}
         </p>
       )}
       <div className="grid gap-4 md:grid-cols-2">

@@ -4,6 +4,7 @@
  */
 export const ROLE_AREAS: { prefix: string; label: string; roles: string[] }[] = [
   { prefix: "/bd", label: "BD / Client Servicing", roles: ["BD", "SUPER_ADMIN"] },
+  { prefix: "/leads", label: "Lead Management", roles: ["BD", "SUPER_ADMIN"] },
   { prefix: "/client-servicing", label: "Client Servicing", roles: ["CLIENT_SERVICING", "SUPER_ADMIN"] },
   { prefix: "/operations", label: "Operations", roles: ["OPERATIONS", "RECCE_COORDINATOR", "SUPER_ADMIN"] },
   { prefix: "/finance", label: "Accounts", roles: ["FINANCE", "SUPER_ADMIN"] },

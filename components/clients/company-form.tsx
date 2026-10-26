@@ -49,6 +49,7 @@ const contactSchema = z.object({
 
 export const companySchema = z.object({
   name: z.string().trim().min(2, "Enter the company name").max(120),
+  clientName: z.string().trim().max(120),
   email: z.string().trim().min(1, "Enter the company email").refine(isEmail, "Enter a valid email address"),
   industry: z.string().trim().max(120),
   address: z.string().trim().max(500),
@@ -73,7 +74,7 @@ export const companySchema = z.object({
 export type CompanyValues = z.infer<typeof companySchema>;
 
 const EMPTY_CONTACT = (primary: boolean): CompanyValues["contacts"][number] => ({ name: "", designation: "", phone: "", alternatePhone: "", email: "", alternateEmail: "", isPrimary: primary });
-export const EMPTY_COMPANY: CompanyValues = { name: "", email: "", industry: "", address: "", city: "", district: "", state: "", pincode: "", gstin: "", contacts: [EMPTY_CONTACT(true)] };
+export const EMPTY_COMPANY: CompanyValues = { name: "", clientName: "", email: "", industry: "", address: "", city: "", district: "", state: "", pincode: "", gstin: "", contacts: [EMPTY_CONTACT(true)] };
 
 export const contactToForm = (k: ClientContact) => ({
   name: k.name,
@@ -86,6 +87,7 @@ export const contactToForm = (k: ClientContact) => ({
 });
 export const companyToForm = (c: Client): CompanyValues => ({
   name: c.name,
+  clientName: c.clientName ?? "",
   email: c.email ?? "",
   industry: c.industry ?? "",
   address: c.address ?? "",
@@ -110,6 +112,7 @@ export const contactToApi = (k: CompanyValues["contacts"][number]): ClientContac
 /** Form values -> API body (blank optional fields omitted). */
 export const companyToApi = (v: CompanyValues) => ({
   name: v.name,
+  clientName: opt(v.clientName),
   email: v.email.toLowerCase(),
   industry: opt(v.industry),
   address: opt(v.address),
@@ -185,11 +188,14 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
           <Field label="Company Name" htmlFor={id("name")} required error={e("name")} className="sm:col-span-2">
             <Input id={id("name")} placeholder="e.g. Acme Retail Pvt. Ltd." aria-invalid={!!e("name")} {...register("name")} />
           </Field>
-          <Field label="Company Email Address" htmlFor={id("email")} required error={e("email")}>
+          <Field label="Client Name" htmlFor={id("client-name")} error={e("clientName")} className="sm:col-span-2">
+            <Input id={id("client-name")} maxLength={120} placeholder="Enter client name (optional)" aria-invalid={!!e("clientName")} {...register("clientName")} />
+          </Field>
+          <Field label="Company Email Address" htmlFor={id("email")} required error={e("email")} className="xl:col-span-2">
             <Input id={id("email")} type="email" placeholder="e.g. info@company.com" aria-invalid={!!e("email")} {...register("email")} />
           </Field>
           {/* id avoids address/company words so Chrome does not offer autofill on this picker. */}
-          <Field label="Industry / Business Category" htmlFor={id("biz-category")} error={e("industry")}>
+          <Field label="Industry / Business Category" htmlFor={id("biz-category")} error={e("industry")} className="xl:col-span-2">
             <Controller control={control} name="industry" render={({ field }) => <IndustrySelect id={id("biz-category")} value={field.value} onChange={(v) => field.onChange(v)} invalid={!!e("industry")} />} />
           </Field>
           <Field label="Company Address" htmlFor={id("address")} error={e("address")} className="sm:col-span-2 xl:col-span-4">

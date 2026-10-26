@@ -19,6 +19,8 @@ export interface Client {
   code: string;
   /** BD CRM Client ID, e.g. CLI-0001. */
   clientNo?: string;
+  /** Optional client name typed by BD, shown alongside the company name. */
+  clientName?: string;
   email?: string;
   industry?: string;
   contacts: ClientContact[];
@@ -45,6 +47,7 @@ export interface ClientInput {
   name: string;
   code?: string;
   contacts: ClientContact[];
+  clientName?: string;
   email?: string;
   industry?: string;
   address?: string;
@@ -116,7 +119,12 @@ export function useSaveClient() {
       }
       return api<Client>("/clients", { method: "POST", body: JSON.stringify(body) });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      // Orders and leads show the client's details and contacts.
+      qc.invalidateQueries({ queryKey: ["sales", "order"] });
+      qc.invalidateQueries({ queryKey: ["leads", "lead"] });
+    },
   });
 }
 

@@ -120,6 +120,7 @@ export function ClientsView() {
                         <Link href={`/clients/${c._id}`} className="hover:text-brand hover:underline">
                           {c.name}
                         </Link>
+                        {c.clientName && <span className="block text-xs font-normal text-muted-foreground">{c.clientName}</span>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{c.email ?? "-"}</td>
                       <td className="px-4 py-3">{p?.name ?? "-"}</td>
