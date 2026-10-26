@@ -29,13 +29,14 @@ export function levelsFor(role: string | undefined, can: (p?: string) => boolean
  * Independent two-level approval of shop details and board measurements before the recce:
  * Operations approves its own level, BD approves theirs. Used on the Operations project page and in the BD drawer.
  */
-export function ShopApprovals({ projectId, compact, readOnly }: { projectId: string; compact?: boolean; readOnly?: boolean }) {
+export function ShopApprovals({ projectId, compact, readOnly, hideSummary, mode = "measurement" }: { projectId: string; compact?: boolean; readOnly?: boolean; /** The caller shows its own approval cards. */ hideSummary?: boolean; /** "details": only Operations verifies the shop details (no board column, no BD level). */ mode?: "measurement" | "details" }) {
+  const details = mode === "details";
   const { user, can } = useAuth();
   const toast = useToast();
   const sites = useApprovalSites(projectId);
   const set = useSetApproval(projectId);
   const all = useApproveAll(projectId);
-  const mine = readOnly ? [] : levelsFor(user?.role, can);
+  const mine = readOnly ? [] : levelsFor(user?.role, can).filter((l) => !details || l === "ops");
   const [correcting, setCorrecting] = useState<{ site: ApprovalSite; level: ApprovalLevel } | null>(null);
   const [note, setNote] = useState("");
 
@@ -58,7 +59,7 @@ export function ShopApprovals({ projectId, compact, readOnly }: { projectId: str
     const may = mine.includes(level);
     return (
       <div className="flex items-center gap-1">
-        <Badge tone={TONE[v]}>{LABEL[v]}</Badge>
+        <Badge tone={TONE[v]}>{details && v === "APPROVED" ? "Verified" : LABEL[v]}</Badge>
         {may && v !== "APPROVED" && (
           <button type="button" aria-label={`Approve ${s.shopName ?? s.siteCode}`} title="Approve" onClick={() => act(s, level, "APPROVED")} className="rounded p-1 text-finance hover:bg-[#e2f8ea]">
             <Check className="size-4" aria-hidden />
@@ -80,11 +81,11 @@ export function ShopApprovals({ projectId, compact, readOnly }: { projectId: str
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
-        {([
+      {!hideSummary && <div className="grid gap-3 sm:grid-cols-3">
+        {(details ? ([["Shops verified", "ops"]] as const) : ([
           ["Operations approval", "ops"],
           ["BD approval", "bd"],
-        ] as const).map(([label, level]) => (
+        ] as const)).map(([label, level]) => (
           <div key={level} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface p-3">
             <div>
               <p className="text-xs text-muted-foreground">{label}</p>
@@ -104,7 +105,7 @@ export function ShopApprovals({ projectId, compact, readOnly }: { projectId: str
                   })
                 }
               >
-                Approve all pending
+                {details ? "Verify all pending" : "Approve all pending"}
               </Button>
             )}
           </div>
@@ -113,16 +114,16 @@ export function ShopApprovals({ projectId, compact, readOnly }: { projectId: str
           <p className="text-xs text-muted-foreground">Corrections requested</p>
           <p className={cn("text-lg font-bold tabular-nums", corrections ? "text-approval" : "text-navy")}>{corrections}</p>
         </div>
-      </div>
+      </div>}
 
       <div className={cn("overflow-auto rounded-xl border border-border bg-surface", compact ? "max-h-64" : "max-h-[460px]")}>
         <table className="w-full min-w-[640px] text-sm">
           <thead className="sticky top-0 bg-[#eef4ff] text-left text-xs uppercase tracking-wide text-navy">
             <tr>
               <th className="px-3 py-2 font-semibold">Shop</th>
-              <th className="px-3 py-2 font-semibold">Board</th>
-              <th className="px-3 py-2 font-semibold">Operations</th>
-              <th className="px-3 py-2 font-semibold">BD</th>
+              {!details && <th className="px-3 py-2 font-semibold">Board</th>}
+              <th className="px-3 py-2 font-semibold">{details ? "Verification" : "Operations"}</th>
+              {!details && <th className="px-3 py-2 font-semibold">BD</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -132,12 +133,12 @@ export function ShopApprovals({ projectId, compact, readOnly }: { projectId: str
                   {s.shopName || s.dealerName || s.siteCode}
                   <span className="block text-xs font-normal text-muted-foreground">{[s.dealerName && s.shopName ? s.dealerName : "", s.district].filter(Boolean).join(" · ")}</span>
                 </td>
-                <td className="px-3 py-2">
+                {!details && <td className="px-3 py-2">
                   {s.width && s.height ? <span className="font-semibold tabular-nums">{s.width} × {s.height} {s.unit ?? "ft"}</span> : <span className="text-xs text-approval">No size</span>}
                   <span className="block text-xs text-muted-foreground">{s.boardType || "-"}</span>
-                </td>
+                </td>}
                 <td className="px-3 py-2">{cell(s, "ops")}</td>
-                <td className="px-3 py-2">{cell(s, "bd")}</td>
+                {!details && <td className="px-3 py-2">{cell(s, "bd")}</td>}
               </tr>
             ))}
           </tbody>

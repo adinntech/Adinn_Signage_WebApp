@@ -4,6 +4,7 @@ import * as React from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { ApiError, errorMessage, fieldErrorsOf } from "@/lib/api";
 import { SCENARIOS, SCENARIO_LABEL, UNITS } from "@/lib/api/sites";
+import { FORMATS, cleanInput, type InputFormat } from "@/lib/input-format";
 import { cn } from "@/lib/utils";
 import type { CellKind } from "./site-utils";
 
@@ -23,6 +24,10 @@ function saveError(err: unknown, key: string): string {
   }
   return errorMessage(err);
 }
+
+/** Which characters a table cell accepts, by the field it edits. */
+const cellFormat = (fieldKey: string, kind: CellKind): InputFormat | undefined =>
+  fieldKey === "mobile" ? "phone" : fieldKey === "pincode" ? "pincode" : fieldKey === "gstin" ? "gst" : kind === "number" ? "decimal" : undefined;
 
 /**
  * Click / Enter to edit. Enter saves, Esc cancels, Tab saves and moves on.
@@ -213,7 +218,8 @@ function Editor({
             value={draft}
             readOnly={saving}
             inputMode={kind === "number" ? "decimal" : undefined}
-            onChange={(e) => setDraft(e.target.value)}
+            maxLength={cellFormat(fieldKey, kind) ? FORMATS[cellFormat(fieldKey, kind)!].max : undefined}
+            onChange={(e) => setDraft(cellFormat(fieldKey, kind) ? cleanInput(cellFormat(fieldKey, kind)!, e.target.value) : e.target.value)}
             className={cn(inputCls, align === "right" && "text-right")}
           />
         )}

@@ -118,10 +118,10 @@ export function BulkEditDialog({
             </Select>
           </Field>
           <Field label="Width" htmlFor="b-width" error={badNum(v.width) ? "Enter a number greater than 0" : undefined}>
-            <Input id="b-width" inputMode="decimal" value={v.width} onChange={set("width")} aria-invalid={badNum(v.width)} />
+            <Input id="b-width" format="decimal" value={v.width} onChange={set("width")} aria-invalid={badNum(v.width)} />
           </Field>
           <Field label="Height" htmlFor="b-height" error={badNum(v.height) ? "Enter a number greater than 0" : undefined}>
-            <Input id="b-height" inputMode="decimal" value={v.height} onChange={set("height")} aria-invalid={badNum(v.height)} />
+            <Input id="b-height" format="decimal" value={v.height} onChange={set("height")} aria-invalid={badNum(v.height)} />
           </Field>
           <Field label="Unit" htmlFor="b-unit">
             <Select id="b-unit" value={v.unit} onChange={set("unit")}>

@@ -234,10 +234,10 @@ export function BoardOptions({ projectId, canEdit }: { projectId: string; canEdi
             <datalist id="board-types">{BOARD_TYPES.map((b) => <option key={b} value={b} />)}</datalist>
           </Field>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Field label="Width" htmlFor="width" error={errors.width}><Input id="width" name="width" inputMode="decimal" defaultValue={edit.board?.width} /></Field>
-            <Field label="Height" htmlFor="height" error={errors.height}><Input id="height" name="height" inputMode="decimal" defaultValue={edit.board?.height} /></Field>
+            <Field label="Width" htmlFor="width" error={errors.width}><Input id="width" name="width" format="decimal" defaultValue={edit.board?.width} /></Field>
+            <Field label="Height" htmlFor="height" error={errors.height}><Input id="height" name="height" format="decimal" defaultValue={edit.board?.height} /></Field>
             <Field label="Unit" htmlFor="unit"><Select id="unit" name="unit" defaultValue={edit.board?.unit ?? "ft"}>{UNITS.map((u) => <option key={u} value={u}>{u}</option>)}</Select></Field>
-            <Field label="Qty" htmlFor="quantity" required error={errors.quantity}><Input id="quantity" name="quantity" inputMode="numeric" defaultValue={edit.board?.quantity ?? 1} /></Field>
+            <Field label="Qty" htmlFor="quantity" required error={errors.quantity}><Input id="quantity" name="quantity" format="digits" defaultValue={edit.board?.quantity ?? 1} /></Field>
           </div>
           <Field label="Notes" htmlFor="notes" error={errors.notes}><Textarea id="notes" name="notes" rows={2} defaultValue={edit.board?.notes} /></Field>
         </form>

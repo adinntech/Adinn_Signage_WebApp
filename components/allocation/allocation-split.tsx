@@ -38,7 +38,7 @@ export function AllocationSplit({ projectId, overview }: { projectId: string; ov
           <legend className="mb-1.5 text-xs font-semibold text-navy">Auto split by</legend>
           <div className="flex gap-1.5">{BY.map(([k, l]) => <button key={k} type="button" aria-pressed={by === k} onClick={() => { setBy(k); setResult(null); }} className={cn("flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium", by === k ? "border-royal bg-[#e8f0ff] text-royal" : "border-border text-muted-foreground")}>{l}</button>)}</div>
         </fieldset>
-        <Field label="Max shops per team" htmlFor="split-max" hint="Blank = divide evenly" error={maxErr ? "Whole number, 1 or more" : undefined}><Input id="split-max" inputMode="numeric" value={max} onChange={(e) => { setMax(e.target.value); setResult(null); }} /></Field>
+        <Field label="Max shops per team" htmlFor="split-max" hint="Blank = divide evenly" error={maxErr ? "Whole number, 1 or more" : undefined}><Input id="split-max" format="digits" value={max} onChange={(e) => { setMax(e.target.value); setResult(null); }} /></Field>
         <fieldset>
           <legend className="mb-1.5 text-xs font-semibold text-navy">Teams</legend>
           <ul className="max-h-56 space-y-1 overflow-y-auto">

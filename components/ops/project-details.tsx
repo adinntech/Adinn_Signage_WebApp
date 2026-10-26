@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, BarChart3, Ban, CalendarDays, ClipboardList, FileSpreadsheet, FileText, History, Mail, MapPin, Phone, Route, ShieldCheck, Store, Truck, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, Ban, CalendarDays, ClipboardList, FileSpreadsheet, FileText, History, Mail, MapPin, Phone, Route, ShieldCheck, Store, type LucideIcon } from "lucide-react";
 import { ProjectStatusBadge } from "@/components/bd/status-badge";
 import { ShopApprovals } from "@/components/approvals/shop-approvals";
 import { SitesTab } from "@/components/sites/sites-tab";
@@ -18,9 +19,13 @@ import { useAdvanceStage } from "@/lib/api/pipeline";
 import { useProject, useProjectHistory, type AuditEntry } from "@/lib/api/projects";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { OPS_NEXT, OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
+import { OPS_NEXT, totalExpected, OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 import { AsoSurvey } from "./aso-survey";
+import { BoardOptions } from "./board-options";
+import { MeasurementStage } from "./measurement-stage";
+import { RequirementPanel } from "./requirement-panel";
+import { ShopDetailsStage } from "./shop-details-stage";
 
 type TabKey = "overview" | "work" | "approvals" | "documents" | "history";
 const TAB_KEYS: TabKey[] = ["overview", "work", "approvals", "documents", "history"];
@@ -71,6 +76,7 @@ export function ProjectDetails() {
   const wanted = useSearchParams().get("tab");
   const tab: TabKey = TAB_KEYS.includes(wanted as TabKey) ? (wanted as TabKey) : "overview";
   const setTab = (k: TabKey) => router.replace(`?tab=${k}`, { scroll: false });
+  const [asoPart, setAsoPart] = useState<"areas" | "shops" | "boards">("areas");
 
   if (project.isPending) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading project…</p>;
   if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} title="Could not load the project" />;
@@ -83,7 +89,8 @@ export function ProjectDetails() {
   const measure = p.requirementType === "SHOP_MEASUREMENT";
   const next = OPS_NEXT[p.status];
   const overdue = isOverdue(p);
-  const cancelled = p.status === "CANCELLED";
+  const lost = p.status === "LOSS";
+  const cancelled = p.status === "CANCELLED" || lost; // both close the project: read-only
   const canWork = can("sites:write") && !cancelled;
   const workLabel = aso ? "Area Survey" : measure ? "Shops & Measurements" : "Shop List";
 
@@ -143,9 +150,32 @@ export function ProjectDetails() {
       {cancelled && (
         <div role="alert" className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
           <Ban className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p><strong>Cancelled by BD.</strong> {p.statusReason ?? "No reason recorded."} This project is read-only.</p>
+          <p><strong>{lost ? "Marked as LOSS." : "Cancelled by BD."}</strong> {p.statusReason ?? "No reason recorded."} This project is read-only.</p>
         </div>
       )}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border p-4 shadow-soft border-[#cfe0ff] bg-gradient-to-br from-[#e8f0ff] to-white">
+          <p className="text-xs font-medium text-muted-foreground">{aso ? "Shops entered (count unknown)" : "Shops imported"}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-navy">{p.siteCount}<span className="text-sm font-normal text-muted-foreground">{aso ? "" : ` / ${totalExpected(p) || "-"} expected`}</span></p>
+          {!aso && !!p.additionalShops && <p className="text-xs text-[#be185d]">{p.expectedShops} client + {p.additionalShops} additional</p>}
+          {!aso && (
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Shops imported" aria-valuemin={0} aria-valuemax={100} aria-valuenow={totalExpected(p) ? Math.min(100, Math.round((p.siteCount / totalExpected(p)) * 100)) : 0}>
+              <div className="h-full rounded-full bg-finance" style={{ width: `${totalExpected(p) ? Math.min(100, Math.round((p.siteCount / totalExpected(p)) * 100)) : 0}%` }} />
+            </div>
+          )}
+        </div>
+        <div className="rounded-xl border p-4 shadow-soft border-[#f9c6dd] bg-gradient-to-br from-[#fde8f1] to-white">
+          <p className="text-xs font-medium text-muted-foreground">Key dates</p>
+          <p className="mt-1 text-sm"><span className="text-muted-foreground">Start </span><strong>{formatDate(p.startDate)}</strong></p>
+          <p className={cn("text-sm", overdue && "text-loss")}><span className="text-muted-foreground">End </span><strong>{formatDate(p.targetDate)}</strong></p>
+        </div>
+        <div className="rounded-xl border p-4 shadow-soft border-[#bbf0d3] bg-gradient-to-br from-[#e2f8ea] to-white">
+          <p className="text-xs font-medium text-muted-foreground">Assigned</p>
+          <p className="mt-1 text-sm font-semibold text-navy">{p.assignedTo.name}</p>
+          <p className="text-xs text-muted-foreground">by {p.owner?.name ?? p.createdBy?.name ?? "BD"} · {formatDate(p.assignedAt)}</p>
+        </div>
+      </div>
 
       <TabPanel k={tab} className="space-y-5">
       {tab === "overview" && (
@@ -189,19 +219,34 @@ export function ProjectDetails() {
             <h2 className="mb-3 text-sm font-semibold text-navy">Quick Actions</h2>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               {!aso && (
-                <QuickAction icon={FileSpreadsheet} label="Import Shop List" hint={p.siteCount === 0 ? "Excel / CSV · pending" : "Add more shops"} color="bg-[#e8f0ff] text-royal" onClick={() => setTab("work")} />
+                <QuickAction icon={FileSpreadsheet} label={p.requirementType === "SHOP_DETAILS" ? "BD Attachments & Shops" : "Import Shop List"} hint={p.siteCount === 0 ? "Extract shops from the sheet" : "Add more shops"} color="bg-[#e8f0ff] text-royal" onClick={() => setTab("work")} />
               )}
               <QuickAction icon={aso ? MapPin : Store} label={aso ? "Record Survey Areas" : "View Shops"} hint={aso ? "Areas, shops found, proof" : `${p.siteCount} shops`} color="bg-[#dcf7f3] text-recce" onClick={() => setTab("work")} />
               <QuickAction icon={FileText} label="Requirements & Instructions" hint="Files from BD" color="bg-[#f1e6ff] text-vendor" onClick={() => setTab("documents")} />
-              <QuickAction icon={BarChart3} label="Cost Comparison" hint="" color="bg-[#fff0e0] text-approval" soon />
-              <QuickAction icon={Route} label="Shop Allocation & Routes" hint="" color="bg-[#e8f0ff] text-royal" soon />
-              <QuickAction icon={Truck} label="Field Monitoring" hint="" color="bg-[#ffe9ee] text-[#e11d48]" soon />
+              <QuickAction icon={BarChart3} label="Cost Comparison" hint="Vendor vs in-house, bills" color="bg-[#fff0e0] text-approval" onClick={() => router.push(`/operations/cost/${p._id}`)} />
+              <QuickAction icon={MapPin} label="Shop Allocation" hint="Vendors, in-house, map" color="bg-[#e8f0ff] text-royal" onClick={() => router.push(`/operations/allocation/${p._id}`)} />
+              <QuickAction icon={Route} label="Movement" hint="Day-wise road routes" color="bg-[#ffe9ee] text-[#e11d48]" onClick={() => router.push(`/operations/movement/${p._id}`)} />
             </div>
           </section>
         </div>
       )}
 
-      {tab === "work" && (aso ? <AsoSurvey projectId={p._id} canEdit={canWork} /> : <SitesTab project={p} readOnly={cancelled} />)}
+      {tab === "work" && (aso ? (
+        <RequirementPanel n={1} tone="blue" title="ASO Area Survey" tag="Area Based Survey" description="Visit each area, note the shops found and the conversation, then enter shop details and board options. Shop count is unknown at the start.">
+          <Tabs
+            label="ASO sections"
+            value={asoPart}
+            onChange={(k) => setAsoPart(k as "areas" | "shops" | "boards")}
+            tabs={[
+              { key: "areas", label: "Survey areas & proof", icon: MapPin },
+              { key: "shops", label: "Shop details (Excel / manual)", icon: Store, count: p.siteCount },
+              { key: "boards", label: "Board options & client decision", icon: ClipboardList },
+            ]}
+          />
+          {asoPart === "areas" ? <AsoSurvey projectId={p._id} canEdit={canWork} /> : asoPart === "shops" ? <SitesTab project={p} readOnly={cancelled} /> : <BoardOptions projectId={p._id} canEdit={canWork} />}
+        </RequirementPanel>
+      ) : measure ? <MeasurementStage project={p} canEdit={canWork} readOnly={cancelled} />
+      : <ShopDetailsStage project={p} canEdit={canWork} readOnly={cancelled} />)}
 
       {tab === "approvals" && (
         <section className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
@@ -214,10 +259,17 @@ export function ProjectDetails() {
       )}
 
       {tab === "documents" && (
-        <section className="rounded-xl border border-border bg-surface p-4 shadow-soft">
-          <h2 className="mb-3 text-sm font-semibold text-navy">Documents from BD</h2>
-          <ProjectDocuments projectId={p._id} category="BD_CLIENT_DETAILS" canEdit={false} emptyText="BD has not attached any files." />
-        </section>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <section className="rounded-xl border border-border bg-surface p-4 shadow-soft">
+            <h2 className="mb-3 text-sm font-semibold text-navy">Documents from BD</h2>
+            <ProjectDocuments projectId={p._id} category="BD_CLIENT_DETAILS" canEdit={false} emptyText="BD has not attached any files." />
+          </section>
+          <section className="rounded-xl border border-border bg-surface p-4 shadow-soft">
+            <h2 className="text-sm font-semibold text-navy">Operations files</h2>
+            <p className="mb-3 text-xs text-muted-foreground">Upload edited sheets, reports and proofs. Preview or download any file at any time.</p>
+            <ProjectDocuments projectId={p._id} category="OPS_SURVEY_PROOF" canEdit={canWork} emptyText="No operations files yet." />
+          </section>
+        </div>
       )}
 
       {tab === "history" && (

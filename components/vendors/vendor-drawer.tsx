@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { KYC_ITEMS, VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, useSetKyc, useSetVendorStatus, type KycKey, type Vendor } from "@/lib/api/vendors";
 import { formatDate } from "@/lib/format";
+import { VendorLogins } from "./vendor-logins";
 import { cn } from "@/lib/utils";
 
 export const STATUS_TONE = { ACTIVE: "success", PENDING_KYC: "warning", INACTIVE: "neutral", BLACKLISTED: "danger" } as const;
@@ -72,6 +73,8 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
             </ul>
             {v.kyc?.verifiedAt && <p className="mt-2 text-xs text-muted-foreground">Verified {formatDate(v.kyc.verifiedAt)}</p>}
           </section>
+
+          <VendorLogins vendor={v} />
 
           <p className="text-xs text-muted-foreground">{v.allocatedShops ? `${v.allocatedShops} shop(s) currently allocated.` : "No shops allocated."}</p>
 

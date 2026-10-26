@@ -101,3 +101,16 @@ export async function downloadVendors() {
   const { blob, fileName } = await apiBlob("/vendors/export");
   saveBlob(blob, fileName ?? "vendors.xlsx");
 }
+
+/** A mobile-app login that belongs to a vendor company; it sees only that vendor's shops. */
+export interface VendorLogin { id: string; name: string; email: string; phone: string | null; employeeId: string | null; isActive: boolean }
+export interface VendorLoginInput { name: string; phone: string; employeeId: string; email: string; mpin: string }
+export const useVendorLogins = (vendorId?: string) =>
+  useQuery({ queryKey: [...key, "logins", vendorId], queryFn: () => api<VendorLogin[]>(`/vendors/${vendorId}/logins`), enabled: !!vendorId });
+export function useCreateVendorLogin(vendorId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: VendorLoginInput) => api<VendorLogin>(`/vendors/${vendorId}/logins`, { method: "POST", body: JSON.stringify({ ...b, authMethod: "MPIN" }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...key, "logins", vendorId] }),
+  });
+}

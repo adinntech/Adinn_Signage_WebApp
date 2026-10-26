@@ -3,7 +3,7 @@ import { api, apiPage } from "@/lib/api";
 import { qs, type Attachment, type Ref } from "./common";
 
 export const PROJECT_STATUSES = [
-  "NEW", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED",
+  "NEW", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED", "LOSS",
   "DRAFT", "ENQUIRY", "RECCE_ASSIGNED", "PLANNING", "IN_PROGRESS", "CLIENT_APPROVAL",
 ] as const;
 export const REQUIREMENT_TYPES = ["ASO", "SHOP_DETAILS", "SHOP_MEASUREMENT"] as const;
@@ -57,6 +57,9 @@ export interface Project {
   district?: string;
   instructions?: string;
   expectedShops?: number | null;
+  /** Extra shops found beyond the client's list. */
+  additionalShops?: number;
+  additionalShopsNote?: string;
   contacts?: ProjectContact[];
   assignedTo?: (Ref & { email?: string; phone?: string }) | null;
   assignedAt?: string;

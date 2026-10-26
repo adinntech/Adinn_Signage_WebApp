@@ -1,11 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Building2, Home, Map, MapPinOff, Route, Shuffle, Store, Users } from "lucide-react";
-import { GradientHeader } from "@/components/ui/gradient-header";
-import { Button } from "@/components/ui/button";
+import { Building2, Home, Map, MapPinOff, Route, Shuffle, Store, Users } from "lucide-react";
 import { ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { useAllocationOverview } from "@/lib/api/allocation";
@@ -16,6 +13,7 @@ import { AllocationItinerary } from "./allocation-itinerary";
 import { AllocationMapTab } from "./allocation-map-tab";
 import { AllocationShops } from "./allocation-shops";
 import { AllocationSplit } from "./allocation-split";
+import { ProjectScreenHeader } from "@/components/ops/project-screen-header";
 import { colorFor } from "./team-colors";
 
 type Tab = "shops" | "map" | "split" | "travel";
@@ -39,14 +37,9 @@ export function AllocationScreen() {
   const pct = o.total ? Math.round((allocated / o.total) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5">
+    <div className="mx-auto max-w-[1500px] space-y-4">
+      <ProjectScreenHeader project={p} current="allocation" title="Shop Allocation" />
       <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
-        <GradientHeader
-          code="6"
-          title={`Recce Planning & Assignment – ${p.client?.name ?? ""} · ${p.campaign ?? p.name}`}
-          subtitle={`${p.code} · ${o.total} shops`}
-          right={<Button asChild variant="ghost" size="sm" className="text-white hover:bg-white/15 hover:text-white"><Link href={`/operations/projects/${id}`}><ArrowLeft className="size-4" aria-hidden /> Project</Link></Button>}
-        />
         <div className="grid gap-3 p-4 md:grid-cols-4">
           <div className="rounded-xl bg-[#e8f0ff] p-3"><p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Store className="size-3.5" aria-hidden /> Allocated</p><p className="text-2xl font-bold tabular-nums text-royal">{allocated}<span className="text-sm font-medium text-muted-foreground"> / {o.total}</span></p>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white" role="progressbar" aria-label="Shops allocated" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="h-full rounded-full bg-royal" style={{ width: `${pct}%` }} /></div></div>

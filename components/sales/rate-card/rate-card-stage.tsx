@@ -355,7 +355,7 @@ function Editor({ data, orderId }: { data: QuotationState; orderId: string }) {
                     <Input id="rc-rdes" aria-invalid={!!e("regards.designation")} {...register("regards.designation")} />
                   </Field>
                   <Field label="Mobile Number" htmlFor="rc-rmob" required error={e("regards.mobile")}>
-                    <Input id="rc-rmob" inputMode="tel" aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
+                    <Input id="rc-rmob" format="phone" aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
                   </Field>
                   <Field label="Email Address" htmlFor="rc-remail" required error={e("regards.email")}>
                     <Input id="rc-remail" type="email" aria-invalid={!!e("regards.email")} {...register("regards.email")} />

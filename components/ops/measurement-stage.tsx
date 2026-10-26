@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AdditionalShops } from "./additional-shops";
+import { BdAttachments } from "./bd-attachments";
 import { BoardOptions } from "./board-options";
 import { RequirementPanel } from "./requirement-panel";
 
@@ -75,6 +76,8 @@ export function MeasurementStage({ project, canEdit, readOnly }: { project: Proj
       tag="Detailed Measurement"
       description="Client provides the shop list and board measurements (width & height). Operations and BD both approve before the recce can start."
     >
+      <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />
+      <p className="rounded-lg bg-[#eef4ff] px-3 py-2 text-xs text-navy">Expected columns: <strong>Customer Name, District, Size (e.g. 10*4), Remarks, Address 1-3, Pin, PH, GST</strong>. The area is taken from the brackets in the name (e.g. “… (COLACHAL)”) or from Address 3, and is used for the map and distances.</p>
       <SitesTab project={project} readOnly={readOnly} />
       <AdditionalShops project={project} canEdit={canEdit} />
 

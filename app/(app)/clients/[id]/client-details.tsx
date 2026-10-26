@@ -95,10 +95,10 @@ function ContactDialog({ client, index, open, onOpenChange }: { client: ClientDe
           <Input id="cd-des" {...register("designation")} />
         </Field>
         <Field label="Mobile Number" htmlFor="cd-phone" required error={e.phone?.message}>
-          <Input id="cd-phone" inputMode="tel" aria-invalid={!!e.phone} {...register("phone")} />
+          <Input id="cd-phone" format="phone" aria-invalid={!!e.phone} {...register("phone")} />
         </Field>
         <Field label="Alternate Mobile Number" htmlFor="cd-aphone" error={e.alternatePhone?.message}>
-          <Input id="cd-aphone" inputMode="tel" {...register("alternatePhone")} />
+          <Input id="cd-aphone" format="phone" {...register("alternatePhone")} />
         </Field>
         <Field label="Email Address" htmlFor="cd-email" error={e.email?.message}>
           <Input id="cd-email" type="email" {...register("email")} />

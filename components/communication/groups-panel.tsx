@@ -178,7 +178,7 @@ function GroupCard({ project, kind, channel, canWrite }: { project: Project; kin
                     <Input
                       aria-label={`Participant ${i + 1} phone`}
                       value={p.phone ?? ""}
-                      inputMode="tel"
+                      format="phone"
                       disabled={!canWrite}
                       aria-invalid={!!p.phone && !PHONE.test(p.phone)}
                       onChange={(e) => update(i, { phone: e.target.value })}

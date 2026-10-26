@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { useAllocationMap, useAllocationShops, useSetCoords, useSetOrigin, type AllocationOverview } from "@/lib/api/allocation";
 import { cn } from "@/lib/utils";
+import { LocateShops } from "./locate-shops";
 import { AllocationMap } from "./map-loader";
 import { IN_HOUSE_COLOR, UNASSIGNED_COLOR, colorFor } from "./team-colors";
 
@@ -52,6 +53,7 @@ export function AllocationMapTab({ projectId, overview, canEdit }: { projectId: 
             {overview.origin && <p className="mt-1.5 text-xs text-muted-foreground">{overview.origin.name}: {overview.origin.lat.toFixed(4)}, {overview.origin.lng.toFixed(4)}</p>}
           </section>
         )}
+        {canEdit && overview.withoutCoords > 0 && <LocateShops projectId={projectId} missing={overview.withoutCoords} />}
         <section className="rounded-xl border border-border bg-surface p-3 shadow-soft">
           <h3 className="mb-2 text-sm font-bold text-navy">Shops without a position ({overview.withoutCoords})</h3>
           {missing.isPending ? <p className="text-xs text-muted-foreground">Loading…</p> : (missing.data?.data.length ?? 0) === 0 ? <p className="text-xs text-finance">Every shop is on the map.</p> : (

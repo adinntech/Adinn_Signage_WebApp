@@ -153,7 +153,7 @@ export function ExpenseClaims({ projectId, canAdd, estimateByCategory }: { proje
         <form id="claim-form" noValidate onSubmit={(e) => { e.preventDefault(); submit(e.currentTarget); }} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Type" htmlFor="category"><Select id="category" name="category" defaultValue="TRAVEL">{Object.entries(EXPENSE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
-            <Field label="Amount (₹)" htmlFor="amount" required error={errors.amount}><Input id="amount" name="amount" inputMode="decimal" aria-invalid={!!errors.amount} /></Field>
+            <Field label="Amount (₹)" htmlFor="amount" required error={errors.amount}><Input id="amount" name="amount" format="decimal" aria-invalid={!!errors.amount} /></Field>
           </div>
           <Field label="Date" htmlFor="date" required error={errors.date}><Input id="date" name="date" type="date" defaultValue={today()} /></Field>
           <Field label="Bill / ticket / receipt" htmlFor="receipt" error={errors.receiptFileId} hint="Photo or PDF"><Input id="receipt" name="receipt" type="file" accept="image/*,application/pdf" /></Field>

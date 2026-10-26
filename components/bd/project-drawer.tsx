@@ -11,9 +11,10 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
+import { AsoSurvey } from "@/components/ops/aso-survey";
 import { ProjectDocuments } from "@/components/upload/project-documents";
 import { errorMessage } from "@/lib/api";
-import { useAssignees, useAssignProject, useCancelProject, useDeletePipelineProject } from "@/lib/api/pipeline";
+import { ASSIGNEE_ROLE_LABEL, assigneesFor, useAssignees, useAssignProject, useCancelProject, useDeletePipelineProject } from "@/lib/api/pipeline";
 import { useProjectHistory, type AuditEntry, type Project } from "@/lib/api/projects";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { PRIORITY_CLASS, PRIORITY_LABEL, missingForAssignment, reqLabel } from "@/lib/pipeline";
@@ -130,6 +131,13 @@ export function ProjectDrawer({
               </div>
             </section>
 
+            {p.requirementType === "ASO" && (
+              <section>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Where the recce team should go</h3>
+                <AsoSurvey projectId={p._id} canEdit={!closed} />
+              </section>
+            )}
+
             {unassigned && !closed && (
               <section className="rounded-lg border border-[#bfd3ff] bg-[#eef4ff] p-3">
                 <p className="mb-2 text-sm font-medium text-navy">Not yet with Operations</p>
@@ -140,9 +148,9 @@ export function ProjectDrawer({
                   </p>
                 ) : (
                   <div className="flex gap-2">
-                    <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} aria-label="Operations team member" disabled={assignees.isPending}>
+                    <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} aria-label={p.requirementType === "ASO" ? "Operations or recce team member" : "Operations team member"} disabled={assignees.isPending}>
                       <option value="">{assignees.isPending ? "Loading team…" : "Select team member"}</option>
-                      {assignees.data?.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      {assigneesFor(assignees.data, p.requirementType).map((a) => <option key={a.id} value={a.id}>{a.name} ({ASSIGNEE_ROLE_LABEL[a.role] ?? a.role})</option>)}
                     </Select>
                     <Button
                       className="shrink-0 bg-royal hover:bg-royal/90"

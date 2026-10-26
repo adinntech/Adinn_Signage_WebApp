@@ -31,7 +31,7 @@ export function AdditionalShops({ project, canEdit }: { project: Project; canEdi
       <p className="mt-1 text-xs text-muted-foreground">If more shops are identified during the recce, add them below.</p>
       <div className="mt-3 grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1.4fr)]">
         <Field label="Additional shops count" htmlFor="addl-count" error={valid ? undefined : "Enter a whole number, 0 or more"}>
-          <Input id="addl-count" inputMode="numeric" value={count} disabled={!canEdit} onChange={(e) => setCount(e.target.value)} aria-invalid={!valid} />
+          <Input id="addl-count" format="digits" value={count} disabled={!canEdit} onChange={(e) => setCount(e.target.value)} aria-invalid={!valid} />
         </Field>
         <div className="flex items-end">
           <p className="flex w-full items-start gap-2 rounded-lg border border-[#bbf0d3] bg-[#e7f9ef] px-3 py-2 text-xs text-finance">

@@ -192,10 +192,10 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
             </datalist>
           </Field>
           <Field label="Pincode" htmlFor={id("pincode")} error={e("pincode")}>
-            <Input id={id("pincode")} inputMode="numeric" maxLength={6} aria-invalid={!!e("pincode")} {...register("pincode")} />
+            <Input id={id("pincode")} format="pincode" aria-invalid={!!e("pincode")} {...register("pincode")} />
           </Field>
           <Field label="GST Number" htmlFor={id("gstin")} error={e("gstin")} className="sm:col-span-2">
-            <Input id={id("gstin")} className="uppercase" maxLength={15} placeholder="27ABCDE1234F1Z5" aria-invalid={!!e("gstin")} {...register("gstin")} />
+            <Input id={id("gstin")} format="gst" className="uppercase" placeholder="27ABCDE1234F1Z5" aria-invalid={!!e("gstin")} {...register("gstin")} />
           </Field>
         </div>
       </Card>
@@ -263,10 +263,10 @@ export function CompanyFormFields({ form, idPrefix = "co" }: { form: UseFormRetu
                       <Input id={id(`k${i}-des`)} placeholder="e.g. Purchase Head" {...register(`contacts.${i}.designation`)} />
                     </Field>
                     <Field label="Mobile Number" htmlFor={id(`k${i}-phone`)} required error={e(`contacts.${i}.phone`)}>
-                      <Input id={id(`k${i}-phone`)} inputMode="tel" placeholder="98765 43210" aria-invalid={!!e(`contacts.${i}.phone`)} {...register(`contacts.${i}.phone`)} />
+                      <Input id={id(`k${i}-phone`)} format="phone" placeholder="98765 43210" aria-invalid={!!e(`contacts.${i}.phone`)} {...register(`contacts.${i}.phone`)} />
                     </Field>
                     <Field label="Alternate Mobile Number" htmlFor={id(`k${i}-aphone`)} error={e(`contacts.${i}.alternatePhone`)}>
-                      <Input id={id(`k${i}-aphone`)} inputMode="tel" aria-invalid={!!e(`contacts.${i}.alternatePhone`)} {...register(`contacts.${i}.alternatePhone`)} />
+                      <Input id={id(`k${i}-aphone`)} format="phone" aria-invalid={!!e(`contacts.${i}.alternatePhone`)} {...register(`contacts.${i}.alternatePhone`)} />
                     </Field>
                     <Field label="Email Address" htmlFor={id(`k${i}-email`)} error={e(`contacts.${i}.email`)}>
                       <Input id={id(`k${i}-email`)} type="email" aria-invalid={!!e(`contacts.${i}.email`)} {...register(`contacts.${i}.email`)} />

@@ -109,8 +109,8 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
           <Field label="Vendor type" htmlFor="v-type"><Select id="v-type" value={f.type} onChange={set("type")}><option value="ONE_MAN">One-man vendor</option><option value="ORGANIZATION">Organization</option></Select></Field>
           <Field label="Vendor / firm name" htmlFor="v-name" required error={err("name")}><Input id="v-name" value={f.name} onChange={set("name")} aria-invalid={!!err("name")} /></Field>
           <Field label="Contact person" htmlFor="v-cp" error={err("contactPerson")}><Input id="v-cp" value={f.contactPerson} onChange={set("contactPerson")} /></Field>
-          <Field label="Mobile" htmlFor="v-mobile" required error={err("mobile")}><Input id="v-mobile" inputMode="tel" value={f.mobile} onChange={set("mobile")} aria-invalid={!!err("mobile")} /></Field>
-          <Field label="Alternate mobile" htmlFor="v-alt" error={err("mobileAlt")}><Input id="v-alt" inputMode="tel" value={f.mobileAlt} onChange={set("mobileAlt")} /></Field>
+          <Field label="Mobile" htmlFor="v-mobile" required error={err("mobile")}><Input id="v-mobile" format="phone" value={f.mobile} onChange={set("mobile")} aria-invalid={!!err("mobile")} /></Field>
+          <Field label="Alternate mobile" htmlFor="v-alt" error={err("mobileAlt")}><Input id="v-alt" format="phone" value={f.mobileAlt} onChange={set("mobileAlt")} /></Field>
           <Field label="Email" htmlFor="v-email" error={err("email")}><Input id="v-email" type="email" value={f.email} onChange={set("email")} /></Field>
           <Field label="District" htmlFor="v-district" error={err("district")}><Input id="v-district" value={f.district} onChange={set("district")} /></Field>
           <Field label="Address" htmlFor="v-address" error={err("address")}><Input id="v-address" value={f.address} onChange={set("address")} /></Field>
@@ -118,19 +118,19 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
       )}
       {step === 1 && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="PAN" htmlFor="v-pan" error={err("pan")} hint="e.g. ABCDE1234F"><Input id="v-pan" value={f.pan} onChange={set("pan")} /></Field>
-          <Field label="GST number" htmlFor="v-gst" error={err("gstin")} hint={f.type === "ORGANIZATION" ? "Needed for an organization" : "Optional for one-man vendors"}><Input id="v-gst" value={f.gstin} onChange={set("gstin")} /></Field>
+          <Field label="PAN" htmlFor="v-pan" error={err("pan")} hint="e.g. ABCDE1234F"><Input id="v-pan" format="pan" value={f.pan} onChange={set("pan")} /></Field>
+          <Field label="GST number" htmlFor="v-gst" error={err("gstin")} hint={f.type === "ORGANIZATION" ? "Needed for an organization" : "Optional for one-man vendors"}><Input id="v-gst" format="gst" value={f.gstin} onChange={set("gstin")} /></Field>
           <Field label="Account holder" htmlFor="v-ah" error={err("bank.accountName")}><Input id="v-ah" value={f.accountName} onChange={set("accountName")} /></Field>
-          <Field label="Account number" htmlFor="v-an" error={err("bank.accountNo")}><Input id="v-an" inputMode="numeric" value={f.accountNo} onChange={set("accountNo")} /></Field>
-          <Field label="IFSC" htmlFor="v-ifsc" error={err("bank.ifsc")}><Input id="v-ifsc" value={f.ifsc} onChange={set("ifsc")} /></Field>
+          <Field label="Account number" htmlFor="v-an" error={err("bank.accountNo")}><Input id="v-an" format="account" value={f.accountNo} onChange={set("accountNo")} /></Field>
+          <Field label="IFSC" htmlFor="v-ifsc" error={err("bank.ifsc")}><Input id="v-ifsc" format="ifsc" value={f.ifsc} onChange={set("ifsc")} /></Field>
           <p className="self-end rounded-lg bg-[#eef4ff] p-3 text-xs text-navy">After registering, tick each document in the vendor&apos;s KYC checklist once you have checked the originals. Then activate the vendor.</p>
         </div>
       )}
       {step === 2 && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Service areas" htmlFor="v-areas" error={err("serviceAreas")} hint="Districts / areas, comma separated" className="sm:col-span-2"><Input id="v-areas" value={f.serviceAreas} onChange={set("serviceAreas")} placeholder="Madurai, Theni, Dindigul" /></Field>
-          <Field label="Rate per shop (₹)" htmlFor="v-rate" error={err("ratePerShop")} hint="Blank = company rate"><Input id="v-rate" inputMode="decimal" value={f.ratePerShop} onChange={set("ratePerShop")} /></Field>
-          <Field label="Far-distance rate per shop (₹)" htmlFor="v-far" error={err("farRatePerShop")} hint="Blank = company far rate"><Input id="v-far" inputMode="decimal" value={f.farRatePerShop} onChange={set("farRatePerShop")} /></Field>
+          <Field label="Rate per shop (₹)" htmlFor="v-rate" error={err("ratePerShop")} hint="Blank = company rate"><Input id="v-rate" format="decimal" value={f.ratePerShop} onChange={set("ratePerShop")} /></Field>
+          <Field label="Far-distance rate per shop (₹)" htmlFor="v-far" error={err("farRatePerShop")} hint="Blank = company far rate"><Input id="v-far" format="decimal" value={f.farRatePerShop} onChange={set("farRatePerShop")} /></Field>
           <Field label="Notes" htmlFor="v-notes" className="sm:col-span-2"><Textarea id="v-notes" rows={2} value={f.notes} onChange={set("notes")} /></Field>
         </div>
       )}

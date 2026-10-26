@@ -27,20 +27,38 @@ export interface AllocShop {
   channel?: Channel;
   vendor?: string | null;
   vendorName?: string | null;
+  address1?: string;
+  address2?: string;
+  address3?: string;
+  pincode?: string;
+  geoQuality?: "MANUAL" | "ADDRESS" | "AREA" | "PINCODE";
   distanceKm: number | null;
 }
 export interface AllocParams { q?: string; district?: string; view?: string; sort?: string; page?: number; limit?: number }
 export interface MapPoint { id: string; name: string; district: string | null; lat: number; lng: number; channel: Channel | null; vendor: string | null }
 export interface SplitGroup { vendorId: string | null; name: string; siteIds: string[]; shops: number; districts: string[]; approxKm: number }
 export interface SplitPreview { totalShops: number; groups: SplitGroup[] }
+export interface ItineraryDay {
+  day: number;
+  km: number;
+  minutes: number | null;
+  source: "ROAD" | "ESTIMATE";
+  path: [number, number][];
+  googleUrl: string;
+  googleAddressUrl: string;
+  stops: { id: string; name: string; district: string | null; area: string | null; lat: number; lng: number; legKm: number }[];
+}
+export interface GeocodeResult { tried: number; found: number; notFound: { id: string; name: string }[]; remaining: number; unavailable: boolean }
 export interface Itinerary {
   origin: LatLng & { name: string };
   shopsPerDay: number;
   totalShops: number;
   withoutCoords: number;
-  days: { day: number; km: number; stops: { id: string; name: string; district: string | null; lat: number; lng: number; legKm: number }[] }[];
+  /** True when every day's distance came from real roads, not a straight-line estimate. */
+  roadDistance: boolean;
+  days: ItineraryDay[];
   totalKm: number;
-  estimate: { days: number; nights: number; food: number; stay: number; travel: number; total: number };
+  estimate: { days: number; nights: number; food: number; stay: number; fuel: number; total: number };
 }
 
 const key = (pid: string) => ["allocation", pid] as const;
@@ -72,5 +90,5 @@ export const usePreviewSplit = (pid: string) =>
   useMutation({ mutationFn: (b: { by: "district" | "distance" | "count"; maxPerTeam?: number; teams: { vendorId: string | null }[]; onlyUnassigned: boolean }) => api<SplitPreview>(`/projects/${pid}/allocation/split/preview`, { method: "POST", body: JSON.stringify(b) }) });
 export const useApplySplit = (pid: string) =>
   useAllocMutation(pid, (groups: { vendorId: string | null; siteIds: string[] }[]) => api<{ affected: number }>(`/projects/${pid}/allocation/split/apply`, { method: "POST", body: JSON.stringify({ groups }) }));
-export const useApplyItinerary = (pid: string) =>
-  useAllocMutation(pid, (shopsPerDay: number) => api<Itinerary>(`/projects/${pid}/allocation/itinerary/apply-to-cost`, { method: "POST", body: JSON.stringify({ shopsPerDay }) }));
+export const useGeocode = (pid: string) =>
+  useAllocMutation(pid, (limit: number) => api<GeocodeResult>(`/projects/${pid}/allocation/geocode`, { method: "POST", body: JSON.stringify({ limit }) }));

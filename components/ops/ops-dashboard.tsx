@@ -20,9 +20,8 @@ import { useClientOptions } from "@/lib/api/clients";
 import { useAdvanceStage } from "@/lib/api/pipeline";
 import { REQUIREMENT_TYPES, useProjects, useProjectSummary, type Project } from "@/lib/api/projects";
 import { formatDate } from "@/lib/format";
-import { OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
+import { OPS_STAGE_LABEL, totalExpected, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
-import { NotificationsPanel } from "./notifications-panel";
 
 const PAGE_SIZE = 8;
 type TabKey = "RECCE_ASSIGNED" | "PLANNING" | "IN_PROGRESS" | "CLIENT_APPROVAL" | "COMPLETED" | "OVERDUE" | "CANCELLED" | "ALL";
@@ -108,7 +107,7 @@ export function OpsDashboard() {
         {summary.isError && <p role="alert" className="px-4 pb-3 text-xs text-danger">Could not load the counts. <button type="button" className="underline" onClick={() => summary.refetch()}>Retry</button></p>}
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid items-start gap-5">
         <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
           <Tabs
             label="Task stage"
@@ -175,7 +174,7 @@ export function OpsDashboard() {
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">{p.district}</td>
                         <td className="px-4 py-3 text-right tabular-nums">
-                          {p.requirementType === "ASO" ? <span className="text-xs text-muted-foreground">Unknown</span> : <>{p.siteCount}<span className="text-xs text-muted-foreground"> / {p.expectedShops ?? "-"}</span></>}
+                          {p.requirementType === "ASO" ? <span className="text-xs text-muted-foreground">Unknown</span> : <>{p.siteCount}<span className="text-xs text-muted-foreground"> / {totalExpected(p) || "-"}</span></>}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDate(p.assignedAt)}</td>
                         <td className={cn("whitespace-nowrap px-4 py-3", overdue ? "font-semibold text-loss" : "text-muted-foreground")}>{formatDate(p.targetDate)}</td>
@@ -215,7 +214,6 @@ export function OpsDashboard() {
           <Pagination meta={list.data?.meta} onPage={setPage} />
         </section>
 
-        <NotificationsPanel />
       </div>
     </div>
   );

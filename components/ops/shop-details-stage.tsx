@@ -5,11 +5,13 @@ import { ShopApprovals } from "@/components/approvals/shop-approvals";
 import { SitesTab } from "@/components/sites/sites-tab";
 import type { Project } from "@/lib/api/projects";
 import { AdditionalShops } from "./additional-shops";
+import { BdAttachments } from "./bd-attachments";
 import { RequirementPanel } from "./requirement-panel";
 
 /**
  * "Client shop details only": the client gives the shop list (no measurements).
- * Import or add shops → verify each one → declare any extra shops found on the ground → start the recce.
+ * Open the file BD attached → extract its shops → edit them → verify each one → declare any extra shops found on the
+ * ground → start the recce.
  */
 export function ShopDetailsStage({ project, canEdit, readOnly }: { project: Project; canEdit: boolean; readOnly: boolean }) {
   return (
@@ -20,7 +22,9 @@ export function ShopDetailsStage({ project, canEdit, readOnly }: { project: Proj
       tag="Known Shop List"
       description="Client provides the list of shops. Capture and verify shop details before the recce. No board measurements required."
     >
-      <SitesTab project={project} readOnly={readOnly} />
+      <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />
+
+      <SitesTab project={project} readOnly={readOnly} allowImport={false} />
 
       <AdditionalShops project={project} canEdit={canEdit} />
 
