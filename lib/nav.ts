@@ -16,6 +16,7 @@ import {
   KanbanSquare,
   Mail,
   ReceiptIndianRupee,
+  CloudDownload,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,7 +40,8 @@ export type Permission =
   | "sales:write"
   | "templates:manage"
   | "ratecards:manage"
-  | "approvals:client";
+  | "approvals:client"
+  | "zoho:sync";
 
 export interface NavLeaf {
   label: string;
@@ -102,6 +104,7 @@ export const NAV: NavItem[] = [
   { label: "Reports & Analytics", icon: BarChart3, href: "/reports", permission: "reports:read" },
   { label: "Users & Roles", icon: Users, href: "/users", permission: "users:manage" },
   { label: "Master Data", icon: Database, href: "/master-data", permission: "users:manage" },
+  { label: "Import from Zoho", icon: CloudDownload, href: "/admin/zoho-import", permission: "zoho:sync" },
   { label: "Cost Rates", icon: ReceiptIndianRupee, href: "/admin/cost-rates", permission: "finance:manage" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
