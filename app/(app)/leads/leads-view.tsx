@@ -43,14 +43,14 @@ export function LeadsView() {
   const newButton = canWrite && (
     <Button variant="brand" size="lg" asChild>
       <Link href="/leads/new">
-        <Plus className="size-4" aria-hidden /> New Lead
+        <Plus className="size-4" aria-hidden /> Create Project
       </Link>
     </Button>
   );
 
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-5">
-      <PageHeader icon={Waypoints} title="Lead Management" subtitle="Every order is a lead: from New Lead to the project assigned to Client Servicing or the Recce team." actions={newButton} />
+      <PageHeader icon={Waypoints} title="Lead Management" subtitle="Every order is a lead: from Create Project to the project assigned to Client Servicing or the Recce team." actions={newButton} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Open Leads" value={summary.data?.open} icon={Network} color="blue" loading={summary.isPending} active={status === "OPEN" && !stage} onClick={() => reset(() => (setStatus("OPEN"), setStage("")))} />
@@ -72,7 +72,7 @@ export function LeadsView() {
       </div>
       {!!summary.data?.waiting && (
         <p className="-mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Hourglass className="size-3.5" aria-hidden /> {summary.data.waiting} order{summary.data.waiting === 1 ? "" : "s"} not taken up as a lead yet. Start one with New Lead.
+          <Hourglass className="size-3.5" aria-hidden /> {summary.data.waiting} order{summary.data.waiting === 1 ? "" : "s"} not taken up as a lead yet. Start one with Create Project.
         </p>
       )}
 
@@ -126,7 +126,7 @@ export function LeadsView() {
           <EmptyState
             icon={Waypoints}
             title={filtered ? "No leads match your filters" : "No leads yet"}
-            description={filtered ? "Try a different search or filter." : "Start a lead from an order: select the order in New Lead and the mind map takes it from there."}
+            description={filtered ? "Try a different search or filter." : "Start with Create Project: choose New or Existing Client and the company, and the mind map takes it from there."}
             action={!filtered ? newButton : undefined}
           />
         ) : (

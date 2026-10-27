@@ -10,10 +10,10 @@ import type { Client, ClientContact } from "@/lib/api/clients";
  * Read-only company details (View Client Details, Order Management view, Lead Management). Older clients may still
  * carry an address / industry from the previous form: those show only when saved.
  */
-export function CompanyDetailsCard({ client: c, className }: { client: Client; className?: string }) {
+export function CompanyDetailsCard({ client: c, className, extras = true }: { client: Client; className?: string; extras?: boolean }) {
   const address = [c.address, c.city, c.district, c.state, c.pincode].filter(Boolean).join(", ");
   const certificates = c.gstCertificates ?? [];
-  const custom = c.customFields ?? [];
+  const custom = extras ? (c.customFields ?? []) : [];
   return (
     <Card className={className ?? "p-5 sm:p-6"}>
       <SectionTitle icon={Building2} title="Company Details" />
@@ -23,15 +23,18 @@ export function CompanyDetailsCard({ client: c, className }: { client: Client; c
         <DetailItem label="Company Email">{c.email}</DetailItem>
         <DetailItem label="Phone Number">{c.phone}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
-        <DetailItem label="GST Certificate">
-          {certificates.length ? (
-            <span className="flex flex-wrap gap-1.5">
-              {certificates.map((f) => (
-                <AttachmentChip key={f.fileId} file={f} source={{ clientId: c._id }} />
-              ))}
-            </span>
-          ) : null}
-        </DetailItem>
+        {/* `extras` off (Existing / Zoho clients in Lead Management): no GST certificate or custom fields. */}
+        {extras && (
+          <DetailItem label="GST Certificate">
+            {certificates.length ? (
+              <span className="flex flex-wrap gap-1.5">
+                {certificates.map((f) => (
+                  <AttachmentChip key={f.fileId} file={f} source={{ clientId: c._id }} />
+                ))}
+              </span>
+            ) : null}
+          </DetailItem>
+        )}
         {c.industry && <DetailItem label="Industry">{c.industry}</DetailItem>}
         {address && (
           <DetailItem label="Address" className="sm:col-span-2">

@@ -63,13 +63,42 @@ export interface LeadDetail {
   /** The current stage is the last one: completing it completes the lead. */
   lastStage: boolean;
   nextAvailable: boolean;
-  handover: { unlocked: boolean; assignee: UserRef | null; assignedAt: string | null; type: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null };
-  /** Project Assign: Recce team branch. `available` is false until the Recce assignment ships. */
-  recce: { available: boolean; assignee: UserRef | null; assignedAt: string | null; projectCode?: string | null };
+  handover: {
+    unlocked: boolean;
+    assignee: UserRef | null;
+    assignedAt: string | null;
+    type: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
+    /** Assign to Client Servicing toggle: full handover (true) or client details and contacts only (false). */
+    full?: boolean;
+    shops?: LeadShops | null;
+    /** Nothing missing before the Client Servicing person can be assigned. */
+    ready?: boolean;
+    missing?: string | null;
+  };
+  /** Project Assign: Recce team branch. */
+  recce: {
+    available: boolean;
+    assignee: UserRef | null;
+    assignedAt: string | null;
+    projectCode?: string | null;
+    estimationCode?: string | null;
+    emails?: { count: number; lastSentAt: string | null; lastStatus: "SENT" | "FAILED" | "SKIPPED" | null };
+    /** The full handover (type and details) is complete. */
+    handoverReady?: boolean;
+    missing?: string | null;
+  };
   summary: { notes: number; documents: number; rateCardLabel: string | null; negotiationRounds: number; approvalDocuments: number };
   /** Client Registered: latest onboarding form PDF, and whether the PHP mail service is connected. */
   onboarding: { pdf: FileRef | null; mailEnabled: boolean };
   history: LeadHistoryEntry[];
+}
+
+/** Shop list summary for the mind map: rows, valid rows, Total Shops and whether it is verified. */
+export interface LeadShops {
+  total: number;
+  valid: number;
+  declared: number | null;
+  verified: boolean;
 }
 
 export const ORGANISATION_TYPES = {

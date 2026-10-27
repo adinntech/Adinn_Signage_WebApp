@@ -50,19 +50,20 @@ import {
   type LeadStageState,
 } from "@/lib/api/leads";
 import { useAuth } from "@/lib/auth";
+import type { ClientType } from "@/lib/api/clients";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AssignChooser } from "./assign-panels";
 import { RecceBranchPanel } from "./recce-panel";
 import { LeadMindMap, type AssignState, type MapNode } from "./lead-mind-map";
-import { ASSIGN_META, STAGE_META } from "./stage-meta";
+import { ASSIGN_META, CLIENT_META, STAGE_META } from "./stage-meta";
 import { ApprovalTab } from "@/components/sales/approval-tab";
 import { NegotiationPanel } from "./negotiation-panel";
 import { ClientRegisteredPanel, HandoverPanel, MissingList, NewLeadDone, RateCardPanel, RequirementPanel, StageInfo } from "./stage-panels";
 
 const CELEBRATE_MS = 2600;
 
-/** Before a lead exists (New Lead screen): stage 1 in progress, the rest waiting. */
+/** Before a lead exists (Create Project screen): stage 1 in progress, the rest waiting. */
 const BLANK_STAGES: LeadStageState[] = LEAD_FLOW.map((key, i) => ({
   key,
   label: STAGE_META[key].label,
@@ -73,14 +74,22 @@ const BLANK_STAGES: LeadStageState[] = LEAD_FLOW.map((key, i) => ({
   completedAt: null,
   completedBy: null,
 }));
-const BLANK_ASSIGN: AssignState = { unlocked: false, completed: false, cs: { assignee: null, assignedAt: null }, recce: { available: false, assignee: null, assignedAt: null } };
+const BLANK_ASSIGN: AssignState = { unlocked: false, completed: false, cs: { assignee: null, assignedAt: null }, recce: { available: true, assignee: null, assignedAt: null } };
 
 /** Project Assign branches of a lead, for the mind map. */
 const assignOf = (d: LeadDetail): AssignState => ({
   unlocked: d.lead.status === "OPEN" && d.lead.stage === "PROJECT_ASSIGN",
   completed: d.lead.status === "COMPLETED",
   completedAt: d.lead.completedAt ?? null,
-  cs: { assignee: d.handover.assignee, assignedAt: d.handover.assignedAt, type: d.handover.type },
+  cs: {
+    assignee: d.handover.assignee,
+    assignedAt: d.handover.assignedAt,
+    type: d.handover.type,
+    full: d.handover.full,
+    shops: d.handover.shops,
+    ready: d.handover.ready,
+    missing: d.handover.missing,
+  },
   recce: d.recce,
 });
 const isBranch = (k: string | null): k is "HANDOVER" | "RECCE" => k === "HANDOVER" || k === "RECCE";
@@ -435,10 +444,10 @@ function LeadHeader({ detail }: { detail: LeadDetail | null }) {
               {detail.lead.status !== "OPEN" && <LeadStatusBadge status={detail.lead.status} />}
             </>
           ) : (
-            "New Lead"
+            "Create Project"
           )}
         </h1>
-        <p className="text-sm text-muted-foreground">From new lead to the project assigned to Client Servicing or the Recce team, as a mind map. Click a stage to work on it.</p>
+        <p className="text-sm text-muted-foreground">From creating the project to assigning it to Client Servicing or the Recce team, as a mind map. Click a stage to work on it.</p>
       </div>
     </div>
   );
@@ -453,40 +462,114 @@ function Canvas({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Create Project drawer, first step: New Client or Existing Client. */
+function ClientChooser({ onPick }: { onPick: (f: ClientType) => void }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">Who is the project for? Choose the client type, then select the company.</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {(["NEW", "EXISTING"] as const).map((f, i) => {
+          const m = CLIENT_META[f];
+          return (
+            <motion.button
+              key={f}
+              type="button"
+              onClick={() => onPick(f)}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.08 }}
+              whileHover={{ y: -3 }}
+              className="group flex flex-col gap-3 rounded-2xl border-2 p-5 text-left transition-shadow hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{ borderColor: m.color, background: `linear-gradient(135deg, ${m.soft}, #ffffff 70%)` }}
+            >
+              <span className="flex items-center gap-3">
+                <span className="flex size-12 items-center justify-center rounded-full text-white" style={{ background: m.color }}>
+                  <m.icon className="size-6" aria-hidden />
+                </span>
+                <span className="text-base font-semibold text-primary">{m.label}</span>
+              </span>
+              <ul className="space-y-1.5">
+                {m.items.map((it) => (
+                  <li key={it} className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Check className="size-4 shrink-0" style={{ color: m.color }} aria-hidden />
+                    {it}
+                  </li>
+                ))}
+              </ul>
+              <span className="mt-auto inline-flex items-center gap-1 text-sm font-semibold" style={{ color: m.color }}>
+                Select <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </span>
+            </motion.button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
- * New Lead: the client flag and company (Client Management / Zoho, or "+ Add New Client"); saving creates the order and
- * its lead, completes New Lead and opens the lead at Project Assign.
+ * Create Project (NEW_LEAD): New Client (Client Management) or Existing Client (Zoho), then the company; saving creates
+ * the order and its lead, completes Create Project and opens the lead at Project Assign.
  */
 export function NewLeadWorkspace() {
   const router = useRouter();
   const [drawer, setDrawer] = useState(true);
+  const [flag, setFlag] = useState<ClientType | null>(null);
 
-  // Next keeps visited routes mounted (React Activity): open the form again on every visit.
-  useLayoutEffect(() => () => setDrawer(true), []);
+  // Next keeps visited routes mounted (React Activity): start again from the client choice on every visit.
+  useLayoutEffect(
+    () => () => {
+      setDrawer(true);
+      setFlag(null);
+    },
+    [],
+  );
+
+  const pick = (f: ClientType) => {
+    setFlag(f);
+    setDrawer(true);
+  };
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-4">
       <LeadHeader detail={null} />
       <Canvas>
-        <LeadMindMap stages={BLANK_STAGES} assign={BLANK_ASSIGN} onOpen={(k) => k === "NEW_LEAD" && setDrawer(true)} />
+        <LeadMindMap
+          stages={BLANK_STAGES}
+          assign={BLANK_ASSIGN}
+          client={{ flag, done: false }}
+          onOpen={(k) => k === "NEW_LEAD" && setDrawer(true)}
+          onClientOpen={pick}
+        />
       </Canvas>
       <Modal
         open={drawer}
         onOpenChange={setDrawer}
         variant="drawer"
         className="max-w-3xl"
-        title="1. New Lead"
-        description="Choose New or Existing client and the company. Saving creates the order and moves the lead to Project Assign."
+        title={flag ? `1. Create Project · ${CLIENT_META[flag].label}` : "1. Create Project"}
+        description={
+          flag
+            ? "Select the company. Saving creates the order and moves the lead to Project Assign."
+            : "Choose New Client or Existing Client to start."
+        }
       >
-        <OrderClientForm
-          withNotes
-          submitLabel="Save & Create Order"
-          onCancel={() => setDrawer(false)}
-          onCreated={(o) => {
-            setDrawer(false);
-            router.replace(`/leads/${o._id}?fresh=1`);
-          }}
-        />
+        {flag ? (
+          <OrderClientForm
+            key={flag}
+            fixedFlag={flag}
+            onChangeFlag={() => setFlag(null)}
+            withNotes
+            submitLabel="Save & Create Order"
+            onCancel={() => setDrawer(false)}
+            onCreated={(o) => {
+              setDrawer(false);
+              router.replace(`/leads/${o._id}?fresh=1`);
+            }}
+          />
+        ) : (
+          <ClientChooser onPick={setFlag} />
+        )}
       </Modal>
     </div>
   );
@@ -515,10 +598,13 @@ export function LeadWorkspace() {
 
   const asked = params.get("stage") as MapNode | null;
   const selected: MapNode | null = asked && (isBranch(asked) || (LEAD_STAGES as readonly string[]).includes(asked)) ? asked : null;
-  const openNode = (k: MapNode | null) => router.replace(k ? `/leads/${id}?stage=${k}` : `/leads/${id}`, { scroll: false });
+  // `step`: a step of a Project Assign branch; its drawer opens scrolled to that section.
+  const openNode = (k: MapNode | null, step?: string) =>
+    router.replace(k ? `/leads/${id}?stage=${k}${step && isBranch(k) ? `&step=${encodeURIComponent(step)}` : ""}` : `/leads/${id}`, { scroll: false });
+  const step = isBranch(selected) ? params.get("step") : null;
   const fresh = params.get("fresh") === "1";
 
-  // Arriving from New Lead: play the stage 1 completion once, then drop the flag from the URL.
+  // Arriving from Create Project: play the stage 1 completion once, then drop the flag from the URL.
   const [freshSeen, setFreshSeen] = useState(false);
   if (fresh && !freshSeen) {
     setFreshSeen(true);
@@ -587,7 +673,9 @@ export function LeadWorkspace() {
     if (selected === "HANDOVER")
       return (
         <HandoverPanel
+          key={step ?? "all"}
           detail={d}
+          focus={step}
           onAssigned={() => {
             // Assigning completes the lead: close the drawer and run the branch into Lead Completed.
             openNode(null);
@@ -598,7 +686,9 @@ export function LeadWorkspace() {
     if (selected === "RECCE")
       return (
         <RecceBranchPanel
+          key={step ?? "all"}
           detail={d}
+          focus={step}
           onAssigned={() => {
             openNode(null);
             void q.refetch().then(() => setCelebrate("PROJECT_ASSIGN"));
@@ -638,6 +728,7 @@ export function LeadWorkspace() {
             <LeadMindMap
               stages={d.stages}
               assign={assignOf(d)}
+              client={{ flag: d.order.clientType, done: true, name: d.order.client.name }}
               closed={d.lead.status === "CLOSED"}
               celebrate={celebrate}
               badges={{

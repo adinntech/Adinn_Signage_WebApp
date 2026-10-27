@@ -20,7 +20,7 @@ import { formatDate } from "@/lib/format";
 const STATE_TONE = { VALID: "success", WARNING: "warning", ERROR: "danger" } as const;
 const size = (s: { width?: number; height?: number; unit?: string }) => (s.width && s.height ? `${s.width} × ${s.height} ${s.unit ?? ""}`.trim() : "-");
 
-function ShopRows({ projectId, total }: { projectId: string; total: number }) {
+function ShopRows({ projectId, total, sized }: { projectId: string; total: number; sized: boolean }) {
   const [page, setPage] = useState(1);
   const q = useProjectHandoverShops(projectId, { page, limit: 25 });
   if (q.isPending) return <RowsSkeleton rows={4} />;
@@ -35,7 +35,7 @@ function ShopRows({ projectId, total }: { projectId: string; total: number }) {
               <th className="px-3 py-2.5">Shop</th>
               <th className="px-3 py-2.5">Location</th>
               <th className="px-3 py-2.5">Mobile</th>
-              <th className="px-3 py-2.5">Size</th>
+              {sized && <th className="px-3 py-2.5">Size</th>}
               <th className="px-3 py-2.5">Check</th>
             </tr>
           </thead>
@@ -49,7 +49,7 @@ function ShopRows({ projectId, total }: { projectId: string; total: number }) {
                 </td>
                 <td className="px-3 py-2.5">{[s.location, s.district].filter(Boolean).join(", ") || "-"}</td>
                 <td className="px-3 py-2.5 tabular-nums">{s.mobile ?? "-"}</td>
-                <td className="px-3 py-2.5">{size(s)}</td>
+                {sized && <td className="px-3 py-2.5">{size(s)}</td>}
                 <td className="px-3 py-2.5">
                   <Badge tone={STATE_TONE[s.state]}>{s.state === "VALID" ? "Valid" : s.state === "WARNING" ? "Check" : "Error"}</Badge>
                   {s.issues.length > 0 && <span className="mt-1 block text-xs text-muted-foreground">{s.issues.join("; ")}</span>}
@@ -105,6 +105,20 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
             <DetailItem label="Company Email">{c.email}</DetailItem>
             <DetailItem label="Phone Number">{c.phone}</DetailItem>
             <DetailItem label="GST Number">{c.gstin}</DetailItem>
+            {!!c.gstCertificates?.length && (
+              <DetailItem label="GST Certificate" className="sm:col-span-2 lg:col-span-3">
+                <span className="flex flex-wrap gap-1.5">
+                  {c.gstCertificates.map((f) => (
+                    <AttachmentChip key={f.fileId} file={f} source={source} />
+                  ))}
+                </span>
+              </DetailItem>
+            )}
+            {(c.customFields ?? []).map((f) => (
+              <DetailItem key={f.label} label={f.label}>
+                {f.value}
+              </DetailItem>
+            ))}
           </dl>
           <ul className="mt-4 grid gap-2 md:grid-cols-2">
             {c.contacts.map((k, i) => (
@@ -150,14 +164,14 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
           <SectionTitle
             icon={FileSpreadsheet}
             title="Shop List from BD"
-            description={`${h.shopList.total} shops · ${h.shopList.valid} valid · ${h.shopList.warning} to check · ${h.shopList.error} with errors${h.type === "SHOP_MEASUREMENT" ? ` · ${h.shopFiles} shop photos / documents` : ""}`}
+            description={`${h.declaredShopTotal ?? h.shopList.valid} shops (valid) · ${h.shopList.total} rows · ${h.shopList.warning} to check · ${h.shopList.error} with errors${h.type === "SHOP_MEASUREMENT" ? ` · ${h.shopFiles} shop photos / documents` : ""}`}
             action={
               <Button variant="outline" size="sm" onClick={() => downloadFile(h.shopList!.fileId, source, h.shopList!.fileName).catch((e) => toast(errorMessage(e), "error"))}>
                 <Download className="size-4" aria-hidden /> Excel
               </Button>
             }
           />
-          <ShopRows projectId={projectId} total={h.shopList.total} />
+          <ShopRows projectId={projectId} total={h.shopList.total} sized={h.type === "SHOP_MEASUREMENT"} />
         </Card>
       )}
       {!h.shopList && h.type === "ASO" && <EmptyState icon={ClipboardList} title="ASO handover" description="No shop list: the shops are collected from the client contacts during the survey." />}

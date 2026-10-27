@@ -2,24 +2,44 @@
 
 import { useEffect } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Flag, LockKeyhole, Play, UserRoundCheck } from "lucide-react";
-import type { LeadStage, LeadStageState } from "@/lib/api/leads";
+import { Check, ClipboardList, Flag, Hash, History, LockKeyhole, Mail, Play, SkipForward, UserRoundCheck } from "lucide-react";
+import type { ClientType } from "@/lib/api/clients";
+import type { LeadShops, LeadStage, LeadStageState } from "@/lib/api/leads";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ASSIGN_META, STAGE_META, type BranchCard } from "./stage-meta";
+import { ASSIGN_META, CLIENT_META, STAGE_META, type BranchCard } from "./stage-meta";
 
 /** A clickable node: a stage, or one of the two Project Assign branches (HANDOVER = Client Servicing, RECCE = Recce team). */
 export type MapNode = LeadStage | "HANDOVER" | "RECCE";
 type Branch = "HANDOVER" | "RECCE";
+type HandoverType = "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT";
 
-/** Project Assign branches: who the project went to (either one completes the lead). */
+/** Project Assign branches: who the project went to (either one completes the lead), and how far each branch is. */
 export interface AssignState {
   /** The lead is open at Project Assign, so a branch can be worked on. */
   unlocked: boolean;
   completed: boolean;
   completedAt?: string | null;
-  cs: { assignee: { name: string } | null; assignedAt: string | null; type?: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null };
-  recce: { available: boolean; assignee: { name: string } | null; assignedAt: string | null };
+  cs: {
+    assignee: { name: string } | null;
+    assignedAt: string | null;
+    type?: HandoverType | null;
+    /** Toggle: full handover (true, default) or client details and contacts only. */
+    full?: boolean;
+    shops?: LeadShops | null;
+    ready?: boolean;
+    missing?: string | null;
+  };
+  recce: {
+    available: boolean;
+    assignee: { name: string } | null;
+    assignedAt: string | null;
+    projectCode?: string | null;
+    estimationCode?: string | null;
+    emails?: { count: number; lastSentAt: string | null; lastStatus: string | null };
+    handoverReady?: boolean;
+    missing?: string | null;
+  };
 }
 const TYPE_LABEL = { ASO: "ASO", SHOP_DETAILS: "Shop Details Only", SHOP_MEASUREMENT: "Shop + Measurement" } as const;
 const GREY = "#cbd5e1";
@@ -269,7 +289,7 @@ function AssignNode({ k, a, chosen, onOpen, delay, celebrate }: { k: Branch; a: 
             : "Opens at Project Assign"
           : type
             ? `${TYPE_LABEL[type]} · in progress`
-            : "Ready to assign";
+            : "Open: work through the steps below";
   return (
     <motion.button
       type="button"
@@ -309,16 +329,350 @@ function AssignNode({ k, a, chosen, onOpen, delay, celebrate }: { k: Branch; a: 
           <span className={cn("mt-0.5 block text-xs", assigned ? "font-medium" : !ready && "text-muted-foreground")} style={ready || assigned ? { color: m.color } : undefined}>
             {status}
           </span>
-          {assigned && type && (
-            <span className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: m.soft, color: m.color }}>
-              {TYPE_LABEL[type]}
+          {!other && (
+            <span
+              className="mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+              style={{ borderColor: locked ? GREY : `${m.color}66`, color: locked ? "#64748b" : m.color }}
+            >
+              {/* Client Servicing has the ON / OFF toggle; the Recce team always gets the full handover. */}
+              {k === "HANDOVER" ? (a.cs.full === false ? "Toggle OFF · client details only" : "Toggle ON · full handover") : "Full handover · no toggle"}
             </span>
           )}
-          {!assigned && !other && (
-            <ul className="mt-2 hidden space-y-0.5 sm:block">
+        </span>
+      </span>
+    </motion.button>
+  );
+}
+
+/* ------------------------------ Branch step chains ------------------------------ */
+
+type StepState = "DONE" | "CURRENT" | "NEXT" | "PENDING" | "LOCKED" | "SKIPPED";
+/** One step of a Project Assign branch. `step` is the drawer section it opens (?step=). */
+interface ChainStep {
+  step: string;
+  label: string;
+  desc: string;
+  icon: typeof Check;
+  state: StepState;
+  info?: string | null;
+  /** Handover Type: the three types, the chosen one highlighted. */
+  types?: HandoverType | null | false;
+  /** Email History hanging off the request email step. */
+  history?: { info: string; done: boolean };
+}
+const TYPE_SHORT: Record<HandoverType, string> = { ASO: "ASO", SHOP_DETAILS: "Shop Details", SHOP_MEASUREMENT: "Shop + Measure" };
+const STATE_CHIP: Record<StepState, string> = { DONE: "Done", CURRENT: "Now", NEXT: "Next", PENDING: "Pending", LOCKED: "Locked", SKIPPED: "Skipped" };
+
+/** Done / skipped as worked out; the first open step is Now, the one after it Next, the rest Pending. Locked when the branch is closed. */
+function sequence(raw: { done: boolean; skipped?: boolean }[], assigned: boolean, locked: boolean): StepState[] {
+  if (assigned) return raw.map((s) => (s.skipped ? "SKIPPED" : "DONE"));
+  if (locked) return raw.map((s) => (s.skipped ? "SKIPPED" : "LOCKED"));
+  let open = 0;
+  return raw.map((s) => {
+    if (s.skipped) return "SKIPPED";
+    if (s.done) return "DONE";
+    open++;
+    return open === 1 ? "CURRENT" : open === 2 ? "NEXT" : "PENDING";
+  });
+}
+
+const shopsInfo = (s: LeadShops | null | undefined) => (s ? `${s.declared ?? s.valid} shops · ${s.verified ? "verified" : "not verified"}` : null);
+
+function csSteps(a: AssignState, chosen: Branch | null): ChainStep[] {
+  const cs = a.cs;
+  const full = cs.full !== false;
+  const assigned = chosen === "HANDOVER";
+  const locked = (!!chosen && !assigned) || (!a.unlocked && !assigned);
+  const typeDone = full && !!cs.type && !!cs.ready;
+  const states = sequence([{ done: typeDone, skipped: !full }, { done: assigned }], assigned, locked);
+  return [
+    {
+      step: "type",
+      label: "Handover Type",
+      desc: full ? "ASO, Shop Details Only or Shop + Measurement" : "Skipped: toggle OFF sends client details only",
+      icon: ClipboardList,
+      state: states[0]!,
+      info: full ? (cs.type ? [TYPE_LABEL[cs.type], cs.type !== "ASO" ? shopsInfo(cs.shops) : null].filter(Boolean).join(" · ") : null) : null,
+      types: full ? (cs.type ?? null) : false,
+    },
+    {
+      step: "assign",
+      label: "Assign Client Servicing Person",
+      desc: "Client Servicing person and a note",
+      icon: UserRoundCheck,
+      state: states[1]!,
+      info: assigned ? `${cs.assignee!.name}${cs.assignedAt ? ` · ${formatDate(cs.assignedAt)}` : ""}` : states[1] === "CURRENT" || states[1] === "NEXT" ? cs.missing : null,
+    },
+  ];
+}
+
+function recceSteps(a: AssignState, chosen: Branch | null): ChainStep[] {
+  const r = a.recce;
+  const assigned = chosen === "RECCE";
+  const locked = (!!chosen && !assigned) || (!a.unlocked && !assigned) || !r.available;
+  const sent = r.emails?.count ?? 0;
+  const codes = !!r.projectCode;
+  const states = sequence([{ done: sent > 0, skipped: !sent && codes }, { done: codes }, { done: !!r.handoverReady }, { done: assigned }], assigned, locked);
+  const lastStatus = r.emails?.lastStatus === "SKIPPED" ? "not sent (mail off)" : r.emails?.lastStatus === "FAILED" ? "failed" : "sent";
+  return [
+    {
+      step: "email",
+      label: "Project Code Request Email",
+      desc: "To, CC, subject, message and attachments",
+      icon: Mail,
+      state: states[0]!,
+      info: sent ? `${sent} email${sent === 1 ? "" : "s"} · last ${formatDate(r.emails!.lastSentAt)}` : codes ? "Not sent: codes were entered directly" : null,
+      history: { info: sent ? `${sent} · last ${lastStatus}` : "No emails yet", done: sent > 0 },
+    },
+    {
+      step: "codes",
+      label: "Project Code & Estimation Code",
+      desc: "8-digit project code and EST- code",
+      icon: Hash,
+      state: states[1]!,
+      info: codes ? `${r.projectCode} · ${r.estimationCode ?? ""}` : null,
+    },
+    {
+      step: "handover",
+      label: "Handover Type & Details",
+      desc: "Same three types, always the full handover",
+      icon: ClipboardList,
+      state: states[2]!,
+      info: a.cs.type ? [TYPE_LABEL[a.cs.type], a.cs.type !== "ASO" ? shopsInfo(a.cs.shops) : null].filter(Boolean).join(" · ") : states[2] === "CURRENT" ? r.missing : null,
+      types: a.cs.type ?? null,
+    },
+    {
+      step: "assign",
+      label: "Assign to Recce / Operations",
+      desc: "Person, dates, location and notes",
+      icon: UserRoundCheck,
+      state: states[3]!,
+      info: assigned ? `${r.assignee!.name}${r.assignedAt ? ` · ${formatDate(r.assignedAt)}` : ""}` : null,
+    },
+  ];
+}
+
+/** Connector between two steps of a branch: solid in the branch colour once the step above is done. */
+function StepLink({ color, filled }: { color: string; filled: boolean }) {
+  return <span aria-hidden className={cn("mx-auto block h-5 w-0 border-l-[3px]", !filled && "border-dashed")} style={{ borderColor: filled ? color : GREY }} />;
+}
+
+/** The three handover types under the Handover Type step, the chosen one highlighted. */
+function TypeBranches({ chosen, color }: { chosen: HandoverType | null; color: string }) {
+  return (
+    <span className="relative mt-2 block pt-2.5" aria-label={`Handover type: ${chosen ? TYPE_LABEL[chosen] : "not chosen yet"}`}>
+      <span aria-hidden className="absolute left-[16.66%] right-[16.66%] top-0 h-2.5 rounded-t-md border-x-2 border-t-2" style={{ borderColor: `${color}55` }} />
+      <span aria-hidden className="absolute left-1/2 top-0 h-2.5 border-l-2" style={{ borderColor: `${color}55` }} />
+      <span className="grid grid-cols-3 gap-1">
+        {(["ASO", "SHOP_DETAILS", "SHOP_MEASUREMENT"] as const).map((t) => {
+          const on = chosen === t;
+          return (
+            <span
+              key={t}
+              className={cn("truncate rounded-md border px-1 py-0.5 text-center text-[10px] font-semibold leading-tight", !on && "text-muted-foreground")}
+              style={on ? { background: color, borderColor: color, color: "#fff" } : { borderColor: GREY }}
+              title={TYPE_LABEL[t]}
+            >
+              {TYPE_SHORT[t]}
+            </span>
+          );
+        })}
+      </span>
+    </span>
+  );
+}
+
+function StepNode({ s, n, color, onOpen, delay }: { s: ChainStep; n: number; color: string; onOpen: () => void; delay: number }) {
+  const reduce = useReducedMotion();
+  const done = s.state === "DONE";
+  const now = s.state === "CURRENT";
+  const next = s.state === "NEXT";
+  const grey = s.state === "LOCKED" || s.state === "SKIPPED";
+  const tone = grey || s.state === "PENDING" ? "#94a3b8" : color;
+  return (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: grey ? 0.6 : s.state === "PENDING" ? 0.85 : 1, y: 0 }}
+      transition={{ delay, duration: 0.3 }}
+      whileHover={reduce ? undefined : { y: -2 }}
+      aria-label={`${s.label}: ${STATE_CHIP[s.state]}${s.info ? `, ${s.info}` : ""}`}
+      className={cn(
+        "relative mx-auto block w-full max-w-[340px] rounded-xl border-2 bg-surface px-3 py-2.5 text-left shadow-soft focus-visible:outline-2 focus-visible:outline-offset-2",
+        (next || grey || s.state === "PENDING") && "border-dashed",
+      )}
+      style={{
+        borderColor: done || now || next ? color : GREY,
+        background: now ? `linear-gradient(135deg, ${color}14, #ffffff 70%)` : undefined,
+        boxShadow: now ? `0 0 0 3px ${color}22` : undefined,
+      }}
+    >
+      {now && !reduce && (
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute -inset-1 rounded-[14px] border-2"
+          style={{ borderColor: color }}
+          animate={{ opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        />
+      )}
+      <span className="flex items-start gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: done || now ? color : next ? `${color}b3` : "#94a3b8" }}>
+          {done ? <Check className="size-4" strokeWidth={3} aria-hidden /> : s.state === "LOCKED" ? <LockKeyhole className="size-3.5" aria-hidden /> : s.state === "SKIPPED" ? <SkipForward className="size-3.5" aria-hidden /> : n}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <s.icon className="size-3.5 shrink-0" style={{ color: tone }} aria-hidden />
+            <span className="truncate text-[13px] font-semibold text-foreground">{s.label}</span>
+            <span
+              className={cn("ml-auto shrink-0 rounded-full px-1.5 py-px text-[10px] font-bold uppercase tracking-wide", done && "bg-success-soft text-success", grey && "bg-muted text-muted-foreground", s.state === "PENDING" && "bg-muted text-muted-foreground")}
+              style={now ? { background: color, color: "#fff" } : next ? { background: `${color}1f`, color } : undefined}
+            >
+              {STATE_CHIP[s.state]}
+            </span>
+          </span>
+          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{s.desc}</span>
+          {s.info && (
+            <span className="mt-1 block truncate text-[11px] font-medium" style={{ color: done ? SUCCESS : now ? color : "#64748b" }}>
+              {s.info}
+            </span>
+          )}
+          {s.types !== undefined && s.types !== false && <TypeBranches chosen={s.types} color={tone} />}
+        </span>
+      </span>
+    </motion.button>
+  );
+}
+
+/** Email History, hanging off the request email step (never blocks the next step). */
+function HistoryNode({ h, color, onOpen }: { h: NonNullable<ChainStep["history"]>; color: string; onOpen: () => void }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center">
+      <span />
+      <span aria-hidden className="block h-12 w-0 border-l-[3px] border-dashed" style={{ borderColor: GREY }} />
+      <span className="flex items-center">
+        <span aria-hidden className="block w-4 shrink-0 border-t-2 border-dashed sm:w-6" style={{ borderColor: h.done ? color : GREY }} />
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Email History: ${h.info}`}
+          className="flex min-w-0 items-center gap-1.5 rounded-full border bg-surface px-2.5 py-1 text-left text-[11px] shadow-soft hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2"
+          style={{ borderColor: h.done ? color : GREY }}
+        >
+          <History className="size-3.5 shrink-0" style={{ color: h.done ? color : "#94a3b8" }} aria-hidden />
+          <span className="min-w-0">
+            <span className="block font-semibold text-foreground">Email History</span>
+            <span className="block truncate text-muted-foreground">{h.info}</span>
+          </span>
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** One Project Assign branch: its header node, then its step chain (collapsed when the other branch was chosen). */
+function BranchColumn({
+  k,
+  a,
+  chosen,
+  steps,
+  onOpen,
+  delay,
+  celebrate,
+}: {
+  k: Branch;
+  a: AssignState;
+  chosen: Branch | null;
+  steps: ChainStep[];
+  onOpen: (step?: string) => void;
+  delay: number;
+  celebrate: boolean;
+}) {
+  const color = ASSIGN_META[k].color;
+  const collapsed = !!chosen && chosen !== k;
+  const assigned = chosen === k;
+  return (
+    <div className="flex min-w-0 flex-col">
+      <AssignNode k={k} a={a} chosen={chosen} onOpen={() => onOpen()} delay={delay} celebrate={celebrate} />
+      {!collapsed && (
+        <ol className="mt-0 flex flex-col">
+          {steps.map((s, i) => {
+            const prevDone = i === 0 ? assigned || a.unlocked : steps[i - 1]!.state === "DONE" || steps[i - 1]!.state === "SKIPPED";
+            return (
+              <li key={s.step}>
+                <StepLink color={color} filled={prevDone && s.state !== "LOCKED"} />
+                <StepNode s={s} n={i + 1} color={color} onOpen={() => onOpen(s.step)} delay={delay + 0.05 * (i + 1)} />
+                {s.history && <HistoryNode h={s.history} color={color} onOpen={() => onOpen("history")} />}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {/* Runs on to the merge line, whatever the other column's height. */}
+      <span aria-hidden className={cn("mx-auto mt-0 hidden min-h-5 w-0 flex-1 border-l-[3px] sm:block", !assigned && "border-dashed")} style={{ borderColor: assigned && a.completed ? SUCCESS : GREY }} />
+    </div>
+  );
+}
+
+/* ------------------------------ Client Selection fork ------------------------------ */
+
+/** Create Project -> New Client / Existing Client. `flag` is the chosen one; `done` once the order exists. */
+export interface ClientChoice {
+  flag: ClientType | null;
+  done: boolean;
+  name?: string | null;
+}
+
+function ClientNode({ f, c, onOpen, delay }: { f: ClientType; c: ClientChoice; onOpen: () => void; delay: number }) {
+  const m = CLIENT_META[f];
+  const reduce = useReducedMotion();
+  const mine = c.flag === f;
+  const done = c.done && mine;
+  const locked = c.done && !mine;
+  const ready = !c.done && (!c.flag || mine);
+  const status = done ? (c.name ?? "Selected") : locked ? "Not used" : mine ? "Selecting the company..." : c.flag ? "Switch to this" : "Choose to start";
+  return (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: locked || (!ready && !done) ? 0.62 : 1, y: 0 }}
+      transition={{ delay, duration: 0.35 }}
+      whileHover={reduce ? undefined : { y: -2 }}
+      aria-label={`${m.label}: ${status}`}
+      className={cn(
+        "relative w-full max-w-[300px] justify-self-center rounded-2xl border-2 bg-surface px-4 py-3 text-left shadow-card transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2",
+        !done && "border-dashed",
+      )}
+      style={{
+        borderColor: done || ready ? m.color : GREY,
+        background: done || mine ? `linear-gradient(135deg, ${m.soft}, #ffffff 70%)` : undefined,
+      }}
+    >
+      {mine && !c.done && !reduce && (
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute -inset-1 rounded-[18px] border-2 border-dashed"
+          style={{ borderColor: m.color }}
+          animate={{ opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+        />
+      )}
+      <span className="flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full text-white" style={{ background: locked ? "#94a3b8" : m.color }}>
+          {done ? <Check className="size-5" strokeWidth={3} aria-hidden /> : locked ? <LockKeyhole className="size-4" aria-hidden /> : <m.icon className="size-5" aria-hidden />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-foreground">{m.label}</span>
+          <span className={cn("mt-0.5 block truncate text-xs", !done && !mine && "text-muted-foreground")} style={done || mine ? { color: m.color } : undefined}>
+            {status}
+          </span>
+          {!c.done && (
+            <ul className="mt-1.5 hidden space-y-0.5 sm:block">
               {m.items.map((it) => (
                 <li key={it} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="size-1.5 shrink-0 rounded-full" style={{ background: locked ? GREY : `${m.color}99` }} />
+                  <span className="size-1.5 shrink-0 rounded-full" style={{ background: `${m.color}99` }} />
                   {it}
                 </li>
               ))}
@@ -327,6 +681,23 @@ function AssignNode({ k, a, chosen, onOpen, delay, celebrate }: { k: Branch; a: 
         </span>
       </span>
     </motion.button>
+  );
+}
+
+function ClientFork({ c, onOpen, draw }: { c: ClientChoice; onOpen: (f: ClientType) => void; draw: boolean }) {
+  const colors: [string, string] = [CLIENT_META.NEW.color, CLIENT_META.EXISTING.color];
+  const split: [boolean, boolean] = c.flag ? [c.flag === "NEW", c.flag === "EXISTING"] : [true, true];
+  return (
+    <div className="my-1">
+      <Fork colors={colors} active={split} draw={false} />
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-0 sm:grid-cols-2 sm:gap-8">
+        <ClientNode f="NEW" c={c} onOpen={() => onOpen("NEW")} delay={0.12} />
+        <ClientNode f="EXISTING" c={c} onOpen={() => onOpen("EXISTING")} delay={0.18} />
+      </div>
+      <div className="mt-3 sm:mt-0">
+        <Fork merge colors={colors} active={c.done ? split : [false, false]} draw={draw} />
+      </div>
+    </div>
   );
 }
 
@@ -351,24 +722,30 @@ function EndNode({ a, celebrate }: { a: AssignState; celebrate: boolean }) {
 }
 
 /**
- * Lead Management mind map: New Lead -> Project Assign, then Project Assign forks into Assign to Client Servicing and
- * Assign to Recce Team; either branch leads to Lead Completed. `celebrate` is the stage that was just completed
- * (NEW_LEAD draws the fork, PROJECT_ASSIGN runs the chosen branch into Lead Completed).
+ * Lead Management mind map: Create Project (NEW_LEAD) -> New Client / Existing Client -> Project Assign, then Project
+ * Assign forks into Assign to Client Servicing and Assign to Recce Team; either branch leads to Lead Completed.
+ * `celebrate` is the stage that was just completed (NEW_LEAD draws the forks, PROJECT_ASSIGN runs the chosen branch into
+ * Lead Completed).
  */
 export function LeadMindMap({
   stages,
   assign,
+  client,
   badges = {},
   closed = false,
   celebrate,
   onOpen,
+  onClientOpen,
 }: {
   stages: LeadStageState[];
   assign: AssignState | null;
+  client?: ClientChoice;
   badges?: Partial<Record<MapNode, string>>;
   closed?: boolean;
   celebrate?: LeadStage | null;
-  onOpen: (k: MapNode) => void;
+  /** `step`: a step of a Project Assign branch (opens that section of the branch drawer). */
+  onOpen: (k: MapNode, step?: string) => void;
+  onClientOpen?: (f: ClientType) => void;
 }) {
   const reduce = useReducedMotion();
 
@@ -404,7 +781,11 @@ export function LeadMindMap({
               <StageNode s={s} badge={badges[s.key]} celebrate={celebrate === s.key} closed={closed} onOpen={() => onOpen(s.key)} delay={i * 0.06} />
               {m.right ? <SideCard card={m.right} side="right" color={m.color} state={s.status} delay={0.14 + i * 0.06} /> : <span className="hidden xl:block" />}
             </div>
-            {next && <Spine from={m.color} to={STAGE_META[next.key].color} filled={s.status === "DONE"} travel={i === celebrateIdx} />}
+            {next && s.key === "NEW_LEAD" && client ? (
+              <ClientFork c={client} onOpen={(f) => (onClientOpen ? onClientOpen(f) : onOpen("NEW_LEAD"))} draw={i === celebrateIdx} />
+            ) : (
+              next && <Spine from={m.color} to={STAGE_META[next.key].color} filled={s.status === "DONE"} travel={i === celebrateIdx} />
+            )}
           </div>
         );
       })}
@@ -412,9 +793,9 @@ export function LeadMindMap({
       {assign && (
         <>
           <Fork colors={branchColors} active={chosen ? [chosen === "HANDOVER", chosen === "RECCE"] : [open, open && assign.recce.available]} draw={celebrate === "NEW_LEAD"} />
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:mt-0 sm:grid-cols-2 sm:gap-8">
-            <AssignNode k="HANDOVER" a={assign} chosen={chosen} onOpen={() => onOpen("HANDOVER")} delay={0.35} celebrate={celebrate === "PROJECT_ASSIGN"} />
-            <AssignNode k="RECCE" a={assign} chosen={chosen} onOpen={() => onOpen("RECCE")} delay={0.45} celebrate={celebrate === "PROJECT_ASSIGN"} />
+          <div className="mt-4 grid grid-cols-1 gap-6 sm:mt-0 sm:grid-cols-2 sm:gap-8">
+            <BranchColumn k="HANDOVER" a={assign} chosen={chosen} steps={csSteps(assign, chosen)} onOpen={(step) => onOpen("HANDOVER", step)} delay={0.35} celebrate={celebrate === "PROJECT_ASSIGN"} />
+            <BranchColumn k="RECCE" a={assign} chosen={chosen} steps={recceSteps(assign, chosen)} onOpen={(step) => onOpen("RECCE", step)} delay={0.45} celebrate={celebrate === "PROJECT_ASSIGN"} />
           </div>
           <div className="mt-4 sm:mt-0">
             <Fork merge colors={[SUCCESS, SUCCESS]} active={[assign.completed && chosen === "HANDOVER", assign.completed && chosen === "RECCE"]} draw={celebrate === "PROJECT_ASSIGN"} />
@@ -435,6 +816,13 @@ export function LeadMindMap({
         </span>
         <span className="flex items-center gap-2">
           <span className="w-6 border-t-2 border-dashed border-slate-300" /> Not open / not needed
+        </span>
+        <span className="flex items-center gap-1.5">
+          {(["Now", "Next", "Pending", "Locked", "Skipped"] as const).map((l) => (
+            <span key={l} className={cn("rounded-full px-1.5 py-px text-[10px] font-bold uppercase", l === "Now" ? "bg-primary text-white" : l === "Next" ? "bg-brand-soft text-brand" : "bg-muted text-muted-foreground")}>
+              {l}
+            </span>
+          ))}
         </span>
       </div>
     </div>

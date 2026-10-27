@@ -4,7 +4,9 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ListChecks,
+  ListPlus,
   Mic,
+  Pencil,
   NotebookPen,
   Save,
   AlertTriangle,
@@ -77,6 +79,7 @@ import {
   type ShopState,
 } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
+import { useScrollTo } from "@/hooks/use-scroll-to";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { VoiceNotes } from "./voice-notes";
@@ -227,10 +230,17 @@ function TypeSection({ orderId, data, editable }: { orderId: string; data: Hando
   );
 }
 
-/** Company and contact persons, straight from Client Management. New contact persons can be added here (saved on the client). */
+/**
+ * Company and contact persons, straight from Client Management. Contact persons can be added and edited here (saved on
+ * the client). GST certificate and custom fields: New (Client Management) clients only, not Existing (Zoho) ones.
+ */
 function ClientSection({ order, canAddContact, aso }: { order: Order; canAddContact: boolean; aso: boolean }) {
   const c = order.client;
-  const [adding, setAdding] = useState(false);
+  // null: closed; -1: add; >= 0: edit that contact.
+  const [editing, setEditing] = useState<number | null>(null);
+  const crm = order.clientType !== "EXISTING";
+  const certificates = crm ? (c.gstCertificates ?? []) : [];
+  const custom = crm ? (c.customFields ?? []) : [];
   const address = [c.address, c.city, c.state].filter(Boolean).join(", ") + (c.pincode ? ` - ${c.pincode}` : "");
   return (
     <Card className="p-5 sm:p-6">
@@ -240,13 +250,13 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         description={aso ? "ASO: Client Servicing calls these contacts to collect the shop details. Add anyone they should speak to." : "Auto-filled from Client Management."}
         action={
           canAddContact && (
-            <Button variant="brand-outline" size="sm" onClick={() => setAdding(true)}>
+            <Button variant="brand-outline" size="sm" onClick={() => setEditing(-1)}>
               <UserPlus className="size-4" aria-hidden /> Add Contact Person
             </Button>
           )
         }
       />
-      <ContactDialog client={c} index={null} open={adding} onOpenChange={setAdding} />
+      <ContactDialog client={c} index={editing === -1 ? null : editing} open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} />
       <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
@@ -256,6 +266,18 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         <DetailItem label="Company Email">{c.email}</DetailItem>
         <DetailItem label="Phone Number">{c.phone}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
+        {crm && (
+          <DetailItem label="GST Certificate" className="sm:col-span-2 xl:col-span-3">
+            {certificates.length ? (
+              <span className="flex flex-wrap gap-1.5">
+                {certificates.map((f) => (
+                  // Through the order, so Client Servicing can open it too.
+                  <AttachmentChip key={f.fileId} file={f} source={{ orderId: order._id }} />
+                ))}
+              </span>
+            ) : null}
+          </DetailItem>
+        )}
         {/* Older clients may still carry an address from the previous form. */}
         {address && (
           <DetailItem label="Address" className="sm:col-span-2 xl:col-span-3">
@@ -263,6 +285,20 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
           </DetailItem>
         )}
       </dl>
+      {custom.length > 0 && (
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <ListPlus className="size-3.5" aria-hidden /> Custom Fields
+          </p>
+          <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {custom.map((f) => (
+              <DetailItem key={f.label} label={f.label}>
+                {f.value}
+              </DetailItem>
+            ))}
+          </dl>
+        </div>
+      )}
       <div className="mt-5 overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -272,12 +308,17 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
               <th className="px-4 py-2.5">Mobile</th>
               <th className="px-4 py-2.5">Email</th>
               <th className="px-4 py-2.5">Primary</th>
+              {canAddContact && (
+                <th className="px-4 py-2.5 text-right">
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {c.contacts.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                <td colSpan={canAddContact ? 6 : 5} className="px-4 py-6 text-center text-muted-foreground">
                   No contact persons yet.
                 </td>
               </tr>
@@ -297,6 +338,13 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
                     <span className="text-muted-foreground">-</span>
                   )}
                 </td>
+                {canAddContact && (
+                  <td className="px-4 py-1.5 text-right">
+                    <Button variant="ghost" size="icon" onClick={() => setEditing(i)} aria-label={`Edit ${k.name}`} title="Edit contact">
+                      <Pencil className="size-4" aria-hidden />
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -315,13 +363,13 @@ const STATE_FILTERS: { key: ShopState | ""; label: string }[] = [
 const sizeOf = (s: { width?: number; height?: number; unit?: string; quantity?: number }) =>
   s.width && s.height ? `${s.width} × ${s.height} ${s.unit ?? "ft"}${s.quantity && s.quantity > 1 ? ` × ${s.quantity}` : ""}` : "-";
 
-/** Total Shops typed by the BD vs the rows in the Excel; Verify locks in that they match. */
+/** Total Shops (auto-filled with the valid rows of the Excel, the BD may correct it) vs the valid rows; Verify locks in that they match. */
 function VerifyPanel({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
   const toast = useToast();
   const setTotal = useSetShopTotal(orderId);
   const verify = useVerifyShops(orderId);
   const [total, setTotalText] = useState(data.declaredShopTotal ? String(data.declaredShopTotal) : "");
-  const excel = data.shopList?.total ?? null;
+  const excel = data.shopList ? data.shopList.valid : null;
   const declared = data.declaredShopTotal;
   const match = declared !== null && excel !== null && declared === excel;
   const dirty = total !== (declared ? String(declared) : "");
@@ -335,7 +383,7 @@ function VerifyPanel({ orderId, data, editable }: { orderId: string; data: Hando
   return (
     <div className={cn("rounded-xl border-2 p-4", data.verified ? "border-success/40 bg-success-soft/40" : match ? "border-brand/30 bg-brand-soft/30" : "border-warning/40 bg-warning-soft/40")}>
       <div className="flex flex-wrap items-end gap-4">
-        <Field label="Total Shops" htmlFor="ho-total" hint="As told by the client" className="w-44">
+        <Field label="Total Shops" htmlFor="ho-total" hint="Auto-filled: valid rows" className="w-44">
           <Input
             id="ho-total"
             inputMode="numeric"
@@ -354,11 +402,11 @@ function VerifyPanel({ orderId, data, editable }: { orderId: string; data: Hando
         )}
         <div className="flex items-center gap-3 text-sm">
           <span className="rounded-lg bg-surface px-3 py-2 shadow-soft">
-            Entered <b className="tabular-nums">{declared ?? "-"}</b>
+            Total Shops <b className="tabular-nums">{declared ?? "-"}</b>
           </span>
           <span className={cn("font-bold", match ? "text-success" : "text-warning")}>{match ? "=" : "≠"}</span>
           <span className="rounded-lg bg-surface px-3 py-2 shadow-soft">
-            In Excel <b className="tabular-nums">{excel ?? "-"}</b>
+            Valid in Excel <b className="tabular-nums">{excel ?? "-"}</b>
           </span>
         </div>
         <div className="ml-auto">
@@ -373,7 +421,7 @@ function VerifyPanel({ orderId, data, editable }: { orderId: string; data: Hando
                 variant="brand"
                 disabled={!match || dirty}
                 loading={verify.isPending}
-                title={!match ? "Total Shops and the Excel must match" : undefined}
+                title={!match ? "Total Shops and the valid rows in the Excel must match" : undefined}
                 onClick={() => verify.mutateAsync(undefined).then(() => toast("Shop list verified"), (e) => toast(errorMessage(e), "error"))}
               >
                 <ShieldCheck className="size-4" aria-hidden /> Verify Shop List
@@ -384,12 +432,17 @@ function VerifyPanel({ orderId, data, editable }: { orderId: string; data: Hando
       </div>
       {!match && declared !== null && excel !== null && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
-          <CircleAlert className="size-3.5" aria-hidden /> The Excel has {excel} shop{excel === 1 ? "" : "s"} but {declared} {declared === 1 ? "was" : "were"} entered. Correct the count or replace the file.
+          <CircleAlert className="size-3.5" aria-hidden /> The Excel has {excel} valid shop{excel === 1 ? "" : "s"} but Total Shops is {declared}. Correct the count or fix the rows and replace the file.
         </p>
       )}
-      {data.shopList?.duplicates ? (
+      {excel === 0 && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
-          <Copy className="size-3.5" aria-hidden /> {data.shopList.duplicates} duplicate row{data.shopList.duplicates === 1 ? "" : "s"} in the Excel (marked below). They still count as shops; remove them from the file if they are mistakes.
+          <CircleAlert className="size-3.5" aria-hidden /> No valid rows in the Excel. Fix the rows marked below and upload the file again.
+        </p>
+      )}
+      {data.shopList && data.shopList.total > (excel ?? 0) ? (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Info className="size-3.5" aria-hidden /> Rows with warnings, errors or duplicates ({data.shopList.total - (excel ?? 0)}) are not counted in Total Shops. They stay in the list (marked below) for Client Servicing.
         </p>
       ) : null}
     </div>
@@ -455,7 +508,7 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
       setFile([]);
       setPage(1);
       setState("");
-      toast(`Shop list uploaded: ${r.shopList?.total ?? 0} shops${r.shopList?.error ? `, ${r.shopList.error} with errors` : ""}.`);
+      toast(`Shop list uploaded: ${r.shopList?.valid ?? 0} valid of ${r.shopList?.total ?? 0} rows. Total Shops is filled in; verify it.`);
     } catch (e) {
       toast(errorMessage(e), "error");
     }
@@ -468,15 +521,15 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
         files={file}
         onChange={setFile}
         accept=".xlsx,.csv"
-        hint={`Excel (.xlsx) or CSV, matched like the project site import.${measurement ? " Width and Height (or Size) are required." : ""}${list && data.shopFiles ? " Replacing removes the shop photos already added." : ""}`}
+        hint={`Excel (.xlsx) or CSV, matched like the project site import.${measurement ? " Size (W x H) is required for every shop." : " No Size needed."}${list && data.shopFiles ? " Replacing removes the shop photos already added." : ""}`}
         compact={!!list}
       />
       <div className="flex flex-wrap gap-2">
         <Button variant="brand" onClick={doUpload} disabled={!file[0]} loading={upload.isPending}>
           <Upload className="size-4" aria-hidden /> {list ? "Replace Shop List" : "Upload Shop List"}
         </Button>
-        <Button variant="outline" onClick={() => downloadShopTemplate().catch((e) => toast(errorMessage(e), "error"))}>
-          <Download className="size-4" aria-hidden /> Download Template
+        <Button variant="outline" onClick={() => downloadShopTemplate(measurement ? "SHOP_MEASUREMENT" : "SHOP_DETAILS").catch((e) => toast(errorMessage(e), "error"))}>
+          <Download className="size-4" aria-hidden /> {measurement ? "Template (with Size)" : "Template (without Size)"}
         </Button>
       </div>
     </div>
@@ -487,7 +540,11 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
       <SectionTitle
         icon={Store}
         title={measurement ? "Shop Details + Measurement" : "Shop Details"}
-        description={measurement ? "Shop list with sizes. Add the client's photos and documents to each shop." : "The client's shop list. Enter the Total Shops and verify the count."}
+        description={
+          measurement
+            ? "Shop list with Size (W x H). Total Shops fills in from the valid rows; verify it, then add the client's photos and documents to each shop."
+            : "Shop list without sizes. Total Shops fills in from the valid rows; verify it."
+        }
         action={
           list && (
             <div className="flex flex-wrap gap-2">
@@ -505,10 +562,7 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
       />
       {!list ? (
         editable ? (
-          <div className="space-y-4">
-            <VerifyPanel key={`none-${data.declaredShopTotal}`} orderId={orderId} data={data} editable={editable} />
-            {uploader}
-          </div>
+          uploader
         ) : (
           <EmptyState icon={Store} title="No shop list" description="The BD did not share a shop list for this order." />
         )
@@ -517,7 +571,7 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
           <VerifyPanel key={`${list.fileId}-${data.declaredShopTotal}`} orderId={orderId} data={data} editable={editable} />
           <div className={cn("grid gap-3 sm:grid-cols-3", measurement ? "xl:grid-cols-6" : "xl:grid-cols-5")}>
             {[
-              { label: "Total Shops", value: list.total, icon: Store, tone: "bg-brand-soft text-brand" },
+              { label: "Rows in Excel", value: list.total, icon: Store, tone: "bg-brand-soft text-brand" },
               { label: "Valid", value: list.valid, icon: CheckCircle2, tone: "bg-success-soft text-success" },
               { label: "With Warnings", value: list.warning, icon: AlertTriangle, tone: "bg-warning-soft text-warning" },
               { label: "With Errors", value: list.error, icon: XCircle, tone: "bg-danger-soft text-danger" },
@@ -576,7 +630,7 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
                       <th className="px-3 py-2.5">Shop / Dealer</th>
                       <th className="px-3 py-2.5">Location</th>
                       <th className="px-3 py-2.5">Mobile</th>
-                      <th className="px-3 py-2.5">Size</th>
+                      {measurement && <th className="px-3 py-2.5">Size</th>}
                       <th className="px-3 py-2.5">Status</th>
                       {measurement && <th className="px-3 py-2.5">Photos &amp; Documents</th>}
                     </tr>
@@ -584,7 +638,7 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
                   <tbody className="divide-y divide-border">
                     {rows.data?.data.length === 0 && (
                       <tr>
-                        <td colSpan={measurement ? 7 : 6} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={measurement ? 7 : 5} className="px-3 py-6 text-center text-muted-foreground">
                           No shops in this filter.
                         </td>
                       </tr>
@@ -601,7 +655,7 @@ function ShopSection({ orderId, data, editable }: { orderId: string; data: Hando
                           {(s.address1 || s.address2) && <span className="block text-xs text-muted-foreground">{[s.address1, s.address2].filter(Boolean).join(", ")}</span>}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums">{s.mobile ?? "-"}</td>
-                        <td className="px-3 py-2.5 tabular-nums">{sizeOf(s)}</td>
+                        {measurement && <td className="px-3 py-2.5 tabular-nums">{sizeOf(s)}</td>}
                         <td className="px-3 py-2.5">
                           <Badge tone={s.state === "VALID" ? "success" : s.state === "WARNING" ? "warning" : "danger"}>{s.state === "VALID" ? "Valid" : s.state === "WARNING" ? "Warning" : "Error"}</Badge>
                           {s.issues.length > 0 && (
@@ -888,10 +942,26 @@ function StatusBanner({ data }: { data: HandoverState }) {
  * `mode="recce"` (Assign to Recce Team): the same handover details, always in full (no toggle), without the Client
  * Servicing assignment; `locked` once the Recce team has the project.
  */
-export function HandoverTab({ order, onAssigned, mode = "cs", locked = false }: { order: Order; onAssigned?: () => void; mode?: "cs" | "recce"; locked?: boolean }) {
+export function HandoverTab({
+  order,
+  onAssigned,
+  mode = "cs",
+  locked = false,
+  focus,
+}: {
+  order: Order;
+  onAssigned?: () => void;
+  mode?: "cs" | "recce";
+  locked?: boolean;
+  /** Section to scroll to (mind map step): "type" or "assign". */
+  focus?: string | null;
+}) {
   const { can } = useAuth();
   const q = useHandover(order._id);
   const canWrite = can("sales:write");
+  // Toggle OFF has no type section (show the toggle); once handed over there is no assign form (show the client).
+  const target = !focus ? null : focus === "type" && q.data?.full === false ? "ho-step-scope" : focus === "assign" && q.data?.assignee ? "ho-step-client" : `ho-step-${focus}`;
+  useScrollTo(target, !q.isPending);
   if (q.isPending)
     return (
       <div className="space-y-4">
@@ -909,12 +979,20 @@ export function HandoverTab({ order, onAssigned, mode = "cs", locked = false }: 
   return (
     <div className="space-y-4">
       {!recce && <StatusBanner data={data} />}
-      {!recce && canWrite && open && <ScopeSection orderId={order._id} data={data} editable />}
-      <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
+      {!recce && canWrite && open && (
+        <div id="ho-step-scope" className="scroll-mt-4">
+          <ScopeSection orderId={order._id} data={data} editable />
+        </div>
+      )}
+      <div id="ho-step-client" className="scroll-mt-4">
+        <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
+      </div>
       <AnimatePresence initial={false}>
         {data.full && (
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
-            <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
+            <div id="ho-step-type" className="scroll-mt-4">
+              <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
+            </div>
             {data.type === "ASO" && data.shopList && open && (
               <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
                 <AlertTriangle className="size-4" aria-hidden /> A shop list was uploaded earlier. ASO hands over without one: remove it below, or choose a shop type.
@@ -927,7 +1005,11 @@ export function HandoverTab({ order, onAssigned, mode = "cs", locked = false }: 
           </motion.div>
         )}
       </AnimatePresence>
-      {!recce && canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
+      {!recce && canWrite && open && (
+        <div id="ho-step-assign" className="scroll-mt-4">
+          <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />
+        </div>
+      )}
       {!open && canWrite && !recce && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <RefreshCw className="size-3.5" aria-hidden /> Documents and voice notes can still be added; Client Servicing is notified of each one.

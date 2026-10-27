@@ -25,6 +25,7 @@ import type { LeadDetail } from "@/lib/api/leads";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useScrollTo } from "@/hooks/use-scroll-to";
 import { ASSIGN_META } from "./stage-meta";
 
 const TEAL = ASSIGN_META.RECCE.color;
@@ -33,6 +34,7 @@ type StepStatus = "DONE" | "CURRENT" | "PENDING";
 
 /** One step of the Recce branch: a numbered node on a vertical rail, with a collapsible body. */
 function Step({
+  id,
   n,
   title,
   icon: Icon,
@@ -42,6 +44,7 @@ function Step({
   defaultOpen,
   children,
 }: {
+  id: string;
   n: number;
   title: string;
   icon: typeof Mail;
@@ -55,7 +58,7 @@ function Step({
   const done = status === "DONE";
   const current = status === "CURRENT";
   return (
-    <motion.li initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: n * 0.06 }} className="relative pl-14">
+    <motion.li id={id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: n * 0.06 }} className="relative scroll-mt-4 pl-14">
       {/* Rail to the next step: filled once this one is done. */}
       {!last && (
         <span aria-hidden className="absolute bottom-[-1rem] left-[1.3rem] top-12 w-0.5 rounded-full bg-slate-200">
@@ -77,7 +80,7 @@ function Step({
             {summary && <span className="block truncate text-xs text-muted-foreground">{summary}</span>}
           </span>
           <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", done ? "bg-success-soft text-success" : current ? "text-white" : "bg-muted text-muted-foreground")} style={current ? { background: TEAL } : undefined}>
-            {done ? "Done" : current ? "Next" : "Pending"}
+            {done ? "Done" : current ? "Now" : "Pending"}
           </span>
           <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
         </button>
@@ -120,7 +123,7 @@ function CodeRequestStep({ r, locked }: { r: RecceState; locked: boolean }) {
           }}
         />
       )}
-      <div>
+      <div id="recce-step-history" className="scroll-mt-4">
         <p className="mb-2 text-sm font-semibold text-primary">Email History</p>
         <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked} />
       </div>
@@ -362,8 +365,10 @@ function AssignedBanner({ r }: { r: RecceState }) {
  * Project Assign > Assign to Recce Team: project code request email, codes, the handover (same details as for Client
  * Servicing, always in full) and the Recce / Operations person. Assigning creates the operations project and completes the lead.
  */
-export function RecceBranchPanel({ detail, onAssigned }: { detail: LeadDetail; onAssigned?: () => void }) {
+export function RecceBranchPanel({ detail, onAssigned, focus }: { detail: LeadDetail; onAssigned?: () => void; focus?: string | null }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
+  // Opened from a mind map step: that step opens and scrolls into view (Email History sits inside step 1).
+  useScrollTo(focus ? `recce-step-${focus}` : null, q.isSuccess, 450);
   if (detail.handover.assignee)
     return <EmptyState icon={LockKeyhole} title="Not needed" description={`This project is assigned to Client Servicing (${detail.handover.assignee.name}).`} />;
   if (q.isPending)
@@ -384,35 +389,46 @@ export function RecceBranchPanel({ detail, onAssigned }: { detail: LeadDetail; o
   const s3: StepStatus = handoverMissing.length || r.projectContacts === 0 ? (r.codes ? "CURRENT" : "PENDING") : "DONE";
   const s4: StepStatus = assigned ? "DONE" : r.missing.length === 0 ? "CURRENT" : "PENDING";
   const first = !assigned ? [s1, s2, s3, s4].findIndex((s) => s !== "DONE") : -1;
+  const asked = focus === "history" ? 0 : ["email", "codes", "handover", "assign"].indexOf(focus ?? "");
+  const opens = (i: number) => (asked >= 0 ? asked === i : first === i);
 
   return (
     <div className="space-y-4">
       {assigned && <AssignedBanner r={r} />}
       <ol className="space-y-4">
         <Step
+          id="recce-step-email"
           n={1}
           title="Project Code Request Email"
           icon={Mail}
           status={assigned ? "DONE" : s1}
-          defaultOpen={first === 0}
+          defaultOpen={opens(0)}
           summary={r.requests.count ? `${r.requests.count} sent · last ${formatDateTime(r.requests.lastSentAt)}${r.requests.lastStatus && r.requests.lastStatus !== "SENT" ? ` (${r.requests.lastStatus === "SKIPPED" ? "not sent" : "failed"})` : ""}` : "Ask for the project code to be created"}
         >
           <CodeRequestStep r={r} locked={assigned} />
         </Step>
-        <Step n={2} title="Project Code & Estimation Code" icon={Hash} status={assigned ? "DONE" : s2} defaultOpen={first === 1} summary={r.codes ? `${r.codes.projectCode} · ${r.codes.estimationCode}` : "8-digit project code and EST- estimation code"}>
+        <Step id="recce-step-codes" n={2} title="Project Code & Estimation Code" icon={Hash} status={assigned ? "DONE" : s2} defaultOpen={opens(1)} summary={r.codes ? `${r.codes.projectCode} · ${r.codes.estimationCode}` : "8-digit project code and EST- estimation code"}>
           <CodesStep r={r} locked={assigned} />
         </Step>
         <Step
+          id="recce-step-handover"
           n={3}
           title="Handover Type & Details"
           icon={ClipboardList}
           status={assigned ? "DONE" : s3}
-          defaultOpen={first === 2}
+          defaultOpen={opens(2)}
           summary={handoverMissing[0] ?? "ASO, Shop Details Only or Shop + Measurement, with notes, voice notes and documents"}
         >
           <HandoverTab order={detail.order} mode="recce" locked={assigned} />
         </Step>
-        <Step n={4} title="Assign to Recce / Operations" icon={UserRoundCheck} status={s4} last defaultOpen={first === 3 || (first === -1 && !assigned)} summary={assigned ? `${r.assignee?.name} · ${formatDate(r.assignedAt)}` : "Recce person, dates, location and notes"}>
+        <Step
+          id="recce-step-assign"
+          n={4}
+          title="Assign to Recce / Operations"
+          icon={UserRoundCheck}
+          status={s4}
+          last
+          defaultOpen={asked >= 0 ? asked === 3 : first === 3 || (first === -1 && !assigned)} summary={assigned ? `${r.assignee?.name} · ${formatDate(r.assignedAt)}` : "Recce person, dates, location and notes"}>
           {assigned ? <p className="text-sm text-muted-foreground">Assigned. The Recce team works on project {r.project?.code} in Operations.</p> : <AssignStep r={r} onAssigned={onAssigned} />}
         </Step>
       </ol>

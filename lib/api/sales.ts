@@ -56,7 +56,7 @@ export interface ShopListSummary {
 /** What the BD hands to Client Servicing. */
 export const HANDOVER_TYPES = {
   ASO: { label: "ASO", hint: "Client and contact persons only. Client Servicing calls the client and collects the shop details." },
-  SHOP_DETAILS: { label: "Shop Details Only", hint: "Upload the client's shop list (Excel), enter the Total Shops and verify the count." },
+  SHOP_DETAILS: { label: "Shop Details Only", hint: "Upload the client's shop list (Excel, no sizes). Total Shops fills in from the valid rows; verify the count." },
   SHOP_MEASUREMENT: { label: "Shop + Measurement", hint: "Shop list with sizes, plus photos and documents for each shop the client shared." },
 } as const;
 export type HandoverType = keyof typeof HANDOVER_TYPES;
@@ -381,7 +381,7 @@ export interface HandoverState {
   voiceNotes: VoiceNote[];
   type: HandoverType | null;
   shopList: ShopListSummary | null;
-  /** Total Shops typed by the BD (must match the list to verify). */
+  /** Total Shops: auto-filled with the valid rows of the list (the BD may correct it); must match them to verify. */
   declaredShopTotal: number | null;
   verified: { at: string; by: string | null } | null;
   shopsWithFiles: number;
@@ -499,9 +499,9 @@ export function useClientServicingUsers(enabled = true) {
   return useQuery({ queryKey: ["sales", "cs-users"], queryFn: () => api<UserRef[]>("/sales/client-servicing-users"), enabled, staleTime: 5 * 60_000 });
 }
 
-/** Blank shop list in the columns the import understands. */
-export async function downloadShopTemplate() {
-  const { blob, fileName } = await apiBlob("/sales/shop-list-template");
+/** Blank shop list in the columns the import understands: Shop Details Only without Size, Shop + Measurement with it. */
+export async function downloadShopTemplate(type: "SHOP_DETAILS" | "SHOP_MEASUREMENT") {
+  const { blob, fileName } = await apiBlob(`/sales/shop-list-template?type=${type}`);
   saveBlob(blob, fileName ?? "shop-list-template.xlsx");
 }
 

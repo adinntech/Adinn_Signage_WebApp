@@ -5,13 +5,16 @@ import {
   Handshake,
   MessagesSquare,
   ReceiptIndianRupee,
+  Repeat,
   Scale,
   ScanSearch,
   Send,
+  Sparkles,
   UserRoundPlus,
   type LucideIcon,
 } from "lucide-react";
 import type { KpiColor } from "@/components/ui/kpi-card";
+import type { ClientType } from "@/lib/api/clients";
 import type { LeadStage } from "@/lib/api/leads";
 
 export interface BranchCard {
@@ -34,14 +37,15 @@ export interface StageMeta {
 }
 
 export const STAGE_META: Record<LeadStage, StageMeta> = {
+  // Shown as "Create Project"; the key stays NEW_LEAD for the API and saved leads.
   NEW_LEAD: {
-    label: "New Lead",
-    short: "New Lead",
+    label: "Create Project",
+    short: "Create Project",
     icon: UserRoundPlus,
     color: "#2563eb",
     kpi: "blue",
     soft: "#eff6ff",
-    left: { title: "Client Flag", icon: ClipboardPen, items: ["New client: Client Management list", "Existing client: Zoho customer list"] },
+    // No left card: the New Client / Existing Client selection forks below the node (CLIENT_META).
     right: { title: "Order Created", icon: Building2, items: ["Client details auto-filled", "Order no. generated", "Moves to Project Assign"] },
   },
   PROJECT_ASSIGN: {
@@ -133,3 +137,23 @@ export const ASSIGN_META: Record<"HANDOVER" | "RECCE", AssignMeta> = {
   },
 };
 export const HANDOVER_META = ASSIGN_META.HANDOVER;
+
+/** Client Selection under Create Project: New Client (Client Management) or Existing Client (Zoho). */
+export const CLIENT_META: Record<ClientType, AssignMeta> = {
+  NEW: {
+    label: "New Client",
+    short: "New",
+    icon: Sparkles,
+    color: "#f59e0b",
+    soft: "#fffbeb",
+    items: ["Client Management company list", "GST certificate and custom fields"],
+  },
+  EXISTING: {
+    label: "Existing Client",
+    short: "Existing",
+    icon: Repeat,
+    color: "#059669",
+    soft: "#ecfdf5",
+    items: ["Zoho customer list", "Client details auto-filled"],
+  },
+};

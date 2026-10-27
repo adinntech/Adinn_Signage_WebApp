@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Building2, CloudDownload, FilePlus2, Info, Repeat, Sparkles } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Building2, CloudDownload, FilePlus2, Info, ListPlus, Repeat, Sparkles } from "lucide-react";
 import { AddClientModal } from "@/components/clients/add-client-modal";
+import { AttachmentChip } from "@/components/sales/order-comments";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
@@ -13,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { useClient, useClients, type ClientType } from "@/lib/api/clients";
+import { useClient, useClients, type ClientFile, type ClientType, type CustomField } from "@/lib/api/clients";
 import { newRequestKey, useCreateOrder, useZohoClients, type Order } from "@/lib/api/sales";
 import { cn } from "@/lib/utils";
 
@@ -24,33 +25,43 @@ const FLAGS: { value: ClientType; label: string; hint: string; icon: typeof Spar
 
 /** What the preview card shows, from Client Management or from Zoho. */
 interface Preview {
+  _id?: string;
   name: string;
   clientName?: string;
   email?: string;
   phone?: string;
   gstin?: string;
   clientNo?: string | null;
+  gstCertificates?: ClientFile[];
+  customFields?: CustomField[];
 }
 
 /**
  * Flag first (New / Existing), then the client (Client Management or Zoho, with "+ Add New Client" for a company that
  * is not registered yet), then Create: the order and its lead (at Project Assign) are created together.
  * Mount it only while it is shown, so each opening starts empty with a fresh request key.
+ * With `fixedFlag` (Create Project, where the flag was chosen on the mind map) the flag cards are hidden.
  */
 export function OrderClientForm({
   onCancel,
   onCreated,
   withNotes = false,
   submitLabel = "Create Order",
+  fixedFlag,
+  onChangeFlag,
 }: {
   onCancel: () => void;
   onCreated: (o: Order) => void;
-  /** New Lead: also ask for the first discussion notes. */
+  /** Create Project: also ask for the first discussion notes. */
   withNotes?: boolean;
   submitLabel?: string;
+  fixedFlag?: ClientType;
+  /** Back to the New / Existing choice (with `fixedFlag`). */
+  onChangeFlag?: () => void;
 }) {
   const toast = useToast();
-  const [flag, setFlag] = useState<ClientType | null>(null);
+  const [ownFlag, setFlag] = useState<ClientType | null>(null);
+  const flag = fixedFlag ?? ownFlag;
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<SearchOption | null>(null);
   const [notes, setNotes] = useState("");
@@ -98,6 +109,31 @@ export function OrderClientForm({
   return (
     <div className="space-y-5">
       <div className="min-h-[340px] space-y-5">
+        {fixedFlag ? (
+          <div className={cn("flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 px-3.5 py-2.5", fixedFlag === "NEW" ? "border-warning/60 bg-warning-soft/50" : "border-success/60 bg-success-soft/50")}>
+            <span className="flex items-center gap-2.5">
+              {(() => {
+                const f = FLAGS.find((x) => x.value === fixedFlag)!;
+                return (
+                  <>
+                    <span className={cn("flex size-8 items-center justify-center rounded-lg", fixedFlag === "NEW" ? "bg-warning-soft text-warning" : "bg-success-soft text-success")}>
+                      <f.icon className="size-4" aria-hidden />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-semibold text-foreground">{f.label}</span>
+                      <span className="block text-xs text-muted-foreground">{f.hint}</span>
+                    </span>
+                  </>
+                );
+              })()}
+            </span>
+            {onChangeFlag && (
+              <Button variant="ghost" size="sm" onClick={onChangeFlag} disabled={create.isPending}>
+                <ArrowLeftRight className="size-4" aria-hidden /> Change
+              </Button>
+            )}
+          </div>
+        ) : (
         <fieldset className="min-w-0">
           <legend className="mb-1.5 text-sm font-medium text-foreground">
             1. Client Flag <span className="text-danger">*</span>
@@ -131,11 +167,12 @@ export function OrderClientForm({
             </p>
           )}
         </fieldset>
+        )}
 
         <AnimatePresence mode="wait" initial={false}>
           {flag && (
             <motion.div key={flag} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }} className="space-y-4">
-              <Field label={`2. ${flag === "NEW" ? "Client Company (Client Management)" : "Client Company (Zoho)"}`} htmlFor="co-client" required error={!picked ? error : undefined}>
+              <Field label={`${fixedFlag ? "" : "2. "}${flag === "NEW" ? "Client Company (Client Management)" : "Client Company (Zoho)"}`} htmlFor="co-client" required error={!picked ? error : undefined}>
                 <SearchSelect
                   id="co-client"
                   value={picked}
@@ -179,14 +216,42 @@ export function OrderClientForm({
                     {flag === "NEW" ? "Client details" : zohoPick?.clientId ? `Zoho customer · in CRM as ${zohoPick.clientNo}` : "Zoho customer · added to the CRM with this order"}
                   </p>
                   {preview ? (
-                    <dl className="grid gap-4 sm:grid-cols-2">
-                      <DetailItem label="Company Name">{preview.name}</DetailItem>
-                      <DetailItem label="Client Name">{preview.clientName}</DetailItem>
-                      <DetailItem label="Company Email">{preview.email}</DetailItem>
-                      <DetailItem label="Phone Number">{preview.phone}</DetailItem>
-                      <DetailItem label="GST Number">{preview.gstin}</DetailItem>
-                      {flag === "NEW" && <DetailItem label="Client ID">{preview.clientNo}</DetailItem>}
-                    </dl>
+                    <>
+                      <dl className="grid gap-4 sm:grid-cols-2">
+                        <DetailItem label="Company Name">{preview.name}</DetailItem>
+                        <DetailItem label="Client Name">{preview.clientName}</DetailItem>
+                        <DetailItem label="Company Email">{preview.email}</DetailItem>
+                        <DetailItem label="Phone Number">{preview.phone}</DetailItem>
+                        <DetailItem label="GST Number">{preview.gstin}</DetailItem>
+                        {flag === "NEW" && <DetailItem label="Client ID">{preview.clientNo}</DetailItem>}
+                        {/* GST certificate and custom fields belong to Client Management clients only (not Zoho). */}
+                        {flag === "NEW" && (
+                          <DetailItem label="GST Certificate" className="sm:col-span-2">
+                            {preview.gstCertificates?.length ? (
+                              <span className="flex flex-wrap gap-1.5">
+                                {preview.gstCertificates.map((f) => (
+                                  <AttachmentChip key={f.fileId} file={f} source={{ clientId: preview._id! }} />
+                                ))}
+                              </span>
+                            ) : null}
+                          </DetailItem>
+                        )}
+                      </dl>
+                      {flag === "NEW" && !!preview.customFields?.length && (
+                        <div className="mt-4 border-t border-border pt-3">
+                          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <ListPlus className="size-3.5" aria-hidden /> Custom Fields
+                          </p>
+                          <dl className="grid gap-4 sm:grid-cols-2">
+                            {preview.customFields.map((f) => (
+                              <DetailItem key={f.label} label={f.label}>
+                                {f.value}
+                              </DetailItem>
+                            ))}
+                          </dl>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <p className="text-sm text-muted-foreground">Loading client details...</p>
                   )}

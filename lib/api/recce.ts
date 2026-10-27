@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiPage } from "@/lib/api";
-import type { ClientContact } from "./clients";
+import type { ClientContact, ClientFile, CustomField } from "./clients";
 import { qs } from "./common";
 import type { HandoverDoc, HandoverShop, HandoverType, SentEmail, ShopListSummary, VoiceNote } from "./sales";
 
@@ -93,7 +93,18 @@ export interface ProjectHandover {
   assignedAt: string | null;
   assignedBy: string | null;
   note: string | null;
-  client: { name: string; clientName?: string; clientNo?: string; email?: string; phone?: string; gstin?: string; contacts: ClientContact[] } | null;
+  /** The client as handed over. GST certificates and custom fields: New (Client Management) clients only. */
+  client: {
+    name: string;
+    clientName?: string;
+    clientNo?: string;
+    email?: string;
+    phone?: string;
+    gstin?: string;
+    gstCertificates?: ClientFile[];
+    customFields?: CustomField[];
+    contacts: ClientContact[];
+  } | null;
   type: HandoverType | null;
   notes: string;
   voiceNotes: VoiceNote[];

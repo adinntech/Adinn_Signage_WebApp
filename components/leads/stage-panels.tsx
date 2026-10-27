@@ -58,14 +58,16 @@ function FlagExplain({ type }: { type: "NEW" | "EXISTING" }) {
       <div className="text-sm">
         <ClientTypeBadge type={type} full />
         <p className="mt-1 text-muted-foreground">
-          {type === "NEW" ? "Full process: Client Registered comes next." : "Already registered: the lead goes straight to Requirement Discussion."}
+          {type === "NEW"
+            ? "Picked from Client Management. The client cannot be changed once the order is created."
+            : "Picked from the Zoho customer list. The client cannot be changed once the order is created."}
         </p>
       </div>
     </div>
   );
 }
 
-/* ----------------------------------- 1. New Lead ----------------------------------- */
+/* -------------------------------- 1. Create Project -------------------------------- */
 
 /** Stage 1 of a started lead: its order and client, and the initial notes (editable while the lead is open). */
 export function NewLeadDone({ detail, canWrite }: { detail: LeadDetail; canWrite: boolean }) {
@@ -77,7 +79,7 @@ export function NewLeadDone({ detail, canWrite }: { detail: LeadDetail; canWrite
   return (
     <div className="space-y-4">
       <FlagExplain type={detail.order.clientType} />
-      <CompanyDetailsCard client={detail.order.client} />
+      <CompanyDetailsCard client={detail.order.client} extras={detail.order.clientType === "NEW"} />
       <ContactsCard contacts={detail.order.client.contacts ?? []} />
       <Card className="space-y-3 p-5">
         <Field label="Initial Notes" htmlFor="lead-notes-edit">
@@ -291,14 +293,14 @@ export function StageInfo({ stage, detail }: { stage: LeadStage; detail: LeadDet
 /* ------------------------------ Client Servicing handover ------------------------------ */
 
 /** Project Assign > Assign to Client Servicing. `onAssigned` runs once the order is handed over (the lead is then completed). */
-export function HandoverPanel({ detail, onAssigned }: { detail: LeadDetail; onAssigned?: () => void }) {
+export function HandoverPanel({ detail, onAssigned, focus }: { detail: LeadDetail; onAssigned?: () => void; focus?: string | null }) {
   if (detail.recce.assignee)
     return <EmptyState icon={LockKeyhole} title="Not needed" description={`This project is assigned to the Recce team (${detail.recce.assignee.name}).`} />;
   if (!detail.handover.unlocked && !detail.handover.assignee)
     return <EmptyState icon={LockKeyhole} title="Opens at Project Assign" description="Client Servicing can be assigned once the lead is at Project Assign." />;
   return (
     <div className="space-y-3">
-      <HandoverTab order={detail.order} onAssigned={onAssigned} />
+      <HandoverTab order={detail.order} onAssigned={onAssigned} focus={focus} />
       <Link href={`/orders/${detail.order._id}`} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-brand">
         <ExternalLink className="size-3.5" aria-hidden /> Open the order in Order Management
       </Link>

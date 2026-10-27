@@ -114,7 +114,11 @@ export function filterNav(can: (p?: string) => boolean, source: NavItem[] = NAV)
   });
 }
 
+/** Titles for pages that are not in the navigation (breadcrumbs). */
+const PAGE_TITLES: Record<string, string> = { "/leads/new": "Create Project" };
+
 export function findNavTitle(pathname: string): { title: string; group?: string } | null {
+  if (PAGE_TITLES[pathname]) return { title: PAGE_TITLES[pathname] };
   for (const item of [...NAV, ...Object.values(ROLE_NAV).flat()]) {
     if (item.href === pathname) return { title: item.label };
     for (const c of item.children ?? []) if (c.href === pathname) return { title: c.label, group: item.label };
