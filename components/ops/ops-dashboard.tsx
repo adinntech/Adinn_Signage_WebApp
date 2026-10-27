@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZE = 8;
 type TabKey = "RECCE_ASSIGNED" | "PLANNING" | "IN_PROGRESS" | "CLIENT_APPROVAL" | "COMPLETED" | "OVERDUE" | "CANCELLED" | "ALL";
 const TABS: { key: TabKey; label: string }[] = [
+  { key: "ALL", label: "All" },
   { key: "RECCE_ASSIGNED", label: "New Assigned" },
   { key: "PLANNING", label: "In Planning" },
   { key: "IN_PROGRESS", label: "In Progress" },
@@ -33,7 +34,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "COMPLETED", label: "Completed" },
   { key: "OVERDUE", label: "Overdue" },
   { key: "CANCELLED", label: "Cancelled" },
-  { key: "ALL", label: "All" },
 ];
 type SortKey = "code" | "name" | "district" | "expectedShops" | "assignedAt" | "targetDate" | "priority";
 

@@ -97,18 +97,28 @@ const STEP_FIELDS: FieldPath<FormValues>[][] = [
   ["assigneeId", "instructions"],
 ];
 
+/**
+ * The form's identity follows the address. A draft created by this form moves the address to ?edit=<id> without remounting it,
+ * and any other change of address (Create Project, another draft) starts a clean form, so a saved draft never leaks into a new project.
+ */
 export function ProjectWizard() {
   const editId = useSearchParams().get("edit");
-  const project = useProject(editId ?? "");
-  if (editId) {
+  const [session, setSession] = useState({ n: 0, editId, adopted: null as string | null });
+  if (session.editId !== editId) setSession({ n: session.n + (editId && editId === session.adopted ? 0 : 1), editId, adopted: session.adopted });
+  const mine = !!editId && editId === session.adopted;
+  const project = useProject(editId && !mine ? editId : "");
+  const onCreated = (id: string) => {
+    setSession((x) => ({ ...x, adopted: id }));
+    window.history.replaceState(null, "", `/bd/projects/new?edit=${id}`);
+  };
+  if (editId && !mine) {
     if (project.isPending) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading project…</p>;
     if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} title="Could not load the project" />;
-    return <WizardForm key={project.data._id} existing={project.data} />;
   }
-  return <WizardForm />;
+  return <WizardForm key={session.n} existing={mine ? undefined : project.data} onCreated={onCreated} />;
 }
 
-function WizardForm({ existing }: { existing?: Project }) {
+function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (id: string) => void }) {
   const router = useRouter();
   const toast = useToast();
   const assignees = useAssignees();
@@ -200,6 +210,7 @@ function WizardForm({ existing }: { existing?: Project }) {
     const created = await createProject.mutateAsync({ ...body, clientId: x.clientId, status: "DRAFT" });
     savedRef.current = created._id;
     setSavedId(created._id);
+    onCreated?.(created._id);
     return created._id;
   }
 
