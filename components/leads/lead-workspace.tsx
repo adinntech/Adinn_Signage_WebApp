@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -29,7 +29,7 @@ import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
-import type { SearchOption } from "@/components/ui/search-select";
+import { OrderClientForm } from "@/components/orders/create-order-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,13 +37,13 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { downloadFile } from "@/lib/api/files";
 import {
+  LEAD_FLOW,
   LEAD_STAGES,
   useCloseLead,
   useCompleteLeadStage,
   useLead,
   usePreviousLeadStage,
   useReopenLead,
-  useStartLead,
   type LeadDetail,
   type LeadHistoryEntry,
   type LeadStage,
@@ -52,16 +52,18 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { LeadMindMap, type MapNode } from "./lead-mind-map";
-import { HANDOVER_META, STAGE_META } from "./stage-meta";
+import { AssignChooser } from "./assign-panels";
+import { RecceBranchPanel } from "./recce-panel";
+import { LeadMindMap, type AssignState, type MapNode } from "./lead-mind-map";
+import { ASSIGN_META, STAGE_META } from "./stage-meta";
 import { ApprovalTab } from "@/components/sales/approval-tab";
 import { NegotiationPanel } from "./negotiation-panel";
-import { ClientRegisteredPanel, HandoverPanel, MissingList, NewLeadDone, NewLeadPicker, RateCardPanel, RequirementPanel, StageInfo } from "./stage-panels";
+import { ClientRegisteredPanel, HandoverPanel, MissingList, NewLeadDone, RateCardPanel, RequirementPanel, StageInfo } from "./stage-panels";
 
 const CELEBRATE_MS = 2600;
 
 /** Before a lead exists (New Lead screen): stage 1 in progress, the rest waiting. */
-const BLANK_STAGES: LeadStageState[] = LEAD_STAGES.map((key, i) => ({
+const BLANK_STAGES: LeadStageState[] = LEAD_FLOW.map((key, i) => ({
   key,
   label: STAGE_META[key].label,
   number: i + 1,
@@ -71,12 +73,23 @@ const BLANK_STAGES: LeadStageState[] = LEAD_STAGES.map((key, i) => ({
   completedAt: null,
   completedBy: null,
 }));
+const BLANK_ASSIGN: AssignState = { unlocked: false, completed: false, cs: { assignee: null, assignedAt: null }, recce: { available: false, assignee: null, assignedAt: null } };
+
+/** Project Assign branches of a lead, for the mind map. */
+const assignOf = (d: LeadDetail): AssignState => ({
+  unlocked: d.lead.status === "OPEN" && d.lead.stage === "PROJECT_ASSIGN",
+  completed: d.lead.status === "COMPLETED",
+  completedAt: d.lead.completedAt ?? null,
+  cs: { assignee: d.handover.assignee, assignedAt: d.handover.assignedAt, type: d.handover.type },
+  recce: d.recce,
+});
+const isBranch = (k: string | null): k is "HANDOVER" | "RECCE" => k === "HANDOVER" || k === "RECCE";
 
 function historyText(h: LeadHistoryEntry) {
   const to = h.toStage ? STAGE_META[h.toStage].short : "";
   const from = h.fromStage ? STAGE_META[h.fromStage].short : "";
   if (h.action === "START") return "Lead created";
-  if (h.action === "COMPLETE") return h.toStage ? `${from} completed → ${to}` : "Client approved the rate card: lead completed";
+  if (h.action === "COMPLETE") return h.toStage ? `${from} completed → ${to}` : "Project assigned: lead completed";
   if (h.action === "BACK") return `Moved back: ${from} → ${to}`;
   if (h.action === "CLOSE") return `Lead closed${h.note ? `: ${h.note}` : ""}`;
   if (h.action === "REOPEN") return "Lead reopened";
@@ -93,7 +106,7 @@ export function LeadStatusBadge({ status }: { status: LeadDetail["lead"]["status
   return status === "CLOSED" ? <Badge tone="danger">Closed</Badge> : <Badge tone="info">In Progress</Badge>;
 }
 
-/** Shown once the client approved the rate card. */
+/** Shown once the project is assigned (lead completed). */
 function CompletedBanner({ detail }: { detail: LeadDetail }) {
   return (
     <motion.div
@@ -105,10 +118,10 @@ function CompletedBanner({ detail }: { detail: LeadDetail }) {
         <PartyPopper className="size-5" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-success">Lead completed: the client approved the rate card</p>
+        <p className="font-semibold text-success">Lead completed: the project is assigned</p>
         <p className="text-sm text-muted-foreground">
-          {detail.lead.completedBy?.name ?? "-"} · {formatDateTime(detail.lead.completedAt)} · final rate card {detail.summary.rateCardLabel ?? "-"}
-          {detail.summary.negotiationRounds ? ` after ${detail.summary.negotiationRounds} negotiation round${detail.summary.negotiationRounds === 1 ? "" : "s"}` : ""}. The rate card and approval proof are locked.
+          {detail.lead.completedBy?.name ?? "-"} · {formatDateTime(detail.lead.completedAt)}
+          {detail.handover.assignee ? ` · assigned to Client Servicing (${detail.handover.assignee.name})` : detail.recce.assignee ? ` · assigned to the Recce team (${detail.recce.assignee.name})` : ""}
         </p>
       </div>
     </motion.div>
@@ -186,15 +199,23 @@ function SidePanel({
               </li>
             );
           })}
-          <li>
-            <button type="button" onClick={() => onOpen("HANDOVER")} className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left text-sm hover:bg-muted">
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full text-white" style={{ background: detail.handover.unlocked ? HANDOVER_META.color : "#94a3b8" }}>
-                <HANDOVER_META.icon className="size-3.5" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1 truncate">Client Servicing Handover</span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{detail.handover.assignee ? detail.handover.assignee.name : detail.handover.unlocked ? "Ready" : "Locked"}</span>
-            </button>
-          </li>
+          {(["HANDOVER", "RECCE"] as const).map((k) => {
+            const m = ASSIGN_META[k];
+            const b = k === "HANDOVER" ? detail.handover : detail.recce;
+            const ready = k === "HANDOVER" ? detail.handover.unlocked : detail.recce.available && detail.handover.unlocked;
+            const other = k === "HANDOVER" ? detail.recce.assignee : detail.handover.assignee;
+            return (
+              <li key={k} className="pl-4">
+                <button type="button" onClick={() => onOpen(k)} className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left text-sm hover:bg-muted">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full text-white" style={{ background: b.assignee || (ready && !other) ? m.color : "#94a3b8" }}>
+                    <m.icon className="size-3.5" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{m.short}</span>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{b.assignee ? b.assignee.name : other ? "Not needed" : ready ? "Ready" : "Locked"}</span>
+                </button>
+              </li>
+            );
+          })}
         </ol>
       </Card>
 
@@ -374,7 +395,7 @@ function StageFooter({
     <>
       <span className="mr-auto self-center text-xs text-muted-foreground">
         {detail.missing[0] ??
-          (last ? "Completing this stage completes the lead and locks the rate card." : next && !detail.nextAvailable ? `${STAGE_META[next].label} opens in the next Lead Management update.` : next ? `Next: ${STAGE_META[next].label}` : "")}
+          (last ? "Completing this stage completes the lead." : next && !detail.nextAvailable ? `${STAGE_META[next].label} opens in the next Lead Management update.` : next ? `Next: ${STAGE_META[next].label}` : "")}
       </span>
       {detail.previousStage && (
         <Button variant="outline" onClick={onBack}>
@@ -385,7 +406,7 @@ function StageFooter({
         <Button variant="brand" onClick={onComplete} loading={completing} disabled={blocked} style={!blocked ? { background: STAGE_META[stage].color } : undefined}>
           {last ? (
             <>
-              <BadgeCheck className="size-4" aria-hidden /> Approve & Complete Lead
+              <BadgeCheck className="size-4" aria-hidden /> Complete Lead
             </>
           ) : (
             <>
@@ -417,7 +438,7 @@ function LeadHeader({ detail }: { detail: LeadDetail | null }) {
             "New Lead"
           )}
         </h1>
-        <p className="text-sm text-muted-foreground">Complete journey from new lead to client approval and handover, as a mind map. Click a stage to work on it.</p>
+        <p className="text-sm text-muted-foreground">From new lead to the project assigned to Client Servicing or the Recce team, as a mind map. Click a stage to work on it.</p>
       </div>
     </div>
   );
@@ -432,61 +453,39 @@ function Canvas({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** New Lead: stage 1 opens straight away; saving it creates the lead and moves to its page. */
+/**
+ * New Lead: the client flag and company (Client Management / Zoho, or "+ Add New Client"); saving creates the order and
+ * its lead, completes New Lead and opens the lead at Project Assign.
+ */
 export function NewLeadWorkspace() {
   const router = useRouter();
-  const toast = useToast();
-  const start = useStartLead();
   const [drawer, setDrawer] = useState(true);
-  const [order, setOrder] = useState<SearchOption | null>(null);
-  const [notes, setNotes] = useState("");
-  const [error, setError] = useState<string>();
 
-  const save = async () => {
-    if (!order) return setError("Select an order or create a new one");
-    try {
-      const d = await start.mutateAsync({ orderId: order.value, initialNotes: notes.trim() || undefined });
-      toast(`${d.order.orderNo} is now a lead. ${STAGE_META[d.lead.stage].label} is next.`);
-      setDrawer(false);
-      router.replace(`/leads/${d.order._id}?fresh=1`);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
+  // Next keeps visited routes mounted (React Activity): open the form again on every visit.
+  useLayoutEffect(() => () => setDrawer(true), []);
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-4">
       <LeadHeader detail={null} />
       <Canvas>
-        <LeadMindMap stages={BLANK_STAGES} handover={{ unlocked: false, assignee: null, assignedAt: null }} onOpen={(k) => k === "NEW_LEAD" && setDrawer(true)} />
+        <LeadMindMap stages={BLANK_STAGES} assign={BLANK_ASSIGN} onOpen={(k) => k === "NEW_LEAD" && setDrawer(true)} />
       </Canvas>
       <Modal
         open={drawer}
         onOpenChange={setDrawer}
         variant="drawer"
         className="max-w-3xl"
-        title="1. New Lead / Client Approach"
-        description="Select the order (or create one). The client's details and New / Existing flag come with it."
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setDrawer(false)}>
-              Cancel
-            </Button>
-            <Button variant="brand" onClick={save} loading={start.isPending} style={{ background: STAGE_META.NEW_LEAD.color }}>
-              <Check className="size-4" aria-hidden /> Save & Start Lead <ArrowRight className="size-4" aria-hidden />
-            </Button>
-          </>
-        }
+        title="1. New Lead"
+        description="Choose New or Existing client and the company. Saving creates the order and moves the lead to Project Assign."
       >
-        <NewLeadPicker
-          orderId={order}
-          onOrder={(o) => {
-            setOrder(o);
-            setError(undefined);
+        <OrderClientForm
+          withNotes
+          submitLabel="Save & Create Order"
+          onCancel={() => setDrawer(false)}
+          onCreated={(o) => {
+            setDrawer(false);
+            router.replace(`/leads/${o._id}?fresh=1`);
           }}
-          notes={notes}
-          onNotes={setNotes}
-          error={error}
         />
       </Modal>
     </div>
@@ -515,7 +514,7 @@ export function LeadWorkspace() {
   const [finishOpen, setFinishOpen] = useState(false);
 
   const asked = params.get("stage") as MapNode | null;
-  const selected: MapNode | null = asked && (asked === "HANDOVER" || (LEAD_STAGES as readonly string[]).includes(asked)) ? asked : null;
+  const selected: MapNode | null = asked && (isBranch(asked) || (LEAD_STAGES as readonly string[]).includes(asked)) ? asked : null;
   const openNode = (k: MapNode | null) => router.replace(k ? `/leads/${id}?stage=${k}` : `/leads/${id}`, { scroll: false });
   const fresh = params.get("fresh") === "1";
 
@@ -556,7 +555,7 @@ export function LeadWorkspace() {
       openNode(null);
       // Let the drawer slide away first, so the chain animation is seen.
       setTimeout(() => setCelebrate(stage), 220);
-      toast(r.lead.status === "COMPLETED" ? `${r.order.orderNo} completed: the client approved the rate card.` : `${STAGE_META[stage].label} completed. ${STAGE_META[r.lead.stage].label} is next.`);
+      toast(r.lead.status === "COMPLETED" ? `${r.order.orderNo} completed: the project is assigned.` : `${STAGE_META[stage].label} completed. ${STAGE_META[r.lead.stage].label} is next.`);
     } catch (e) {
       toast(errorMessage(e), "error");
       q.refetch();
@@ -578,16 +577,37 @@ export function LeadWorkspace() {
 
   const doReopen = () => reopen.mutateAsync().then(() => toast("Lead reopened"), (e) => toast(errorMessage(e), "error"));
 
-  const stageState = selected && selected !== "HANDOVER" ? d.stages.find((s) => s.key === selected) : undefined;
+  const stageState = selected && !isBranch(selected) ? d.stages.find((s) => s.key === selected) : undefined;
   const isCurrent = !!stageState && stageState.status === "CURRENT" && open;
   const wide = selected === "RATE_CARD" || selected === "NEGOTIATION";
-  const title = selected === "HANDOVER" ? HANDOVER_META.label : selected ? `${stageState?.number}. ${STAGE_META[selected].label}` : "";
+  const title = isBranch(selected) ? ASSIGN_META[selected].label : selected ? `${stageState?.number ?? ""}. ${STAGE_META[selected].label}` : "";
 
   const body = (() => {
     if (!selected) return null;
-    if (selected === "HANDOVER") return <HandoverPanel detail={d} />;
+    if (selected === "HANDOVER")
+      return (
+        <HandoverPanel
+          detail={d}
+          onAssigned={() => {
+            // Assigning completes the lead: close the drawer and run the branch into Lead Completed.
+            openNode(null);
+            void q.refetch().then(() => setCelebrate("PROJECT_ASSIGN"));
+          }}
+        />
+      );
+    if (selected === "RECCE")
+      return (
+        <RecceBranchPanel
+          detail={d}
+          onAssigned={() => {
+            openNode(null);
+            void q.refetch().then(() => setCelebrate("PROJECT_ASSIGN"));
+          }}
+        />
+      );
     const reached = stageState && (stageState.status === "DONE" || stageState.status === "CURRENT");
     if (selected === "NEW_LEAD") return <NewLeadDone detail={d} canWrite={canWrite} />;
+    if (selected === "PROJECT_ASSIGN") return <AssignChooser detail={d} onOpen={openNode} />;
     if (!reached || !stageState.available) return <StageInfo stage={selected} detail={d} />;
     if (selected === "CLIENT_REGISTERED") return <ClientRegisteredPanel detail={d} canWrite={canWrite} />;
     if (selected === "REQUIREMENT_DISCUSSION") return <RequirementPanel detail={d} canWrite={canWrite} />;
@@ -617,7 +637,7 @@ export function LeadWorkspace() {
           <Canvas>
             <LeadMindMap
               stages={d.stages}
-              handover={d.handover}
+              assign={assignOf(d)}
               closed={d.lead.status === "CLOSED"}
               celebrate={celebrate}
               badges={{
@@ -648,11 +668,18 @@ export function LeadWorkspace() {
           if (selected === "HANDOVER") q.refetch();
         }}
         variant="drawer"
-        className={wide ? "max-w-[min(1500px,100vw)]" : selected === "CLIENT_REGISTERED" || selected === "CLIENT_APPROVAL" ? "max-w-6xl" : "max-w-4xl"}
+        className={wide ? "max-w-[min(1500px,100vw)]" : selected === "CLIENT_REGISTERED" || selected === "CLIENT_APPROVAL" || selected === "HANDOVER" || selected === "RECCE" ? "max-w-6xl" : "max-w-4xl"}
         title={title}
-        description={selected === "HANDOVER" ? "Client, contact persons, shop list and documents for Client Servicing. Runs alongside the rate card." : d.order.orderNo + " · " + d.order.client.name}
+        description={
+          selected === "HANDOVER"
+            ? `${d.order.orderNo} · client, contact persons, shop list and documents for Client Servicing`
+            : selected === "RECCE"
+              ? `${d.order.orderNo} · project code request, codes, handover and the Recce person`
+              : d.order.orderNo + " · " + d.order.client.name
+        }
         footer={
-          isCurrent && canWrite && selected && selected !== "HANDOVER" && selected !== "NEW_LEAD" ? (
+          // Project Assign completes itself when a branch is assigned, so it has no Complete button.
+          isCurrent && canWrite && selected && !isBranch(selected) && selected !== "NEW_LEAD" && selected !== "PROJECT_ASSIGN" ? (
             <StageFooter
               detail={d}
               stage={selected}
@@ -671,8 +698,8 @@ export function LeadWorkspace() {
         open={finishOpen}
         onOpenChange={setFinishOpen}
         title={`Complete ${d.order.orderNo}?`}
-        description={`The client approved rate card ${d.summary.rateCardLabel ?? ""}. The lead is marked completed and the rate card and approval documents are locked.`}
-        confirmLabel="Approve & Complete Lead"
+        description="The project is assigned, so the lead is marked completed."
+        confirmLabel="Complete Lead"
         loading={complete.isPending}
         autoClose={false}
         onConfirm={() => current && doComplete(current)}

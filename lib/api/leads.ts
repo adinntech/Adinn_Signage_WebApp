@@ -5,9 +5,10 @@ import { qs } from "./common";
 import type { FileRef } from "./files";
 import type { EmailInput, Order, SentEmail } from "./sales";
 
-/** Lead Management mind map, in order (same as the backend). Client Registered is for new clients only. */
-export const LEAD_STAGES = ["NEW_LEAD", "CLIENT_REGISTERED", "REQUIREMENT_DISCUSSION", "RATE_CARD", "NEGOTIATION", "CLIENT_APPROVAL"] as const;
+/** Every lead stage (same as the backend). The mind map today is LEAD_FLOW; the other stages are kept switched off. */
+export const LEAD_STAGES = ["NEW_LEAD", "PROJECT_ASSIGN", "CLIENT_REGISTERED", "REQUIREMENT_DISCUSSION", "RATE_CARD", "NEGOTIATION", "CLIENT_APPROVAL"] as const;
 export type LeadStage = (typeof LEAD_STAGES)[number];
+export const LEAD_FLOW = ["NEW_LEAD", "PROJECT_ASSIGN"] as const satisfies readonly LeadStage[];
 export type StageStatus = "DONE" | "CURRENT" | "PENDING" | "SKIPPED";
 
 interface UserRef {
@@ -22,7 +23,7 @@ export interface LeadInfo {
   startedAt?: string;
   startedBy?: UserRef | null;
   initialNotes?: string;
-  /** COMPLETED = the client approved the rate card (lead won). */
+  /** COMPLETED = the project is assigned (lead done). */
   status: "OPEN" | "CLOSED" | "COMPLETED";
   completedAt?: string;
   completedBy?: UserRef | null;
@@ -63,6 +64,8 @@ export interface LeadDetail {
   lastStage: boolean;
   nextAvailable: boolean;
   handover: { unlocked: boolean; assignee: UserRef | null; assignedAt: string | null; type: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null };
+  /** Project Assign: Recce team branch. `available` is false until the Recce assignment ships. */
+  recce: { available: boolean; assignee: UserRef | null; assignedAt: string | null; projectCode?: string | null };
   summary: { notes: number; documents: number; rateCardLabel: string | null; negotiationRounds: number; approvalDocuments: number };
   /** Client Registered: latest onboarding form PDF, and whether the PHP mail service is connected. */
   onboarding: { pdf: FileRef | null; mailEnabled: boolean };

@@ -37,7 +37,7 @@ export function AttachmentChip({ file, source, onRemove }: { file: FileRef; sour
       >
         <Paperclip className="size-3.5 shrink-0" aria-hidden />
         <span className="truncate">{file.name}</span>
-        {file.size ? <span className="text-muted-foreground">{formatBytes(file.size)}</span> : null}
+        {file.size ? <span className="shrink-0 whitespace-nowrap text-muted-foreground">{formatBytes(file.size)}</span> : null}
       </button>
       {onRemove && (
         <button type="button" onClick={onRemove} className="mr-1 rounded p-0.5 text-muted-foreground hover:bg-danger/10 hover:text-danger" aria-label={`Delete ${file.name ?? "attachment"}`} title="Delete file">

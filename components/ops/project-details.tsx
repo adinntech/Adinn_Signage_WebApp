@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, BarChart3, Ban, CalendarDays, ClipboardList, FileSpreadsheet, FileText, History, Mail, MapPin, Phone, Route, ShieldCheck, Store, Truck, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, Ban, CalendarDays, ClipboardList, FileSpreadsheet, FileText, Handshake, History, Mail, MapPin, Phone, Route, ShieldCheck, Store, Truck, type LucideIcon } from "lucide-react";
 import { ProjectStatusBadge } from "@/components/bd/status-badge";
 import { ShopApprovals } from "@/components/approvals/shop-approvals";
 import { SitesTab } from "@/components/sites/sites-tab";
@@ -16,14 +16,16 @@ import { ProjectDocuments } from "@/components/upload/project-documents";
 import { errorMessage } from "@/lib/api";
 import { useAdvanceStage } from "@/lib/api/pipeline";
 import { useProject, useProjectHistory, type AuditEntry } from "@/lib/api/projects";
+import { useProjectHandover } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { OPS_NEXT, OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 import { AsoSurvey } from "./aso-survey";
+import { BdHandover } from "./bd-handover";
 
-type TabKey = "overview" | "work" | "approvals" | "documents" | "history";
-const TAB_KEYS: TabKey[] = ["overview", "work", "approvals", "documents", "history"];
+type TabKey = "overview" | "handover" | "work" | "approvals" | "documents" | "history";
+const TAB_KEYS: TabKey[] = ["overview", "handover", "work", "approvals", "documents", "history"];
 
 function Info({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -65,6 +67,8 @@ export function ProjectDetails() {
   const { can } = useAuth();
   const project = useProject(id);
   const history = useProjectHistory(id);
+  // Projects created from Lead Management > Assign to Recce Team carry the BD handover (null for the others).
+  const handover = useProjectHandover(id);
   const advance = useAdvanceStage();
   // The selected tab lives in the address (?tab=documents), so a notification link opens the right tab even when this project is already on screen.
   const router = useRouter();
@@ -89,6 +93,7 @@ export function ProjectDetails() {
 
   const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
     { key: "overview", label: "Overview", icon: ClipboardList },
+    ...(handover.data ? [{ key: "handover" as const, label: "BD Handover", icon: Handshake }] : []),
     { key: "work", label: workLabel, icon: aso ? MapPin : Store },
     ...(measure ? [{ key: "approvals" as const, label: "Approvals", icon: ShieldCheck }] : []),
     { key: "documents", label: "Documents", icon: FileText },
@@ -201,6 +206,7 @@ export function ProjectDetails() {
         </div>
       )}
 
+      {tab === "handover" && handover.data && <BdHandover projectId={p._id} h={handover.data} />}
       {tab === "work" && (aso ? <AsoSurvey projectId={p._id} canEdit={canWork} /> : <SitesTab project={p} readOnly={cancelled} />)}
 
       {tab === "approvals" && (

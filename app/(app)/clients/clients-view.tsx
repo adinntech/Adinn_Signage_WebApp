@@ -51,7 +51,7 @@ export function ClientsView() {
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               aria-label="Search clients"
-              placeholder="Search company name, client ID, email, contact person or phone"
+              placeholder="Search company name, client ID, email, phone or GST number"
               className="pl-9"
               value={q}
               onChange={(e) => {
@@ -97,9 +97,8 @@ export function ClientsView() {
                   <th className="px-4 py-3">Client ID</th>
                   <th className="px-4 py-3">Company Name</th>
                   <th className="px-4 py-3">Company Email</th>
-                  <th className="px-4 py-3">Primary Contact</th>
-                  <th className="px-4 py-3">Mobile Number</th>
-                  <th className="px-4 py-3">City</th>
+                  <th className="px-4 py-3">Phone Number</th>
+                  <th className="px-4 py-3">GST Number</th>
                   <th className="px-4 py-3">Created Date</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -123,9 +122,9 @@ export function ClientsView() {
                         {c.clientName && <span className="block text-xs font-normal text-muted-foreground">{c.clientName}</span>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{c.email ?? "-"}</td>
-                      <td className="px-4 py-3">{p?.name ?? "-"}</td>
-                      <td className="px-4 py-3 tabular-nums">{p?.phone ? `+91 ${p.phone}` : "-"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{c.city ?? "-"}</td>
+                      {/* Older clients have no company phone yet: fall back to the primary contact's mobile. */}
+                      <td className="px-4 py-3 tabular-nums">{c.phone ?? (p?.phone ? `+91 ${p.phone}` : "-")}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{c.gstin ?? "-"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(c.createdAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">

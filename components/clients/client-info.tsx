@@ -1,30 +1,58 @@
 "use client";
 
-import { Building2, Star, Users } from "lucide-react";
+import { Building2, ListPlus, Star, Users } from "lucide-react";
+import { AttachmentChip } from "@/components/sales/order-comments";
 import { Card } from "@/components/ui/card";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
 import type { Client, ClientContact } from "@/lib/api/clients";
 
-/** Read-only company details (View Client Details, Order Management view). */
+/**
+ * Read-only company details (View Client Details, Order Management view, Lead Management). Older clients may still
+ * carry an address / industry from the previous form: those show only when saved.
+ */
 export function CompanyDetailsCard({ client: c, className }: { client: Client; className?: string }) {
-  const address = [c.address, c.city, c.district, c.state].filter(Boolean).join(", ");
+  const address = [c.address, c.city, c.district, c.state, c.pincode].filter(Boolean).join(", ");
+  const certificates = c.gstCertificates ?? [];
+  const custom = c.customFields ?? [];
   return (
     <Card className={className ?? "p-5 sm:p-6"}>
       <SectionTitle icon={Building2} title="Company Details" />
       <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
+        <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Company Email">{c.email}</DetailItem>
-        <DetailItem label="Industry">{c.industry}</DetailItem>
+        <DetailItem label="Phone Number">{c.phone}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
-        <DetailItem label="Pincode">{c.pincode}</DetailItem>
-        <DetailItem label="Address" className="sm:col-span-2 lg:col-span-3">
-          {address}
+        <DetailItem label="GST Certificate">
+          {certificates.length ? (
+            <span className="flex flex-wrap gap-1.5">
+              {certificates.map((f) => (
+                <AttachmentChip key={f.fileId} file={f} source={{ clientId: c._id }} />
+              ))}
+            </span>
+          ) : null}
         </DetailItem>
-        <DetailItem label="City">{c.city}</DetailItem>
-        <DetailItem label="District">{c.district}</DetailItem>
-        <DetailItem label="State">{c.state}</DetailItem>
+        {c.industry && <DetailItem label="Industry">{c.industry}</DetailItem>}
+        {address && (
+          <DetailItem label="Address" className="sm:col-span-2">
+            {address}
+          </DetailItem>
+        )}
       </dl>
+      {custom.length > 0 && (
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <ListPlus className="size-3.5" aria-hidden /> Custom Fields
+          </p>
+          <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {custom.map((f) => (
+              <DetailItem key={f.label} label={f.label}>
+                {f.value}
+              </DetailItem>
+            ))}
+          </dl>
+        </div>
+      )}
     </Card>
   );
 }

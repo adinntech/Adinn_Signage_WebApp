@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  ListChecks,
+  Mic,
+  NotebookPen,
+  Save,
   AlertTriangle,
   BadgeCheck,
   Building2,
@@ -58,6 +63,8 @@ import {
   useHandoverShops,
   useRemoveHandoverDoc,
   useRemoveShopList,
+  useSetHandoverNotes,
+  useSetHandoverScope,
   useSetHandoverType,
   useSetShopTotal,
   useShopFiles,
@@ -72,10 +79,109 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { VoiceNotes } from "./voice-notes";
 
-const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.docx,.pptx,.xlsx,.csv";
+const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
 
 const TYPE_ICON: Record<HandoverType, typeof Store> = { ASO: PhoneCall, SHOP_DETAILS: FileSpreadsheet, SHOP_MEASUREMENT: Ruler };
+
+/**
+ * Assign to Client Servicing toggle. On (default): the full handover. Off: only the client details and contact persons
+ * go to Client Servicing (what was entered for the full handover is kept, just not sent or required).
+ */
+function ScopeSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
+  const toast = useToast();
+  const set = useSetHandoverScope(orderId);
+  const flip = () =>
+    set.mutateAsync(!data.full).then(
+      (r) => toast(r.full ? "Full handover: type, notes, documents and shop list" : "Client details and contact persons only"),
+      (e) => toast(errorMessage(e), "error"),
+    );
+  return (
+    <Card className="flex flex-wrap items-center gap-4 p-5 sm:p-6">
+      <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl transition-colors", data.full ? "bg-approval text-white" : "bg-muted text-muted-foreground")}>
+        <ListChecks className="size-5" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p id="ho-scope-label" className="text-sm font-semibold text-primary">
+          Send handover details
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {data.full
+            ? "On: handover type, notes, voice notes, documents and the shop list go to Client Servicing."
+            : "Off: only the client details and contact persons go to Client Servicing."}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={data.full}
+        aria-labelledby="ho-scope-label"
+        disabled={!editable || set.isPending}
+        onClick={flip}
+        className={cn(
+          "relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60",
+          data.full ? "bg-approval" : "bg-slate-300",
+        )}
+      >
+        <motion.span layout transition={{ type: "spring", stiffness: 500, damping: 32 }} className={cn("flex size-6 items-center justify-center rounded-full bg-white shadow", data.full ? "ml-7" : "ml-1")}>
+          {set.isPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden />}
+        </motion.span>
+      </button>
+      <span className={cn("w-8 text-sm font-semibold", data.full ? "text-approval" : "text-muted-foreground")}>{data.full ? "On" : "Off"}</span>
+    </Card>
+  );
+}
+
+/** Additional notes and voice notes for Client Servicing. */
+function NotesSection({ orderId, data, editable, canAddVoice }: { orderId: string; data: HandoverState; editable: boolean; canAddVoice: boolean }) {
+  const toast = useToast();
+  const save = useSetHandoverNotes(orderId);
+  const [text, setText] = useState(data.notes);
+  // Saved text changed on the server (save, reload): start from it again.
+  const [seen, setSeen] = useState(data.notes);
+  if (seen !== data.notes) {
+    setSeen(data.notes);
+    setText(data.notes);
+  }
+  const dirty = text.trim() !== data.notes.trim();
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionTitle icon={NotebookPen} title="Additional Notes & Voice Notes" description={editable ? "Anything Client Servicing should know: in writing, or as a voice note." : "What the BD noted for Client Servicing."} />
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div className="space-y-2">
+          <Field label="Additional Notes" htmlFor="ho-add-notes">
+            {editable ? (
+              <Textarea id="ho-add-notes" className="min-h-36" maxLength={4000} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Client prefers calls after 11 am. Branding refresh for 40 outlets; old boards to be removed." />
+            ) : (
+              <p className="min-h-16 whitespace-pre-line rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">{data.notes || <span className="text-muted-foreground">No notes.</span>}</p>
+            )}
+          </Field>
+          {editable && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">{text.length}/4000</span>
+              <Button
+                variant="brand-outline"
+                size="sm"
+                disabled={!dirty}
+                loading={save.isPending}
+                onClick={() => save.mutateAsync(text.trim()).then(() => toast("Notes saved"), (e) => toast(errorMessage(e), "error"))}
+              >
+                <Save className="size-4" aria-hidden /> Save Notes
+              </Button>
+            </div>
+          )}
+        </div>
+        <div>
+          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <Mic className="size-4 text-brand" aria-hidden /> Voice Notes
+          </p>
+          <VoiceNotes orderId={orderId} notes={data.voiceNotes} canAdd={canAddVoice} canDelete={editable} />
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 /** ASO / Shop Details Only / Shop + Measurement: decides what the BD shares and what is checked before handover. */
 function TypeSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
@@ -141,16 +247,21 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         }
       />
       <ContactDialog client={c} index={null} open={adding} onOpenChange={setAdding} />
-      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <DetailItem label="Company Name">{c.name}</DetailItem>
+        <DetailItem label="Client Name">{c.clientName}</DetailItem>
         <DetailItem label="Client ID">
           <span className="font-mono text-brand">{c.clientNo ?? c.code}</span>
         </DetailItem>
         <DetailItem label="Company Email">{c.email}</DetailItem>
+        <DetailItem label="Phone Number">{c.phone}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
-        <DetailItem label="Address" className="sm:col-span-2 xl:col-span-4">
-          {address}
-        </DetailItem>
+        {/* Older clients may still carry an address from the previous form. */}
+        {address && (
+          <DetailItem label="Address" className="sm:col-span-2 xl:col-span-3">
+            {address}
+          </DetailItem>
+        )}
       </dl>
       <div className="mt-5 overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[720px] text-left text-sm">
@@ -592,7 +703,7 @@ function DocumentsSection({ orderId, data, canAdd, canDelete }: { orderId: strin
       )}
       {canAdd && (
         <div className="space-y-3">
-          <FileUploader id="ho-docs" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple hint="Up to 10 files at a time: PDF, images, Word, PowerPoint, Excel." compact />
+          <FileUploader id="ho-docs" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple hint="Up to 10 files at a time: PDF, images, Word, PowerPoint, Excel (old and new formats)." compact />
           <Button
             variant="brand-outline"
             disabled={!files.length}
@@ -634,7 +745,7 @@ function DocumentsSection({ orderId, data, canAdd, canDelete }: { orderId: strin
 }
 
 /** Pick the Client Servicing person and hand the order over (once; it cannot be reassigned). */
-function AssignSection({ orderId, data, order }: { orderId: string; data: HandoverState; order: Order }) {
+function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; data: HandoverState; order: Order; onAssigned?: () => void }) {
   const toast = useToast();
   const users = useClientServicingUsers();
   const assign = useAssignClientServicing(orderId);
@@ -648,6 +759,8 @@ function AssignSection({ orderId, data, order }: { orderId: string; data: Handov
     .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
     .map((u) => ({ value: u._id, label: u.name, sublabel: [u.email, u.phone].filter(Boolean).join(" · ") }));
   const docs = data.documents.filter((d) => d.kind === "DOCUMENT").length;
+  const voices = data.voiceNotes.length;
+  const contacts = `${order.client.contacts.length} contact person${order.client.contacts.length === 1 ? "" : "s"}`;
   const ready = data.missing.length === 0;
 
   return (
@@ -687,11 +800,17 @@ function AssignSection({ orderId, data, order }: { orderId: string; data: Handov
         </Field>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Info className="size-3.5" aria-hidden /> {data.type ? HANDOVER_TYPES[data.type].label : "No type chosen"}: the client, {order.client.contacts.length} contact person{order.client.contacts.length === 1 ? "" : "s"}
-          {data.type !== "ASO" && `, ${data.shopList ? `${data.shopList.total} shops` : "no shop list"}`}
-          {data.type === "SHOP_MEASUREMENT" && `, ${data.shopFiles} shop photo${data.shopFiles === 1 ? "" : "s"}/document${data.shopFiles === 1 ? "" : "s"}`} and {docs} document{docs === 1 ? "" : "s"}.
-        </p>
+        {data.full ? (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Info className="size-3.5" aria-hidden /> {data.type ? HANDOVER_TYPES[data.type].label : "No type chosen"}: the client, {contacts}
+            {data.type !== "ASO" && `, ${data.shopList ? `${data.shopList.total} shops` : "no shop list"}`}
+            {data.type === "SHOP_MEASUREMENT" && `, ${data.shopFiles} shop photo${data.shopFiles === 1 ? "" : "s"}/document${data.shopFiles === 1 ? "" : "s"}`}, {voices} voice note{voices === 1 ? "" : "s"} and {docs} document{docs === 1 ? "" : "s"}.
+          </p>
+        ) : (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Info className="size-3.5" aria-hidden /> Client details only: the client and {contacts}.
+          </p>
+        )}
         <Button variant="brand" disabled={!ready} onClick={() => (cs ? setConfirm(true) : setError("Choose the Client Servicing person"))}>
           <Send className="size-4" aria-hidden /> Assign to Client Servicing
         </Button>
@@ -707,6 +826,7 @@ function AssignSection({ orderId, data, order }: { orderId: string; data: Handov
             await assign.mutateAsync({ csUserId: cs!.value, note: note.trim() || undefined });
             toast(`${order.orderNo} handed over to ${cs!.label}. They have been notified.`);
             setConfirm(false);
+            onAssigned?.();
           } catch (e) {
             setConfirm(false);
             toast(errorMessage(e), "error");
@@ -714,8 +834,8 @@ function AssignSection({ orderId, data, order }: { orderId: string; data: Handov
         }}
       >
         <p className="text-sm text-muted-foreground">
-          {cs?.label} gets a notification and handles {order.client.name} from here. You keep the rate card and can still add documents, but you cannot change the
-          person or the shop list.
+          {cs?.label} gets a notification and handles {order.client.name} from here, and the lead is completed. You can still add documents and voice notes, but you
+          cannot change the person or the shop list.
         </p>
       </ConfirmDialog>
     </Card>
@@ -728,10 +848,16 @@ function StatusBanner({ data }: { data: HandoverState }) {
     return (
       <div className="flex items-start gap-3 rounded-xl border border-brand/20 bg-brand-soft/50 px-4 py-3 text-sm">
         <Info className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
-        <p>
-          <b>Not handed over yet.</b> Choose the handover type, complete what it needs (contacts for ASO; a verified shop list for the shop types), add any
-          documents, then assign the order to Client Servicing.
-        </p>
+        {data.full ? (
+          <p>
+            <b>Not handed over yet.</b> Choose the handover type, complete what it needs (contacts for ASO; a verified shop list for the shop types), add notes,
+            voice notes and documents, then assign the order to Client Servicing.
+          </p>
+        ) : (
+          <p>
+            <b>Not handed over yet.</b> Only the client details and contact persons go to Client Servicing. Add at least one contact person, then assign.
+          </p>
+        )}
       </div>
     );
   return (
@@ -758,8 +884,11 @@ function StatusBanner({ data }: { data: HandoverState }) {
 /**
  * BD -> Client Servicing handover for one order. BD: check client & contacts, optional shop list and documents, then
  * assign. Client Servicing: the same details read-only.
+ *
+ * `mode="recce"` (Assign to Recce Team): the same handover details, always in full (no toggle), without the Client
+ * Servicing assignment; `locked` once the Recce team has the project.
  */
-export function HandoverTab({ order }: { order: Order }) {
+export function HandoverTab({ order, onAssigned, mode = "cs", locked = false }: { order: Order; onAssigned?: () => void; mode?: "cs" | "recce"; locked?: boolean }) {
   const { can } = useAuth();
   const q = useHandover(order._id);
   const canWrite = can("sales:write");
@@ -772,28 +901,36 @@ export function HandoverTab({ order }: { order: Order }) {
       </div>
     );
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
-  const data = q.data;
-  const open = !data.assignee; // before handover the BD can still change everything
+  const recce = mode === "recce";
+  // The Recce team always gets the full handover; the toggle is a Client Servicing option.
+  const data = recce ? { ...q.data, full: true } : q.data;
+  const open = !data.assignee && !locked; // before handover the BD can still change everything
 
   return (
     <div className="space-y-4">
-      <StatusBanner data={data} />
-      <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
-      <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.type === "ASO"} />
-      {data.type === "ASO" && data.shopList && open && (
-        <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-          <AlertTriangle className="size-4" aria-hidden /> A shop list was uploaded earlier. ASO hands over without one: remove it below, or choose a shop type.
-        </p>
-      )}
-      {/* Shop types always show the list; otherwise it is shown only when one exists (older orders, or one to remove for ASO). */}
-      {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || data.shopList) && (
-        <ShopSection orderId={order._id} data={data} editable={canWrite && open} />
-      )}
-      <DocumentsSection orderId={order._id} data={data} canAdd={canWrite} canDelete={canWrite && open} />
-      {canWrite && open && <AssignSection orderId={order._id} data={data} order={order} />}
-      {!open && canWrite && (
+      {!recce && <StatusBanner data={data} />}
+      {!recce && canWrite && open && <ScopeSection orderId={order._id} data={data} editable />}
+      <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
+      <AnimatePresence initial={false}>
+        {data.full && (
+          <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
+            <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
+            {data.type === "ASO" && data.shopList && open && (
+              <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+                <AlertTriangle className="size-4" aria-hidden /> A shop list was uploaded earlier. ASO hands over without one: remove it below, or choose a shop type.
+              </p>
+            )}
+            {/* Shop types always show the list; otherwise it is shown only when one exists (older orders, or one to remove for ASO). */}
+            {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || data.shopList) && <ShopSection orderId={order._id} data={data} editable={canWrite && open} />}
+            <NotesSection orderId={order._id} data={data} editable={canWrite && open} canAddVoice={canWrite} />
+            <DocumentsSection orderId={order._id} data={data} canAdd={canWrite} canDelete={canWrite && open} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {!recce && canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
+      {!open && canWrite && !recce && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <RefreshCw className="size-3.5" aria-hidden /> The rate card stays with you: keep negotiating and download new PDFs in Lead Management.
+          <RefreshCw className="size-3.5" aria-hidden /> Documents and voice notes can still be added; Client Servicing is notified of each one.
         </p>
       )}
     </div>

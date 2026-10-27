@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Pencil, Save } from "lucide-react";
@@ -11,35 +11,50 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { useClient, useSaveClient } from "@/lib/api/clients";
+import { useClient, useGstCertificates, useSaveClient } from "@/lib/api/clients";
+import { formData } from "@/lib/api/files";
 
-/** Edit Client: same form as New Client, saved onto the existing company record (no order is created). */
+/** Edit Client: same form as Add Client, saved onto the existing company record (no order is created). */
 export function EditClientForm() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
   const q = useClient(id);
   const save = useSaveClient();
+  const { upload } = useGstCertificates();
   const form = useCompanyForm(EMPTY_COMPANY);
-  const { reset } = form;
-
-  useEffect(() => {
-    if (q.data) reset(companyToForm(q.data));
-  }, [q.data, reset]);
+  const [pending, setPending] = useState<File[]>([]);
+  // Load the saved values once: removing a GST file refreshes the client, and must not wipe what is being typed.
+  const [loaded, setLoaded] = useState<string | null>(null);
+  if (q.data && loaded !== q.data._id) {
+    setLoaded(q.data._id);
+    form.reset(companyToForm(q.data));
+  }
 
   const onSubmit = form.handleSubmit(async (v) => {
     try {
       await save.mutateAsync({ id, body: companyToApi(v) });
-      toast("Client details updated");
-      router.push("/clients");
     } catch (err) {
       if (!applyServerErrors(form, err)) form.setError("root", { message: errorMessage(err) });
       toast(errorMessage(err), "error");
+      return;
     }
+    if (pending.length) {
+      try {
+        await upload.mutateAsync({ id, body: formData(pending) });
+        setPending([]);
+      } catch (err) {
+        toast(`Details saved, but the GST certificate could not be uploaded: ${errorMessage(err)}`, "error");
+        return;
+      }
+    }
+    toast("Client details updated");
+    router.push(`/clients/${id}`);
   });
 
   if (q.isPending) return <Skeleton className="mx-auto h-96 max-w-7xl" />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
+  const busy = save.isPending || upload.isPending;
 
   return (
     <form noValidate onSubmit={onSubmit} className="mx-auto max-w-7xl">
@@ -56,12 +71,12 @@ export function EditClientForm() {
           </Button>
         }
       />
-      <CompanyFormFields form={form} idPrefix="edit" />
+      <CompanyFormFields form={form} idPrefix="edit" gst={{ clientId: id, saved: q.data.gstCertificates ?? [], pending, onPendingChange: setPending }} />
       <FormActionBar note={<>Fields marked <span className="text-danger">*</span> are required.</>}>
-        <Button type="button" variant="outline" onClick={() => router.push(`/clients/${id}`)}>
+        <Button type="button" variant="outline" onClick={() => router.push(`/clients/${id}`)} disabled={busy}>
           Cancel
         </Button>
-        <Button type="submit" variant="brand" loading={save.isPending}>
+        <Button type="submit" variant="brand" loading={busy} disabled={busy}>
           <Save className="size-4" aria-hidden /> Save Changes
         </Button>
       </FormActionBar>

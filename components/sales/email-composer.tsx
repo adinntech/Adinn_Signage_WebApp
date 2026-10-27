@@ -43,6 +43,7 @@ export function EmailComposer({
   onSend,
   sending,
   notConfigured = "Email delivery is not configured on the server (SMTP). Sending will be recorded as \"Not sent\" until it is set up.",
+  attachmentArea,
 }: {
   idPrefix: string;
   orderId: string;
@@ -57,6 +58,8 @@ export function EmailComposer({
   sending: boolean;
   /** Warning shown while the mail transport for this email is not configured. */
   notConfigured?: string;
+  /** Replaces the fixed attachment box, e.g. a file picker for files the person attaches themselves. */
+  attachmentArea?: React.ReactNode;
 }) {
   const toast = useToast();
   const [v, setV] = useState(draft);
@@ -120,15 +123,16 @@ export function EmailComposer({
       )}
       <div className="rounded-lg border border-border bg-background p-3">
         <p className="mb-2 text-xs font-medium text-muted-foreground">{attachmentLabel}</p>
-        {attachments.length ? (
-          <div className="flex flex-wrap gap-2">
-            {attachments.map((a) => (
-              <AttachmentChip key={a.fileId} file={a} source={{ orderId }} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-danger">{blockedReason ?? "No attachment available"}</p>
-        )}
+        {attachmentArea ??
+          (attachments.length ? (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((a) => (
+                <AttachmentChip key={a.fileId} file={a} source={{ orderId }} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-danger">{blockedReason ?? "No attachment available"}</p>
+          ))}
       </div>
       <div className="flex justify-end">
         <Button variant="brand" onClick={send} loading={sending} disabled={!!blockedReason}>

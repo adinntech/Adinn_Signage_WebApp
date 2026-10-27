@@ -1,8 +1,19 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiPage } from "@/lib/api";
 import { qs } from "./common";
+import type { FileRef } from "./files";
 
 export type ClientType = "NEW" | "EXISTING";
+
+/** Extra client details added by BD: a free label with its value. */
+export interface CustomField {
+  label: string;
+  value: string;
+}
+export interface ClientFile extends FileRef {
+  kind?: "image" | "document" | "sheet" | "video";
+  uploadedAt?: string;
+}
 
 export interface ClientContact {
   name: string;
@@ -22,6 +33,8 @@ export interface Client {
   /** Optional client name typed by BD, shown alongside the company name. */
   clientName?: string;
   email?: string;
+  /** Company phone number. */
+  phone?: string;
   industry?: string;
   contacts: ClientContact[];
   address?: string;
@@ -30,9 +43,13 @@ export interface Client {
   state?: string;
   pincode?: string;
   gstin?: string;
+  gstCertificates?: ClientFile[];
+  customFields?: CustomField[];
   notes?: string;
   /** Missing on clients created before the BD CRM; those count as EXISTING. */
   clientType?: ClientType;
+  source?: "CRM" | "ZOHO";
+  zohoId?: string;
   status: "ACTIVE" | "INACTIVE";
   createdAt?: string;
   updatedAt?: string;
@@ -49,6 +66,8 @@ export interface ClientInput {
   contacts: ClientContact[];
   clientName?: string;
   email?: string;
+  phone?: string;
+  customFields?: CustomField[];
   industry?: string;
   address?: string;
   city?: string;
@@ -65,6 +84,8 @@ export interface ClientListParams {
   q?: string;
   status?: string;
   clientType?: string;
+  /** CRM = registered in Client Management; ZOHO = brought in from Zoho. */
+  source?: "CRM" | "ZOHO";
   sort?: string;
 }
 export interface ClientSummary {
@@ -74,8 +95,8 @@ export interface ClientSummary {
   activeClients: number;
   clientsThisMonth: number;
 }
-/** Add Client form body: company + contact persons (no order). */
-export type CompanyInput = Omit<ClientInput, "code" | "status" | "notes">;
+/** Add / Edit Client form body (no order). Contact persons are managed on the client page and at handover. */
+export type CompanyInput = Omit<ClientInput, "code" | "status" | "notes" | "contacts"> & { contacts?: ClientContact[] };
 
 export const clientTypeOf = (c: Pick<Client, "clientType">): ClientType => c.clientType ?? "EXISTING";
 export const primaryContact = (c: Pick<Client, "contacts">) => c.contacts?.find((k) => k.isPrimary) ?? c.contacts?.[0];
@@ -135,6 +156,24 @@ export function useRegisterCompany() {
     mutationFn: (body: CompanyInput) => api<Client>("/clients/company", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
   });
+}
+
+/** GST certificate files: upload (multipart `files`) and remove. Both return the refreshed client. */
+export function useGstCertificates() {
+  const qc = useQueryClient();
+  const done = (c: ClientDetails) => {
+    qc.setQueryData(["clients", "detail", c._id], c);
+    qc.invalidateQueries({ queryKey: ["clients", "list"] });
+  };
+  const upload = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: FormData }) => api<ClientDetails>(`/clients/${id}/gst-certificates`, { method: "POST", body }),
+    onSuccess: done,
+  });
+  const remove = useMutation({
+    mutationFn: ({ id, fileId }: { id: string; fileId: string }) => api<ClientDetails>(`/clients/${id}/gst-certificates/${fileId}`, { method: "DELETE" }),
+    onSuccess: done,
+  });
+  return { upload, remove };
 }
 
 export function useDeactivateClient() {

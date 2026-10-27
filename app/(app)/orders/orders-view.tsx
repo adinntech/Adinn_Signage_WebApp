@@ -177,7 +177,7 @@ export function OrdersView() {
         onOpenChange={setCreating}
         onCreated={(o) => {
           setCreating(false);
-          router.push(`/orders/${o._id}`);
+          router.push(`/leads/${o._id}`);
         }}
       />
     </div>

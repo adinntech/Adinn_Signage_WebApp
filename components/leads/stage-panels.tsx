@@ -6,7 +6,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, CircleAlert, Clock3, ExternalLink, LockKeyhole, MessagesSquare, Pencil, Save, Send, Sparkles, Repeat, Trash2 } from "lucide-react";
 import { CompanyDetailsCard, ContactsCard } from "@/components/clients/client-info";
 import { ClientTypeBadge } from "@/components/clients/client-type-badge";
-import { CreateOrderDialog } from "@/components/orders/create-order-dialog";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { AttachmentChip } from "@/components/sales/order-comments";
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
@@ -15,20 +14,15 @@ import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
-import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { useClient } from "@/lib/api/clients";
 import { formData } from "@/lib/api/files";
 import {
   useAddRequirementNote,
   useDeleteRequirementNote,
-  useLeadCandidates,
   useLeadInitialNotes,
   useRequirementNotes,
   type LeadDetail,
@@ -72,95 +66,6 @@ function FlagExplain({ type }: { type: "NEW" | "EXISTING" }) {
 }
 
 /* ----------------------------------- 1. New Lead ----------------------------------- */
-
-/** Stage 1 for a new lead: pick an order (or create one), see its client, add initial notes. */
-export function NewLeadPicker({
-  orderId,
-  onOrder,
-  notes,
-  onNotes,
-  error,
-}: {
-  orderId: SearchOption | null;
-  onOrder: (o: SearchOption | null) => void;
-  notes: string;
-  onNotes: (v: string) => void;
-  error?: string;
-}) {
-  const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
-  const dq = useDebounced(query);
-  const candidates = useLeadCandidates(dq);
-  const picked = candidates.data?.find((c) => c._id === orderId?.value);
-  const [pickedType, setPickedType] = useState<"NEW" | "EXISTING" | null>(null);
-  const [pickedClient, setPickedClient] = useState<string | null>(null);
-  const client = useClient(pickedClient ?? picked?.client._id);
-  const type = pickedType ?? picked?.clientType ?? null;
-  const options: SearchOption[] = (candidates.data ?? []).filter((c) => c.client).map((c) => ({
-    value: c._id,
-    label: `${c.orderNo} · ${c.client.name}`,
-    sublabel: [c.clientType === "NEW" ? "New client" : "Existing client", c.client.clientName, c.client.clientNo, c.client.city].filter(Boolean).join(" · "),
-  }));
-
-  return (
-    <div className="space-y-5">
-      <div className="min-h-[96px]">
-        <Field label="Select Order" htmlFor="lead-order" required error={error}>
-          <SearchSelect
-            id="lead-order"
-            value={orderId}
-            options={options}
-            query={query}
-            onQueryChange={setQuery}
-            loading={candidates.isFetching}
-            invalid={!!error}
-            onSelect={(o) => {
-              const c = candidates.data?.find((x) => x._id === o.value);
-              setPickedType(c?.clientType ?? null);
-              setPickedClient(c?.client._id ?? null);
-              onOrder(o);
-              setQuery("");
-            }}
-            onClear={() => {
-              onOrder(null);
-              setPickedType(null);
-              setPickedClient(null);
-            }}
-            placeholder="Search order no or company name..."
-            emptyText="No open orders. Create a new order."
-            action={{ label: "Create New Order", onSelect: () => setCreating(true) }}
-          />
-        </Field>
-        <p className="mt-1.5 text-xs text-muted-foreground">Only orders that are not a lead yet are listed.</p>
-      </div>
-
-      <AnimatePresence mode="wait">
-        {orderId && type && (
-          <motion.div key={orderId.value} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-            <FlagExplain type={type} />
-            {client.isPending ? <Skeleton className="h-48" /> : client.data ? <CompanyDetailsCard client={client.data} /> : null}
-            {client.data && <ContactsCard contacts={client.data.contacts} />}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <Field label="Initial Notes" htmlFor="lead-notes" hint="How the client approached us, first discussion points.">
-        <Textarea id="lead-notes" maxLength={4000} className="min-h-24" placeholder="e.g. Met at the dealer meet, wants new shop boards for 50 outlets" value={notes} onChange={(e) => onNotes(e.target.value)} />
-      </Field>
-
-      <CreateOrderDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(o) => {
-          setCreating(false);
-          setPickedType(o.clientType);
-          setPickedClient(o.client._id);
-          onOrder({ value: o._id, label: `${o.orderNo} · ${o.client.name}` });
-        }}
-      />
-    </div>
-  );
-}
 
 /** Stage 1 of a started lead: its order and client, and the initial notes (editable while the lead is open). */
 export function NewLeadDone({ detail, canWrite }: { detail: LeadDetail; canWrite: boolean }) {
@@ -385,18 +290,15 @@ export function StageInfo({ stage, detail }: { stage: LeadStage; detail: LeadDet
 
 /* ------------------------------ Client Servicing handover ------------------------------ */
 
-export function HandoverPanel({ detail }: { detail: LeadDetail }) {
-  if (!detail.handover.unlocked)
-    return (
-      <EmptyState
-        icon={LockKeyhole}
-        title="Unlocks after Requirement Discussion"
-        description="Finish Requirement Discussion first. The handover then runs alongside the rate card and negotiation."
-      />
-    );
+/** Project Assign > Assign to Client Servicing. `onAssigned` runs once the order is handed over (the lead is then completed). */
+export function HandoverPanel({ detail, onAssigned }: { detail: LeadDetail; onAssigned?: () => void }) {
+  if (detail.recce.assignee)
+    return <EmptyState icon={LockKeyhole} title="Not needed" description={`This project is assigned to the Recce team (${detail.recce.assignee.name}).`} />;
+  if (!detail.handover.unlocked && !detail.handover.assignee)
+    return <EmptyState icon={LockKeyhole} title="Opens at Project Assign" description="Client Servicing can be assigned once the lead is at Project Assign." />;
   return (
     <div className="space-y-3">
-      <HandoverTab order={detail.order} />
+      <HandoverTab order={detail.order} onAssigned={onAssigned} />
       <Link href={`/orders/${detail.order._id}`} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-brand">
         <ExternalLink className="size-3.5" aria-hidden /> Open the order in Order Management
       </Link>

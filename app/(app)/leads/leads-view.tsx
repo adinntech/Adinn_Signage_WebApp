@@ -16,7 +16,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useDebounced } from "@/hooks/use-debounced";
-import { LEAD_STAGES, useLeads, useLeadSummary, type LeadStage } from "@/lib/api/leads";
+import { LEAD_FLOW, useLeads, useLeadSummary, type LeadStage } from "@/lib/api/leads";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -50,11 +50,11 @@ export function LeadsView() {
 
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-5">
-      <PageHeader icon={Waypoints} title="Lead Management" subtitle="Every lead from first approach to client rate approval, shown as a mind map." actions={newButton} />
+      <PageHeader icon={Waypoints} title="Lead Management" subtitle="Every order is a lead: from New Lead to the project assigned to Client Servicing or the Recce team." actions={newButton} />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Open Leads" value={summary.data?.open} icon={Network} color="blue" loading={summary.isPending} active={status === "OPEN" && !stage} onClick={() => reset(() => (setStatus("OPEN"), setStage("")))} />
-        {LEAD_STAGES.map((s, i) => (
+        {LEAD_FLOW.filter((s) => s !== "NEW_LEAD").map((s, i) => (
           <KpiCard
             key={s}
             label={STAGE_META[s].short}
@@ -85,7 +85,7 @@ export function LeadsView() {
           <div className="w-52">
             <Select aria-label="Filter by stage" value={stage} onChange={(e) => reset(() => setStage(e.target.value as LeadStage | ""))}>
               <option value="">All Stages</option>
-              {LEAD_STAGES.map((s) => (
+              {LEAD_FLOW.map((s) => (
                 <option key={s} value={s}>
                   {STAGE_META[s].label}
                 </option>

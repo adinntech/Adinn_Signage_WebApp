@@ -17,13 +17,21 @@ interface SignedUrl {
 /**
  * Which record a file belongs to. Sales order and email template files are kept inside their record (not in the
  * project file store), so their link is asked from that record: an order serves its comment, approval, rate card and
- * sent email files plus the Company Profile PDF; a template serves its own PDF.
+ * sent email files plus the Company Profile PDF; a template serves its own PDF; a client serves its GST certificates.
  */
-export type FileSource = { orderId: string } | { templateSlug: string };
+export type FileSource = { orderId: string } | { templateSlug: string } | { clientId: string } | { projectId: string };
 
 /** Short-lived signed link for a stored file (files are private). */
 export const fileUrl = (fileId: string, src: FileSource) =>
-  api<SignedUrl>("orderId" in src ? `/sales/orders/${src.orderId}/files/${fileId}/url` : `/email-templates/${src.templateSlug}/pdf/url`);
+  api<SignedUrl>(
+    "orderId" in src
+      ? `/sales/orders/${src.orderId}/files/${fileId}/url`
+      : "clientId" in src
+        ? `/clients/${src.clientId}/files/${fileId}/url`
+        : "projectId" in src
+          ? `/projects/${src.projectId}/bd-handover/files/${fileId}/url`
+          : `/email-templates/${src.templateSlug}/pdf/url`,
+  );
 
 /** Open a stored file in a new tab (preview). The tab is opened first so pop-up blockers allow it. */
 export async function openFile(fileId: string, src: FileSource) {

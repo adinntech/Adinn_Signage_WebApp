@@ -110,7 +110,7 @@ export interface OrderComment {
 export type DeliveryStatus = "SENT" | "FAILED" | "SKIPPED";
 export interface SentEmail {
   _id: string;
-  kind: "COMPANY_PROFILE" | "RATE_CARD" | "ONBOARDING";
+  kind: "COMPANY_PROFILE" | "RATE_CARD" | "ONBOARDING" | "PROJECT_CODE_REQUEST";
   from: string;
   to: string[];
   cc: string[];
@@ -244,13 +244,47 @@ export function useRegisterClient() {
   });
 }
 
-/** Creates an order for a registered client; `clientType` is the New / Existing client flag (server suggests one when omitted). */
+/**
+ * Creates an order and its lead (opens at Project Assign). New Client: `clientId` from Client Management; Existing
+ * Client: `zohoId` from the Zoho customer list.
+ */
 export function useCreateOrder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { clientId: string; clientType?: ClientType; requestKey: string }) =>
+    mutationFn: (body: ({ clientId: string; zohoId?: never } | { zohoId: string; clientId?: never }) & { clientType?: ClientType; requestKey: string; initialNotes?: string }) =>
       api<CreatedOrder>("/sales/orders", { method: "POST", body: JSON.stringify(body) }),
-    onSuccess: () => invalidateOrder(qc),
+    onSuccess: () => {
+      invalidateOrder(qc);
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
+/** A Zoho customer for the Existing Client picker; `clientId` is set once it is linked to a CRM client. */
+export interface ZohoClientOption {
+  zohoId: string;
+  name: string;
+  clientName?: string;
+  email?: string;
+  phone?: string;
+  gstin?: string;
+  city?: string;
+  state?: string;
+  clientId: string | null;
+  clientNo: string | null;
+}
+
+/** Zoho customer search. `mode` is "sample" until the Zoho keys are set on the server. */
+export function useZohoClients(q: string, enabled = true) {
+  return useQuery({
+    queryKey: ["sales", "zoho-clients", q],
+    queryFn: async () => {
+      const r = await apiPage<ZohoClientOption>(`/sales/zoho-clients${qs({ q })}`);
+      return { items: r.data, mode: ((r.meta as unknown as { mode?: string }).mode ?? "live") as "live" | "sample" };
+    },
+    enabled,
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -326,11 +360,25 @@ export interface HandoverDoc {
   role?: string;
   createdAt: string;
 }
+/** A voice note for Client Servicing (recorded in the browser or uploaded). */
+export interface VoiceNote {
+  _id: string;
+  file: FileRef;
+  durationSec?: number;
+  uploadedBy?: UserRef;
+  role?: string;
+  createdAt: string;
+}
 export interface HandoverState {
   orderId: string;
   orderNo: string;
   assignee: UserRef | null;
   handover: (Omit<HandoverInfo, "assignedBy"> & { assignedBy?: UserRef }) | null;
+  /** Assign to Client Servicing toggle: full handover (true) or client details and contacts only (false). */
+  full: boolean;
+  /** Additional notes for Client Servicing. */
+  notes: string;
+  voiceNotes: VoiceNote[];
   type: HandoverType | null;
   shopList: ShopListSummary | null;
   /** Total Shops typed by the BD (must match the list to verify). */
@@ -424,8 +472,27 @@ export function useShopFiles(id: string) {
   return { add, remove };
 }
 
-export const useAssignClientServicing = (id: string) =>
-  useHandoverMutation(id, (body: { csUserId: string; note?: string }) => api<HandoverState>(`/sales/orders/${id}/handover/assign`, { method: "POST", body: JSON.stringify(body) }));
+export const useSetHandoverScope = (id: string) =>
+  useHandoverMutation(id, (full: boolean) => api<HandoverState>(`/sales/orders/${id}/handover/scope`, { method: "PATCH", body: JSON.stringify({ full }) }));
+export const useSetHandoverNotes = (id: string) =>
+  useHandoverMutation(id, (notes: string) => api<HandoverState>(`/sales/orders/${id}/handover/notes`, { method: "PATCH", body: JSON.stringify({ notes }) }));
+export const useAddVoiceNote = (id: string) =>
+  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/voice-notes`, { method: "POST", body }));
+export const useRemoveVoiceNote = (id: string) =>
+  useHandoverMutation(id, (noteId: string) => api<HandoverState>(`/sales/orders/${id}/handover/voice-notes/${noteId}`, { method: "DELETE" }));
+
+/** Hands the order to Client Servicing. At Project Assign this also completes the lead, so the lead is refreshed too. */
+export function useAssignClientServicing(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { csUserId: string; note?: string }) => api<HandoverState>(`/sales/orders/${id}/handover/assign`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: (data) => {
+      qc.setQueryData(handoverKey(id), data);
+      invalidateOrder(qc, id);
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
 
 /** Active Client Servicing people (handover dropdown). */
 export function useClientServicingUsers(enabled = true) {

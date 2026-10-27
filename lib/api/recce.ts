@@ -1,0 +1,117 @@
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, apiPage } from "@/lib/api";
+import type { ClientContact } from "./clients";
+import { qs } from "./common";
+import type { HandoverDoc, HandoverShop, HandoverType, SentEmail, ShopListSummary, VoiceNote } from "./sales";
+
+interface UserRef {
+  _id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+}
+
+/** Project Assign > Assign to Recce Team for one order (from the server). */
+export interface RecceState {
+  orderId: string;
+  orderNo: string;
+  /** The lead is open at Project Assign and Client Servicing has not been assigned. */
+  unlocked: boolean;
+  codes: { projectCode: string; estimationCode: string; savedAt: string | null; savedBy: string | null } | null;
+  requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
+  /** Client contacts with both a mobile number and an email (they go on the operations project). */
+  projectContacts: number;
+  assignee: UserRef | null;
+  assignedAt: string | null;
+  assignedBy: string | null;
+  note: string | null;
+  project: { _id: string; code: string; status: string } | null;
+  missing: string[];
+  mail: { enabled: boolean; from: string | null };
+  draft: { to: string[]; cc: string[]; subject: string; body: string };
+}
+
+export const PRIORITIES = { LOW: "Low", MEDIUM: "Medium", HIGH: "High", URGENT: "Urgent" } as const;
+export type Priority = keyof typeof PRIORITIES;
+
+export interface RecceAssignInput {
+  assigneeId: string;
+  startDate: string;
+  targetDate: string;
+  district: string;
+  priority: Priority;
+  note?: string;
+}
+
+const recceKey = (id: string) => ["sales", "order", id, "recce"] as const;
+
+export function useRecce(id: string, enabled = true) {
+  return useQuery({ queryKey: recceKey(id), queryFn: () => api<RecceState>(`/sales/orders/${id}/recce`), enabled });
+}
+
+/** Active Recce / Operations people a project can be assigned to. */
+export function useRecceUsers(enabled = true) {
+  return useQuery({ queryKey: ["sales", "recce-users"], queryFn: () => api<UserRef[]>("/sales/recce-users"), enabled, staleTime: 5 * 60_000 });
+}
+
+function useRecceMutation<V, R>(id: string, fn: (v: V) => Promise<R>, also: (qc: ReturnType<typeof useQueryClient>) => void = () => {}) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: recceKey(id) });
+      also(qc);
+    },
+  });
+}
+
+/** Project code request email; `body` is multipart: `payload` (JSON email fields) + `files`. */
+export const useSendCodeRequest = (id: string) =>
+  useRecceMutation(id, (body: FormData) => api<SentEmail>(`/sales/orders/${id}/recce/code-request`, { method: "POST", body }), (qc) =>
+    qc.invalidateQueries({ queryKey: ["sales", "order", id, "emails"] }),
+  );
+
+export const useSaveRecceCodes = (id: string) =>
+  useRecceMutation(id, (body: { projectCode: string; estimationCode: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
+
+/** Creates the operations project, assigns it and completes the lead. */
+export const useAssignRecce = (id: string) =>
+  useRecceMutation(id, (body: RecceAssignInput) => api<RecceState>(`/sales/orders/${id}/recce/assign`, { method: "POST", body: JSON.stringify(body) }), (qc) => {
+    qc.invalidateQueries({ queryKey: ["sales", "order", id] });
+    qc.invalidateQueries({ queryKey: ["leads"] });
+    qc.invalidateQueries({ queryKey: ["projects"] });
+  });
+
+/* ------------------------------- Operations: BD handover ------------------------------- */
+
+/** BD handover of a project created from Lead Management (null for other projects). */
+export interface ProjectHandover {
+  orderNo: string;
+  projectCode: string | null;
+  estimationCode: string | null;
+  assignedAt: string | null;
+  assignedBy: string | null;
+  note: string | null;
+  client: { name: string; clientName?: string; clientNo?: string; email?: string; phone?: string; gstin?: string; contacts: ClientContact[] } | null;
+  type: HandoverType | null;
+  notes: string;
+  voiceNotes: VoiceNote[];
+  documents: HandoverDoc[];
+  shopList: ShopListSummary | null;
+  declaredShopTotal: number | null;
+  shopFiles: number;
+}
+
+export function useProjectHandover(projectId: string) {
+  return useQuery({ queryKey: ["projects", projectId, "bd-handover"], queryFn: () => api<ProjectHandover | null>(`/projects/${projectId}/bd-handover`) });
+}
+
+export function useProjectHandoverShops(projectId: string, params: { page: number; limit: number }, enabled = true) {
+  return useQuery({
+    queryKey: ["projects", projectId, "bd-handover", "shops", params],
+    queryFn: () => apiPage<HandoverShop>(`/projects/${projectId}/bd-handover/shops${qs(params)}`),
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}

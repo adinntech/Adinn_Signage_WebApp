@@ -6,6 +6,8 @@ import {
   MessagesSquare,
   ReceiptIndianRupee,
   Scale,
+  ScanSearch,
+  Send,
   UserRoundPlus,
   type LucideIcon,
 } from "lucide-react";
@@ -33,14 +35,23 @@ export interface StageMeta {
 
 export const STAGE_META: Record<LeadStage, StageMeta> = {
   NEW_LEAD: {
-    label: "New Lead / Client Approach",
+    label: "New Lead",
     short: "New Lead",
     icon: UserRoundPlus,
     color: "#2563eb",
     kpi: "blue",
     soft: "#eff6ff",
-    left: { title: "Order Selection", icon: ClipboardPen, items: ["Select from existing orders", "Create a new order", "Initial notes"] },
-    right: { title: "Client Type", icon: Building2, items: ["New client: full process", "Existing client: skips registration"] },
+    left: { title: "Client Flag", icon: ClipboardPen, items: ["New client: Client Management list", "Existing client: Zoho customer list"] },
+    right: { title: "Order Created", icon: Building2, items: ["Client details auto-filled", "Order no. generated", "Moves to Project Assign"] },
+  },
+  PROJECT_ASSIGN: {
+    label: "Project Assign",
+    short: "Project Assign",
+    icon: Send,
+    color: "#9333ea",
+    kpi: "purple",
+    soft: "#faf5ff",
+    // No side branches: Project Assign forks into the two assignment branches below it (ASSIGN_META).
   },
   CLIENT_REGISTERED: {
     label: "Client Registered",
@@ -93,4 +104,32 @@ export const STAGE_META: Record<LeadStage, StageMeta> = {
   },
 };
 
-export const HANDOVER_META = { label: "Assign to Client Servicing", short: "CS Handover", icon: Handshake, color: "#f97316", soft: "#fff7ed" };
+export interface AssignMeta {
+  label: string;
+  short: string;
+  icon: LucideIcon;
+  color: string;
+  soft: string;
+  items: string[];
+}
+
+/** The two Project Assign branches. Either one completes the lead. Keys are the mind map nodes (HANDOVER = Client Servicing). */
+export const ASSIGN_META: Record<"HANDOVER" | "RECCE", AssignMeta> = {
+  HANDOVER: {
+    label: "Assign to Client Servicing",
+    short: "Client Servicing",
+    icon: Handshake,
+    color: "#f97316",
+    soft: "#fff7ed",
+    items: ["Handover type: ASO / Shop Details / Shop + Measurement", "Contacts, notes, voice notes, documents", "Client Servicing person and note"],
+  },
+  RECCE: {
+    label: "Assign to Recce Team",
+    short: "Recce Team",
+    icon: ScanSearch,
+    color: "#0d9488",
+    soft: "#f0fdfa",
+    items: ["Project code request email", "Project code and estimation code", "Handover type, Recce person and notes"],
+  },
+};
+export const HANDOVER_META = ASSIGN_META.HANDOVER;

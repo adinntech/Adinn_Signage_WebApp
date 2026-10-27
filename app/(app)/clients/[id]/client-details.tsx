@@ -157,7 +157,7 @@ export function ClientDetailsView() {
                         <Button variant="ghost" size="sm" onClick={() => openContact(i)} aria-label={`Edit ${k.name}`}>
                           <Pencil className="size-4" aria-hidden /> Edit
                         </Button>
-                        <Button variant="ghost" size="sm" disabled={c.contacts.length <= 1} onClick={() => setRemoveIdx(i)} aria-label={`Remove ${k.name}`}>
+                        <Button variant="ghost" size="sm" onClick={() => setRemoveIdx(i)} aria-label={`Remove ${k.name}`}>
                           <Trash2 className="size-4 text-danger" aria-hidden /> Remove
                         </Button>
                       </div>
