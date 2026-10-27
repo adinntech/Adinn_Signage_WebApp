@@ -63,6 +63,8 @@ export interface LeadDetail {
   /** The current stage is the last one: completing it completes the lead. */
   lastStage: boolean;
   nextAvailable: boolean;
+  /** Project Assign route taken by the first save (HANDOVER: handover details; RECCE: the code request email). */
+  route?: "HANDOVER" | "RECCE" | null;
   handover: {
     unlocked: boolean;
     assignee: UserRef | null;
@@ -82,7 +84,8 @@ export interface LeadDetail {
     assignedAt: string | null;
     projectCode?: string | null;
     estimationCode?: string | null;
-    emails?: { count: number; lastSentAt: string | null; lastStatus: "SENT" | "FAILED" | "SKIPPED" | null };
+    /** `done`: an email recorded as sent, or not sent only because mail is off (unlocks the codes). */
+    emails?: { count: number; lastSentAt: string | null; lastStatus: "SENT" | "FAILED" | "SKIPPED" | null; done?: boolean };
     /** The full handover (type and details) is complete. */
     handoverReady?: boolean;
     missing?: string | null;

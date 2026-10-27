@@ -32,6 +32,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { RouteNotice, StepFooter } from "./assign-panels";
 import { OnboardingPanel } from "./onboarding-panel";
 import { STAGE_META } from "./stage-meta";
 
@@ -292,15 +293,18 @@ export function StageInfo({ stage, detail }: { stage: LeadStage; detail: LeadDet
 
 /* ------------------------------ Client Servicing handover ------------------------------ */
 
-/** Project Assign > Assign to Client Servicing. `onAssigned` runs once the order is handed over (the lead is then completed). */
-export function HandoverPanel({ detail, onAssigned, focus }: { detail: LeadDetail; onAssigned?: () => void; focus?: string | null }) {
-  if (detail.recce.assignee)
-    return <EmptyState icon={LockKeyhole} title="Not needed" description={`This project is assigned to the Recce team (${detail.recce.assignee.name}).`} />;
-  if (!detail.handover.unlocked && !detail.handover.assignee)
-    return <EmptyState icon={LockKeyhole} title="Opens at Project Assign" description="Client Servicing can be assigned once the lead is at Project Assign." />;
+/**
+ * Project Assign > Assign to Client Servicing, one step at a time: "details" (toggle, client, type, shop list, notes,
+ * documents) or "assign" (summary + the Client Servicing person). `onDone` moves on once the details are complete;
+ * `onAssigned` runs once the order is handed over (the lead is then completed).
+ */
+export function HandoverPanel({ detail, step, onDone, onAssigned }: { detail: LeadDetail; step: "details" | "assign"; onDone: () => void; onAssigned?: () => void }) {
+  const open = !detail.handover.assignee && detail.lead.status === "OPEN";
   return (
-    <div className="space-y-3">
-      <HandoverTab order={detail.order} onAssigned={onAssigned} focus={focus} />
+    <div className="space-y-4">
+      {step === "details" && open && !detail.route && <RouteNotice branch="HANDOVER" />}
+      <HandoverTab order={detail.order} onAssigned={onAssigned} section={step} />
+      {step === "details" && open && <StepFooter orderId={detail.order._id} next="Assign Client Servicing Person" onContinue={onDone} />}
       <Link href={`/orders/${detail.order._id}`} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-brand">
         <ExternalLink className="size-3.5" aria-hidden /> Open the order in Order Management
       </Link>

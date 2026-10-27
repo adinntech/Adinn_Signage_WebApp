@@ -15,6 +15,7 @@ import {
   Download,
   Eye,
   History,
+  LockKeyhole,
   MapPin,
   MousePointerClick,
   PartyPopper,
@@ -31,7 +32,7 @@ import { Field } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { OrderClientForm } from "@/components/orders/create-order-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
@@ -54,8 +55,9 @@ import type { ClientType } from "@/lib/api/clients";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AssignChooser } from "./assign-panels";
-import { RecceBranchPanel } from "./recce-panel";
+import { RecceBranchPanel, type RecceStep } from "./recce-panel";
 import { LeadMindMap, type AssignState, type MapNode } from "./lead-mind-map";
+import { nextStepOf, resolveStep } from "./assign-steps";
 import { ASSIGN_META, CLIENT_META, STAGE_META } from "./stage-meta";
 import { ApprovalTab } from "@/components/sales/approval-tab";
 import { NegotiationPanel } from "./negotiation-panel";
@@ -91,6 +93,7 @@ const assignOf = (d: LeadDetail): AssignState => ({
     missing: d.handover.missing,
   },
   recce: d.recce,
+  route: d.route ?? null,
 });
 const isBranch = (k: string | null): k is "HANDOVER" | "RECCE" => k === "HANDOVER" || k === "RECCE";
 
@@ -602,6 +605,7 @@ export function LeadWorkspace() {
   const openNode = (k: MapNode | null, step?: string) =>
     router.replace(k ? `/leads/${id}?stage=${k}${step && isBranch(k) ? `&step=${encodeURIComponent(step)}` : ""}` : `/leads/${id}`, { scroll: false });
   const step = isBranch(selected) ? params.get("step") : null;
+  const blocked = (why: string) => toast(why, "info");
   const fresh = params.get("fresh") === "1";
 
   // Arriving from Create Project: play the stage 1 completion once, then drop the flag from the URL.
@@ -666,35 +670,47 @@ export function LeadWorkspace() {
   const stageState = selected && !isBranch(selected) ? d.stages.find((s) => s.key === selected) : undefined;
   const isCurrent = !!stageState && stageState.status === "CURRENT" && open;
   const wide = selected === "RATE_CARD" || selected === "NEGOTIATION";
-  const title = isBranch(selected) ? ASSIGN_META[selected].label : selected ? `${stageState?.number ?? ""}. ${STAGE_META[selected].label}` : "";
+  // A branch drawer shows one step: the one asked for when it may be opened, else why not.
+  const branchStep = isBranch(selected) ? resolveStep(assignOf(d), selected, step) : null;
+  const title =
+    isBranch(selected) && branchStep
+      ? `${ASSIGN_META[selected].short} · ${branchStep.history ? "Email History" : branchStep.step.label}`
+      : selected && !isBranch(selected)
+        ? `${stageState?.number ?? ""}. ${STAGE_META[selected].label}`
+        : "";
+
+  /** A branch step is complete: reload, then open the next step (Continue) or close and say what is next. */
+  const finishStep = async (k: "HANDOVER" | "RECCE", from: string, openNext: boolean) => {
+    const r = await q.refetch();
+    const next = r.data ? nextStepOf(assignOf(r.data), k, from) : null;
+    openNode(openNext && next ? k : null, openNext && next ? next.step : undefined);
+    if (next) toast(`Next: ${next.label}`);
+  };
+  const assigned = () => {
+    // Assigning completes the lead: close the drawer and run the branch into Lead Completed.
+    openNode(null);
+    void q.refetch().then(() => setCelebrate("PROJECT_ASSIGN"));
+  };
 
   const body = (() => {
     if (!selected) return null;
-    if (selected === "HANDOVER")
+    if (isBranch(selected)) {
+      if (!branchStep) return null;
+      if (branchStep.blocked) return <EmptyState icon={LockKeyhole} title="Not open yet" description={branchStep.blocked} />;
+      if (selected === "RECCE") {
+        const s = (branchStep.history ? "history" : branchStep.step.step) as RecceStep;
+        return <RecceBranchPanel key={s} detail={d} step={s} onDone={() => void finishStep("RECCE", s, s === "handover")} onAssigned={assigned} />;
+      }
       return (
         <HandoverPanel
-          key={step ?? "all"}
+          key={branchStep.step.step}
           detail={d}
-          focus={step}
-          onAssigned={() => {
-            // Assigning completes the lead: close the drawer and run the branch into Lead Completed.
-            openNode(null);
-            void q.refetch().then(() => setCelebrate("PROJECT_ASSIGN"));
-          }}
+          step={branchStep.step.step === "assign" ? "assign" : "details"}
+          onDone={() => void finishStep("HANDOVER", "details", true)}
+          onAssigned={assigned}
         />
       );
-    if (selected === "RECCE")
-      return (
-        <RecceBranchPanel
-          key={step ?? "all"}
-          detail={d}
-          focus={step}
-          onAssigned={() => {
-            openNode(null);
-            void q.refetch().then(() => setCelebrate("PROJECT_ASSIGN"));
-          }}
-        />
-      );
+    }
     const reached = stageState && (stageState.status === "DONE" || stageState.status === "CURRENT");
     if (selected === "NEW_LEAD") return <NewLeadDone detail={d} canWrite={canWrite} />;
     if (selected === "PROJECT_ASSIGN") return <AssignChooser detail={d} onOpen={openNode} />;
@@ -738,6 +754,7 @@ export function LeadWorkspace() {
                 CLIENT_APPROVAL: d.summary.approvalDocuments ? `${d.summary.approvalDocuments} doc${d.summary.approvalDocuments === 1 ? "" : "s"}` : undefined,
               }}
               onOpen={openNode}
+              onBlocked={blocked}
             />
           </Canvas>
         </motion.div>

@@ -20,6 +20,10 @@ export interface RecceState {
   unlocked: boolean;
   codes: { projectCode: string; estimationCode: string; savedAt: string | null; savedBy: string | null } | null;
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
+  /** Step 1 done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
+  emailDone: boolean;
+  /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
+  route: "HANDOVER" | "RECCE" | null;
   /** Client contacts with both a mobile number and an email (they go on the operations project). */
   projectContacts: number;
   assignee: UserRef | null;

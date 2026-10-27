@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
-import { BadgeCheck, Check, ChevronDown, CircleAlert, ClipboardList, ExternalLink, Hash, LockKeyhole, Mail, Save, Send, UserRoundCheck } from "lucide-react";
+import { motion } from "framer-motion";
+import { BadgeCheck, Check, CircleAlert, ExternalLink, Save, Send } from "lucide-react";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
 import { EmailHistory } from "@/components/sales/email-history";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
@@ -17,122 +16,66 @@ import { DetailItem } from "@/components/ui/page-header";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import type { LeadDetail } from "@/lib/api/leads";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import { useScrollTo } from "@/hooks/use-scroll-to";
+import { RouteNotice, StepFooter } from "./assign-panels";
 import { ASSIGN_META } from "./stage-meta";
 
 const TEAL = ASSIGN_META.RECCE.color;
 const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
-type StepStatus = "DONE" | "CURRENT" | "PENDING";
 
-/** One step of the Recce branch: a numbered node on a vertical rail, with a collapsible body. */
-function Step({
-  id,
-  n,
-  title,
-  icon: Icon,
-  status,
-  summary,
-  last,
-  defaultOpen,
-  children,
-}: {
-  id: string;
-  n: number;
-  title: string;
-  icon: typeof Mail;
-  status: StepStatus;
-  summary?: React.ReactNode;
-  last?: boolean;
-  defaultOpen: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const done = status === "DONE";
-  const current = status === "CURRENT";
-  return (
-    <motion.li id={id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: n * 0.06 }} className="relative scroll-mt-4 pl-14">
-      {/* Rail to the next step: filled once this one is done. */}
-      {!last && (
-        <span aria-hidden className="absolute bottom-[-1rem] left-[1.3rem] top-12 w-0.5 rounded-full bg-slate-200">
-          <motion.span className="absolute inset-0 origin-top rounded-full" style={{ background: TEAL }} initial={{ scaleY: 0 }} animate={{ scaleY: done ? 1 : 0 }} transition={{ duration: 0.5 }} />
-        </span>
-      )}
-      <span
-        aria-hidden
-        className={cn("absolute left-0 top-1 flex size-11 items-center justify-center rounded-full border-2 text-sm font-bold transition-colors", done ? "text-white" : current ? "bg-white" : "border-slate-300 bg-white text-muted-foreground")}
-        style={done ? { background: TEAL, borderColor: TEAL } : current ? { borderColor: TEAL, color: TEAL, boxShadow: `0 0 0 4px ${TEAL}22` } : undefined}
-      >
-        {done ? <Check className="size-5" strokeWidth={3} /> : n}
-      </span>
-      <Card className={cn("overflow-hidden", current && "shadow-card")} style={current ? { borderColor: `${TEAL}66` } : undefined}>
-        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-muted/40">
-          <Icon className="size-5 shrink-0" style={{ color: done || current ? TEAL : "#94a3b8" }} aria-hidden />
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-primary">{title}</span>
-            {summary && <span className="block truncate text-xs text-muted-foreground">{summary}</span>}
-          </span>
-          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", done ? "bg-success-soft text-success" : current ? "text-white" : "bg-muted text-muted-foreground")} style={current ? { background: TEAL } : undefined}>
-            {done ? "Done" : current ? "Now" : "Pending"}
-          </span>
-          <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
-        </button>
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden">
-              <div className="border-t border-border p-5">{children}</div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Card>
-    </motion.li>
-  );
-}
-
-/** Step 1: ask for the project code by email (To / CC / subject / message / attachments). */
-function CodeRequestStep({ r, locked }: { r: RecceState; locked: boolean }) {
+/**
+ * Step 1: ask for the project code by email (To / CC / subject / message / attachments). An email recorded as sent (or
+ * not sent only because mail is off) completes the step; a failed one stays here to be sent again.
+ */
+function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean; onSent: () => void }) {
   const send = useSendCodeRequest(r.orderId);
   const [files, setFiles] = useState<File[]>([]);
+  if (locked)
+    return (
+      <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+        {r.requests.count} email{r.requests.count === 1 ? "" : "s"} recorded, last on {formatDateTime(r.requests.lastSentAt)}. Open Email History on the mind map to see them.
+      </p>
+    );
   return (
-    <div className="space-y-5">
-      {!locked && (
-        <EmailComposer
-          idPrefix="recce-mail"
-          orderId={r.orderId}
-          from={r.mail.from}
-          mailEnabled={r.mail.enabled}
-          draft={r.draft}
-          attachments={[]}
-          attachmentLabel="Attachments (optional): PDF, images, Word, PowerPoint, Excel"
-          attachmentArea={<FileUploader id="recce-mail-files" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple compact hint="Up to 10 files" />}
-          sending={send.isPending}
-          onSend={async (v) => {
-            const fd = new FormData();
-            fd.append("payload", JSON.stringify(v));
-            for (const f of files) fd.append("files", f);
-            const sent = await send.mutateAsync(fd);
-            setFiles([]);
-            return sent;
-          }}
-        />
+    <div className="space-y-4">
+      {r.emailDone && (
+        <p className="flex items-center gap-2 rounded-lg bg-success-soft/70 px-3 py-2 text-sm text-success">
+          <Check className="size-4 shrink-0" aria-hidden /> Already sent {r.requests.count} time{r.requests.count === 1 ? "" : "s"}. Send again only if needed; Email History has the details.
+        </p>
       )}
-      <div id="recce-step-history" className="scroll-mt-4">
-        <p className="mb-2 text-sm font-semibold text-primary">Email History</p>
-        <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked} />
-      </div>
+      <EmailComposer
+        idPrefix="recce-mail"
+        orderId={r.orderId}
+        from={r.mail.from}
+        mailEnabled={r.mail.enabled}
+        draft={r.draft}
+        attachments={[]}
+        attachmentLabel="Attachments (optional): PDF, images, Word, PowerPoint, Excel"
+        attachmentArea={<FileUploader id="recce-mail-files" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple compact hint="Up to 10 files" />}
+        sending={send.isPending}
+        onSend={async (v) => {
+          const fd = new FormData();
+          fd.append("payload", JSON.stringify(v));
+          for (const f of files) fd.append("files", f);
+          const sent = await send.mutateAsync(fd);
+          setFiles([]);
+          // Let the composer show its result first, then move on to the codes.
+          if (sent.status !== "FAILED") setTimeout(onSent, 400);
+          return sent;
+        }}
+      />
     </div>
   );
 }
 
 /** Step 2: the 8-digit project code and the EST- estimation code. */
-function CodesStep({ r, locked }: { r: RecceState; locked: boolean }) {
+function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onSaved: () => void }) {
   const toast = useToast();
   const save = useSaveRecceCodes(r.orderId);
   const [project, setProject] = useState(r.codes?.projectCode ?? "");
@@ -159,6 +102,7 @@ function CodesStep({ r, locked }: { r: RecceState; locked: boolean }) {
     try {
       await save.mutateAsync({ projectCode: project, estimationCode: `EST-${est}` });
       toast("Project and estimation codes saved");
+      onSaved();
     } catch (err) {
       const fe = fieldErrorsOf(err);
       if (Object.keys(fe).length) setErrors(fe);
@@ -361,77 +305,42 @@ function AssignedBanner({ r }: { r: RecceState }) {
   );
 }
 
+export type RecceStep = "email" | "history" | "codes" | "handover" | "assign";
+
 /**
- * Project Assign > Assign to Recce Team: project code request email, codes, the handover (same details as for Client
- * Servicing, always in full) and the Recce / Operations person. Assigning creates the operations project and completes the lead.
+ * Project Assign > Assign to Recce Team, one step at a time (opened from the mind map): the project code request email,
+ * Email History, the codes, the handover (same details as for Client Servicing, always in full) and the Recce /
+ * Operations person. `onDone` moves on to the next step; assigning creates the operations project and completes the lead.
  */
-export function RecceBranchPanel({ detail, onAssigned, focus }: { detail: LeadDetail; onAssigned?: () => void; focus?: string | null }) {
+export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail: LeadDetail; step: RecceStep; onDone: () => void; onAssigned?: () => void }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
-  // Opened from a mind map step: that step opens and scrolls into view (Email History sits inside step 1).
-  useScrollTo(focus ? `recce-step-${focus}` : null, q.isSuccess, 450);
-  if (detail.handover.assignee)
-    return <EmptyState icon={LockKeyhole} title="Not needed" description={`This project is assigned to Client Servicing (${detail.handover.assignee.name}).`} />;
   if (q.isPending)
     return (
       <div className="space-y-4">
         <Skeleton className="h-16" />
-        <Skeleton className="h-40" />
         <Skeleton className="h-40" />
       </div>
     );
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const r = q.data;
   const assigned = !!r.assignee;
-  if (!assigned && !r.unlocked) return <EmptyState icon={LockKeyhole} title="Opens at Project Assign" description="The Recce team can be assigned once the lead is at Project Assign." />;
-  const handoverMissing = r.missing.filter((m) => !m.includes("project code"));
-  const s1: StepStatus = r.requests.count ? "DONE" : "CURRENT";
-  const s2: StepStatus = r.codes ? "DONE" : "CURRENT";
-  const s3: StepStatus = handoverMissing.length || r.projectContacts === 0 ? (r.codes ? "CURRENT" : "PENDING") : "DONE";
-  const s4: StepStatus = assigned ? "DONE" : r.missing.length === 0 ? "CURRENT" : "PENDING";
-  const first = !assigned ? [s1, s2, s3, s4].findIndex((s) => s !== "DONE") : -1;
-  const asked = focus === "history" ? 0 : ["email", "codes", "handover", "assign"].indexOf(focus ?? "");
-  const opens = (i: number) => (asked >= 0 ? asked === i : first === i);
+  const locked = assigned || !r.unlocked;
 
   return (
     <div className="space-y-4">
       {assigned && <AssignedBanner r={r} />}
-      <ol className="space-y-4">
-        <Step
-          id="recce-step-email"
-          n={1}
-          title="Project Code Request Email"
-          icon={Mail}
-          status={assigned ? "DONE" : s1}
-          defaultOpen={opens(0)}
-          summary={r.requests.count ? `${r.requests.count} sent · last ${formatDateTime(r.requests.lastSentAt)}${r.requests.lastStatus && r.requests.lastStatus !== "SENT" ? ` (${r.requests.lastStatus === "SKIPPED" ? "not sent" : "failed"})` : ""}` : "Ask for the project code to be created"}
-        >
-          <CodeRequestStep r={r} locked={assigned} />
-        </Step>
-        <Step id="recce-step-codes" n={2} title="Project Code & Estimation Code" icon={Hash} status={assigned ? "DONE" : s2} defaultOpen={opens(1)} summary={r.codes ? `${r.codes.projectCode} · ${r.codes.estimationCode}` : "8-digit project code and EST- estimation code"}>
-          <CodesStep r={r} locked={assigned} />
-        </Step>
-        <Step
-          id="recce-step-handover"
-          n={3}
-          title="Handover Type & Details"
-          icon={ClipboardList}
-          status={assigned ? "DONE" : s3}
-          defaultOpen={opens(2)}
-          summary={handoverMissing[0] ?? "ASO, Shop Details Only or Shop + Measurement, with notes, voice notes and documents"}
-        >
-          <HandoverTab order={detail.order} mode="recce" locked={assigned} />
-        </Step>
-        <Step
-          id="recce-step-assign"
-          n={4}
-          title="Assign to Recce / Operations"
-          icon={UserRoundCheck}
-          status={s4}
-          last
-          defaultOpen={asked >= 0 ? asked === 3 : first === 3 || (first === -1 && !assigned)} summary={assigned ? `${r.assignee?.name} · ${formatDate(r.assignedAt)}` : "Recce person, dates, location and notes"}>
-          {assigned ? <p className="text-sm text-muted-foreground">Assigned. The Recce team works on project {r.project?.code} in Operations.</p> : <AssignStep r={r} onAssigned={onAssigned} />}
-        </Step>
-      </ol>
+      {step === "email" && !locked && !r.route && <RouteNotice branch="RECCE" />}
+      {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
+      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked} />}
+      {step === "codes" && <CodesStep r={r} locked={locked} onSaved={onDone} />}
+      {step === "handover" && (
+        <>
+          <HandoverTab order={detail.order} mode="recce" locked={locked} />
+          {!locked && <StepFooter orderId={r.orderId} next="Assign to Recce / Operations" onContinue={onDone} full />}
+        </>
+      )}
+      {step === "assign" &&
+        (assigned ? <p className="text-sm text-muted-foreground">Assigned. The Recce team works on project {r.project?.code} in Operations.</p> : <AssignStep r={r} onAssigned={onAssigned} />)}
     </div>
   );
 }

@@ -79,7 +79,6 @@ import {
   type ShopState,
 } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
-import { useScrollTo } from "@/hooks/use-scroll-to";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { VoiceNotes } from "./voice-notes";
@@ -896,6 +895,47 @@ function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; 
   );
 }
 
+/** Read-only summary of what goes to Client Servicing, above the assignment (Lead Management "Assign" step). */
+function HandoverSummary({ order, data }: { order: Order; data: HandoverState }) {
+  const c = order.client;
+  const docs = data.documents.filter((d) => d.kind === "DOCUMENT").length;
+  const list = data.shopList;
+  const crm = order.clientType !== "EXISTING";
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionTitle icon={ListChecks} title="Handover Summary" description="What Client Servicing receives. Change it in Handover Type & Details." />
+      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <DetailItem label="Client">
+          {c.name}
+          {c.clientNo && <span className="ml-1 font-mono text-xs text-brand">{c.clientNo}</span>}
+        </DetailItem>
+        <DetailItem label="Contact Persons">
+          {c.contacts.length}
+          {c.contacts.find((k) => k.isPrimary) && <span className="text-muted-foreground"> · primary {c.contacts.find((k) => k.isPrimary)!.name}</span>}
+        </DetailItem>
+        <DetailItem label="Handover">{data.full ? "Full handover (toggle ON)" : "Client details only (toggle OFF)"}</DetailItem>
+        {data.full && <DetailItem label="Handover Type">{data.type ? HANDOVER_TYPES[data.type].label : null}</DetailItem>}
+        {data.full && data.type && data.type !== "ASO" && (
+          <DetailItem label="Shops">
+            {list ? `${data.declaredShopTotal ?? list.valid} shops · ${data.verified ? "verified" : "not verified"}` : "No shop list"}
+            {data.type === "SHOP_MEASUREMENT" && list ? <span className="text-muted-foreground"> · {data.shopFiles} photos / documents</span> : null}
+          </DetailItem>
+        )}
+        {data.full && (
+          <DetailItem label="Notes, Voice Notes & Documents">
+            {data.notes ? "Notes added" : "No notes"} · {data.voiceNotes.length} voice note{data.voiceNotes.length === 1 ? "" : "s"} · {docs} document{docs === 1 ? "" : "s"}
+          </DetailItem>
+        )}
+        {crm && (
+          <DetailItem label="GST Certificate & Custom Fields">
+            {(c.gstCertificates?.length ?? 0) ? "GST certificate attached" : "No GST certificate"} · {c.customFields?.length ?? 0} custom field{(c.customFields?.length ?? 0) === 1 ? "" : "s"}
+          </DetailItem>
+        )}
+      </dl>
+    </Card>
+  );
+}
+
 /** Handover status at the top of the tab. */
 function StatusBanner({ data }: { data: HandoverState }) {
   if (!data.assignee || !data.handover)
@@ -947,21 +987,21 @@ export function HandoverTab({
   onAssigned,
   mode = "cs",
   locked = false,
-  focus,
+  section,
 }: {
   order: Order;
   onAssigned?: () => void;
   mode?: "cs" | "recce";
   locked?: boolean;
-  /** Section to scroll to (mind map step): "type" or "assign". */
-  focus?: string | null;
+  /**
+   * Lead Management mind map steps open one part only: "details" (everything but the assignment) or "assign" (a
+   * summary and the Client Servicing assignment). Without it (Order Management) the whole tab shows.
+   */
+  section?: "details" | "assign";
 }) {
   const { can } = useAuth();
   const q = useHandover(order._id);
   const canWrite = can("sales:write");
-  // Toggle OFF has no type section (show the toggle); once handed over there is no assign form (show the client).
-  const target = !focus ? null : focus === "type" && q.data?.full === false ? "ho-step-scope" : focus === "assign" && q.data?.assignee ? "ho-step-client" : `ho-step-${focus}`;
-  useScrollTo(target, !q.isPending);
   if (q.isPending)
     return (
       <div className="space-y-4">
@@ -976,23 +1016,24 @@ export function HandoverTab({
   const data = recce ? { ...q.data, full: true } : q.data;
   const open = !data.assignee && !locked; // before handover the BD can still change everything
 
+  if (section === "assign")
+    return (
+      <div className="space-y-4">
+        {data.assignee && <StatusBanner data={data} />}
+        <HandoverSummary order={order} data={data} />
+        {canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
+      </div>
+    );
+
   return (
     <div className="space-y-4">
-      {!recce && <StatusBanner data={data} />}
-      {!recce && canWrite && open && (
-        <div id="ho-step-scope" className="scroll-mt-4">
-          <ScopeSection orderId={order._id} data={data} editable />
-        </div>
-      )}
-      <div id="ho-step-client" className="scroll-mt-4">
-        <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
-      </div>
+      {!recce && section !== "details" && <StatusBanner data={data} />}
+      {!recce && canWrite && open && <ScopeSection orderId={order._id} data={data} editable />}
+      <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
       <AnimatePresence initial={false}>
         {data.full && (
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
-            <div id="ho-step-type" className="scroll-mt-4">
-              <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
-            </div>
+            <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
             {data.type === "ASO" && data.shopList && open && (
               <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
                 <AlertTriangle className="size-4" aria-hidden /> A shop list was uploaded earlier. ASO hands over without one: remove it below, or choose a shop type.
@@ -1005,11 +1046,7 @@ export function HandoverTab({
           </motion.div>
         )}
       </AnimatePresence>
-      {!recce && canWrite && open && (
-        <div id="ho-step-assign" className="scroll-mt-4">
-          <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />
-        </div>
-      )}
+      {!recce && canWrite && open && section !== "details" && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
       {!open && canWrite && !recce && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <RefreshCw className="size-3.5" aria-hidden /> Documents and voice notes can still be added; Client Servicing is notified of each one.

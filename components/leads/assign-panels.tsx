@@ -1,17 +1,55 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle2, LockKeyhole, UserRoundCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, CircleAlert, Info, LockKeyhole, UserRoundCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { LeadDetail } from "@/lib/api/leads";
+import { useHandover } from "@/lib/api/sales";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ASSIGN_META } from "./stage-meta";
 
 type Branch = "HANDOVER" | "RECCE";
 
+/** First step of a route, before any route is taken: saving here takes this route and disables the other one. */
+export function RouteNotice({ branch }: { branch: Branch }) {
+  const m = ASSIGN_META[branch];
+  const other = ASSIGN_META[branch === "HANDOVER" ? "RECCE" : "HANDOVER"];
+  return (
+    <p className="flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm" style={{ borderColor: `${m.color}55`, background: m.soft }}>
+      <Info className="mt-0.5 size-4 shrink-0" style={{ color: m.color }} aria-hidden />
+      <span>
+        Saving here continues with the <b>{m.short}</b> route. The <b>{other.short}</b> route will be disabled for this lead.
+      </span>
+    </p>
+  );
+}
+
+/**
+ * Bottom of a handover details step: what is still missing, or "complete" with Continue to the next step. Reads the
+ * handover itself, so it follows every save in the step.
+ */
+export function StepFooter({ orderId, next, onContinue, full }: { orderId: string; next: string; onContinue: () => void; full?: boolean }) {
+  const q = useHandover(orderId);
+  if (!q.data) return null;
+  // The Recce team always gets the full handover: its gaps are those of the full handover.
+  const missing = full && !q.data.full ? ["Turn the handover toggle on (the Recce team gets the full handover)"] : q.data.missing;
+  const ready = missing.length === 0;
+  return (
+    <div className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>
+      {ready ? <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden /> : <CircleAlert className="size-5 shrink-0 text-warning" aria-hidden />}
+      <p className="min-w-0 flex-1 text-sm">{ready ? <b>Handover details complete.</b> : <>To continue: {missing[0]}</>}</p>
+      <Button variant="brand" disabled={!ready} onClick={onContinue}>
+        Continue: {next} <ArrowRight className="size-4" aria-hidden />
+      </Button>
+    </div>
+  );
+}
+
 /** Project Assign: choose who takes the project. Either branch completes the lead. */
 export function AssignChooser({ detail, onOpen }: { detail: LeadDetail; onOpen: (k: Branch) => void }) {
-  const chosen: Branch | null = detail.handover.assignee ? "HANDOVER" : detail.recce.assignee ? "RECCE" : null;
+  const chosen: Branch | null = detail.handover.assignee ? "HANDOVER" : detail.recce.assignee ? "RECCE" : (detail.route ?? null);
+  const assignedTo = detail.handover.assignee ? "HANDOVER" : detail.recce.assignee ? "RECCE" : null;
   const rows: { k: Branch; assignee: { name: string } | null; at: string | null; available: boolean }[] = [
     { k: "HANDOVER", assignee: detail.handover.assignee, at: detail.handover.assignedAt, available: true },
     { k: "RECCE", assignee: detail.recce.assignee, at: detail.recce.assignedAt, available: detail.recce.available },
@@ -22,8 +60,8 @@ export function AssignChooser({ detail, onOpen }: { detail: LeadDetail; onOpen: 
       <div className="grid gap-4 md:grid-cols-2">
         {rows.map((r, i) => {
           const m = ASSIGN_META[r.k];
-          const assigned = chosen === r.k;
-          const blocked = (!!chosen && !assigned) || !r.available;
+          const assigned = assignedTo === r.k;
+          const blocked = (!!chosen && chosen !== r.k) || !r.available;
           return (
             <motion.button
               key={r.k}
@@ -43,7 +81,15 @@ export function AssignChooser({ detail, onOpen }: { detail: LeadDetail; onOpen: 
                 <span className="min-w-0">
                   <span className="block text-base font-semibold text-primary">{m.label}</span>
                   <span className="block text-xs font-medium" style={{ color: blocked ? undefined : m.color }}>
-                    {assigned ? `Assigned to ${r.assignee!.name}${r.at ? ` · ${formatDate(r.at)}` : ""}` : chosen ? `Not needed · assigned to ${ASSIGN_META[chosen].short}` : r.available ? "Ready" : "Opens in the next update"}
+                    {assigned
+                      ? `Assigned to ${r.assignee!.name}${r.at ? ` · ${formatDate(r.at)}` : ""}`
+                      : chosen === r.k
+                        ? "In progress"
+                        : chosen
+                          ? assignedTo
+                            ? `Not needed · assigned to ${ASSIGN_META[chosen].short}`
+                            : `Disabled · ${ASSIGN_META[chosen].short} route in progress`
+                          : "Ready: the first save picks this route"}
                   </span>
                 </span>
               </span>
