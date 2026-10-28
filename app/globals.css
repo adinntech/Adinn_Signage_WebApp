@@ -69,7 +69,22 @@ body {
   outline-offset: 2px;
 }
 
+/* Lead mind map: soft directional flow on the connector into the active step (background only, no layout work). */
+@keyframes lm-flow {
+  to {
+    background-position: 0 12px;
+  }
+}
+.lm-flow {
+  background-image: linear-gradient(to bottom, currentColor 45%, transparent 0);
+  background-size: 100% 12px;
+  animation: lm-flow 1.4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .lm-flow {
+    animation: none;
+  }
   *,
   *::before,
   *::after {

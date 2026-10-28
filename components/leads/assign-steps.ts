@@ -1,7 +1,7 @@
 import { ClipboardList, Hash, Mail, UserRoundCheck, type LucideIcon } from "lucide-react";
 import type { LeadShops } from "@/lib/api/leads";
 import { formatDate } from "@/lib/format";
-import { ASSIGN_META } from "./stage-meta";
+import { ASSIGN_META, EMAIL_COLOR } from "./stage-meta";
 
 /** The two Project Assign branches (HANDOVER = Client Servicing, RECCE = Recce team). */
 export type Branch = "HANDOVER" | "RECCE";
@@ -49,6 +49,8 @@ export interface ChainStep {
   label: string;
   desc: string;
   icon: LucideIcon;
+  /** Own accent instead of the branch colour (email steps: cyan). */
+  color?: string;
   state: StepState;
   /** Why it cannot be opened yet (null when it can). */
   blocked: string | null;
@@ -124,6 +126,7 @@ function recceSteps(a: AssignState): ChainStep[] {
       label: labels[0]!,
       desc: "To, CC, subject, message and attachments",
       icon: Mail,
+      color: EMAIL_COLOR,
       ...s[0]!,
       info: sent ? `${sent} email${sent === 1 ? "" : "s"} · last ${last}` : null,
       history: { info: sent ? `${sent} · last ${formatDate(r.emails!.lastSentAt)}` : "Opens after the first email", enabled: sent > 0 && s[0]!.state !== "DISABLED" },

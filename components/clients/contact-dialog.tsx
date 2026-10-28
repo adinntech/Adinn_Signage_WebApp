@@ -10,7 +10,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { useSaveClient, type Client, type ClientContact } from "@/lib/api/clients";
-import { contactToApi, contactToForm, normalizeMobile } from "./company-form";
+import { contactToApi, contactToForm, digitsOnly, filtered, NO_AUTOFILL, normalizeMobile } from "./company-form";
 
 const mobile = (v: string) => /^[6-9]\d{9}$/.test(normalizeMobile(v));
 const email = (v: string) => z.email().safeParse(v).success;
@@ -40,10 +40,12 @@ export function ContactDialog({
 }) {
   const toast = useToast();
   const save = useSaveClient();
-  const editing = index !== null && index >= 0;
+  // The index can outlive its contact (e.g. that contact was just deleted): then there is nothing to edit.
+  const current = index !== null && index >= 0 ? client.contacts[index] : undefined;
+  const editing = !!current;
   const form = useForm<ContactValues>({
     resolver: zodResolver(contactSchema),
-    values: editing ? contactToForm(client.contacts[index]!) : { ...EMPTY, isPrimary: client.contacts.length === 0 },
+    values: current ? contactToForm(current) : { ...EMPTY, isPrimary: client.contacts.length === 0 },
   });
   const { register, handleSubmit, formState } = form;
   const e = formState.errors;
@@ -84,24 +86,24 @@ export function ContactDialog({
         </>
       }
     >
-      <form id="contact-form" noValidate onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
+      <form id="contact-form" noValidate autoComplete="off" onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
         <Field label="Contact Person Name" htmlFor="cd-name" required error={e.name?.message}>
-          <Input id="cd-name" aria-invalid={!!e.name} {...register("name")} />
+          <Input id="cd-name" placeholder="Enter contact person name" {...NO_AUTOFILL} aria-invalid={!!e.name} {...register("name")} />
         </Field>
         <Field label="Designation" htmlFor="cd-des">
-          <Input id="cd-des" {...register("designation")} />
+          <Input id="cd-des" placeholder="Enter designation" {...NO_AUTOFILL} {...register("designation")} />
         </Field>
         <Field label="Mobile Number" htmlFor="cd-phone" required error={e.phone?.message}>
-          <Input id="cd-phone" inputMode="tel" aria-invalid={!!e.phone} {...register("phone")} />
+          <Input id="cd-phone" inputMode="numeric" maxLength={10} placeholder="Enter 10-digit mobile number" {...NO_AUTOFILL} aria-invalid={!!e.phone} {...filtered(register("phone"), digitsOnly(10))} />
         </Field>
         <Field label="Alternate Mobile Number" htmlFor="cd-aphone" error={e.alternatePhone?.message}>
-          <Input id="cd-aphone" inputMode="tel" {...register("alternatePhone")} />
+          <Input id="cd-aphone" inputMode="numeric" maxLength={10} placeholder="Enter alternate mobile number" {...NO_AUTOFILL} aria-invalid={!!e.alternatePhone} {...filtered(register("alternatePhone"), digitsOnly(10))} />
         </Field>
         <Field label="Email Address" htmlFor="cd-email" error={e.email?.message}>
-          <Input id="cd-email" type="email" {...register("email")} />
+          <Input id="cd-email" type="email" placeholder="Enter email address" {...NO_AUTOFILL} {...register("email")} />
         </Field>
         <Field label="Alternate Email Address" htmlFor="cd-aemail" error={e.alternateEmail?.message}>
-          <Input id="cd-aemail" type="email" {...register("alternateEmail")} />
+          <Input id="cd-aemail" type="email" placeholder="Enter alternate email address" {...NO_AUTOFILL} {...register("alternateEmail")} />
         </Field>
         <label className="flex items-center gap-2 text-sm sm:col-span-2">
           <input type="checkbox" className="size-4 accent-[var(--color-brand)]" {...register("isPrimary")} /> Make this the primary contact

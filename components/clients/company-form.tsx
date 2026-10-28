@@ -16,7 +16,16 @@ import { SectionTitle } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { useGstCertificates, useRegisterCompany, type Client, type ClientContact, type ClientFile, type CompanyInput } from "@/lib/api/clients";
+import {
+  useFinalizeClientDraft,
+  useGstCertificates,
+  useRegisterCompany,
+  type Client,
+  type ClientContact,
+  type ClientDraftInput,
+  type ClientFile,
+  type CompanyInput,
+} from "@/lib/api/clients";
 import { formData } from "@/lib/api/files";
 
 /** Same normalisation as the backend (common/validators/contact.ts): +91 / leading 0 / spaces are accepted. */
@@ -36,8 +45,8 @@ export const companySchema = z.object({
   name: z.string().trim().min(2, "Enter the company name").max(120),
   clientName: z.string().trim().max(120),
   email: z.string().trim().min(1, "Enter the company email").refine(isEmail, "Enter a valid email address"),
-  phone: z.string().trim().min(1, "Enter the phone number").regex(/^\d{10,12}$/, "Phone number must be 10-12 digits"),
-  gstin: z.string().trim().toUpperCase().refine((v) => !v || GSTIN.test(v), "Invalid GST number (e.g. 27ABCDE1234F1Z5)"),
+  phone: z.string().trim().min(1, "Enter the phone number").regex(/^\d{10}$/, "Phone number must be exactly 10 digits"),
+  gstin: z.string().trim().toUpperCase().min(1, "Enter the GST number").refine((v) => GSTIN.test(v), "Invalid GST number: 15 characters, e.g. 27ABCDE1234F1Z5"),
   customFields: z
     .array(z.object({ label: z.string().trim().min(1, "Enter the field label").max(60), value: z.string().trim().min(1, "Enter the value").max(500) }))
     .max(30)
@@ -64,12 +73,13 @@ export const contactToForm = (k: ClientContact) => ({
   isPrimary: !!k.isPrimary,
 });
 export const companyToForm = (c: Client): CompanyValues => ({
-  name: c.name,
+  // A draft may not have a company name yet.
+  name: c.name ?? "",
   clientName: c.clientName ?? "",
   email: c.email ?? "",
   phone: c.phone ?? "",
   gstin: c.gstin ?? "",
-  customFields: (c.customFields ?? []).map((f) => ({ label: f.label, value: f.value ?? "" })),
+  customFields: (c.customFields ?? []).map((f) => ({ label: f.label ?? "", value: f.value ?? "" })),
 });
 
 const opt = (v: string) => v || undefined;
@@ -101,9 +111,11 @@ export const companyToApi = (v: CompanyValues): CompanyInput => ({
  */
 export function useCreateClient() {
   const register = useRegisterCompany();
+  const finalize = useFinalizeClientDraft();
   const { upload } = useGstCertificates();
-  const create = async (v: CompanyValues, pending: File[]) => {
-    const client = await register.mutateAsync(companyToApi(v));
+  /** `draftId`: a resumed draft is turned into the client (same record) instead of registering a new one. */
+  const create = async (v: CompanyValues, pending: File[], draftId?: string) => {
+    const client = draftId ? await finalize.mutateAsync({ id: draftId, body: companyToApi(v) }) : await register.mutateAsync(companyToApi(v));
     if (!pending.length) return { client, uploadError: null };
     try {
       await upload.mutateAsync({ id: client._id, body: formData(pending) });
@@ -112,8 +124,18 @@ export function useCreateClient() {
       return { client, uploadError: errorMessage(e) };
     }
   };
-  return { create, busy: register.isPending || upload.isPending };
+  return { create, busy: register.isPending || finalize.isPending || upload.isPending };
 }
+
+/** Form values as typed (no checks) -> "Save Draft" body. */
+export const companyToDraft = (v: CompanyValues): ClientDraftInput => ({
+  name: v.name.trim(),
+  clientName: v.clientName.trim(),
+  email: v.email.trim(),
+  phone: v.phone.trim(),
+  gstin: v.gstin.trim().toUpperCase(),
+  customFields: v.customFields.map((f) => ({ label: f.label.trim(), value: f.value.trim() })),
+});
 
 export function useCompanyForm(defaults: CompanyValues) {
   return useForm<CompanyValues>({ resolver: zodResolver(companySchema), defaultValues: defaults, mode: "onTouched" });
@@ -131,8 +153,13 @@ export function applyServerErrors(form: UseFormReturn<CompanyValues>, err: unkno
 }
 
 /** Drops what a field does not accept as it is typed or pasted (e.g. letters in a phone number). */
-const digitsOnly = (max: number) => (v: string) => v.replace(/\D/g, "").slice(0, max);
-function filtered(r: UseFormRegisterReturn, clean: (v: string) => string): UseFormRegisterReturn {
+export const digitsOnly = (max: number) => (v: string) => v.replace(/\D/g, "").slice(0, max);
+/**
+ * Keeps the browser's saved emails / contacts from popping up over CRM fields (autocomplete off, and the password
+ * manager hints most extensions honour).
+ */
+export const NO_AUTOFILL = { autoComplete: "off", "data-lpignore": "true", "data-1p-ignore": "true", "data-form-type": "other" } as const;
+export function filtered(r: UseFormRegisterReturn, clean: (v: string) => string): UseFormRegisterReturn {
   return {
     ...r,
     onChange: (ev) => {
@@ -177,19 +204,19 @@ export function CompanyFormFields({ form, idPrefix = "co", gst }: { form: UseFor
         <SectionTitle divider icon={Building2} title="Company Information" description="Registered company details. One company keeps one Client ID for all its orders." />
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Field label="Client Name" htmlFor={id("client-name")} error={e("clientName")}>
-            <Input id={id("client-name")} maxLength={120} placeholder="Enter client name (optional)" aria-invalid={!!e("clientName")} {...register("clientName")} />
+            <Input id={id("client-name")} maxLength={120} placeholder="Enter client name (optional)" {...NO_AUTOFILL} aria-invalid={!!e("clientName")} {...register("clientName")} />
           </Field>
           <Field label="Company Name" htmlFor={id("name")} required error={e("name")} className="xl:col-span-2">
-            <Input id={id("name")} placeholder="e.g. Acme Retail Pvt. Ltd." aria-invalid={!!e("name")} {...register("name")} />
+            <Input id={id("name")} placeholder="e.g. Acme Retail Pvt. Ltd." {...NO_AUTOFILL} aria-invalid={!!e("name")} {...register("name")} />
           </Field>
           <Field label="Company Email Address" htmlFor={id("email")} required error={e("email")}>
-            <Input id={id("email")} type="email" placeholder="e.g. info@company.com" aria-invalid={!!e("email")} {...register("email")} />
+            <Input id={id("email")} type="email" placeholder="e.g. info@company.com" {...NO_AUTOFILL} aria-invalid={!!e("email")} {...register("email")} />
           </Field>
           <Field label="Phone Number" htmlFor={id("phone")} required error={e("phone")}>
-            <Input id={id("phone")} type="tel" inputMode="numeric" placeholder="Enter phone number" aria-invalid={!!e("phone")} {...filtered(register("phone"), digitsOnly(12))} />
+            <Input id={id("phone")} type="tel" inputMode="numeric" maxLength={10} placeholder="Enter 10-digit phone number" {...NO_AUTOFILL} aria-invalid={!!e("phone")} {...filtered(register("phone"), digitsOnly(10))} />
           </Field>
-          <Field label="GST Number" htmlFor={id("gstin")} error={e("gstin")}>
-            <Input id={id("gstin")} className="uppercase" maxLength={15} placeholder="27ABCDE1234F1Z5" aria-invalid={!!e("gstin")} {...register("gstin")} />
+          <Field label="GST Number" htmlFor={id("gstin")} required error={e("gstin")}>
+            <Input id={id("gstin")} className="uppercase" maxLength={15} placeholder="27ABCDE1234F1Z5" {...NO_AUTOFILL} aria-invalid={!!e("gstin")} {...register("gstin")} />
           </Field>
         </div>
       </Card>
@@ -287,10 +314,10 @@ function CustomFieldsCard({ form, idPrefix }: { form: UseFormReturn<CompanyValue
               className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-border bg-background p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto]"
             >
               <Field label="Label" htmlFor={`${idPrefix}-cf${i}-label`} required error={e(`customFields.${i}.label`)}>
-                <Input id={`${idPrefix}-cf${i}-label`} maxLength={60} placeholder="e.g. PAN Number" aria-invalid={!!e(`customFields.${i}.label`)} {...register(`customFields.${i}.label`)} />
+                <Input id={`${idPrefix}-cf${i}-label`} maxLength={60} placeholder="e.g. PAN Number" {...NO_AUTOFILL} aria-invalid={!!e(`customFields.${i}.label`)} {...register(`customFields.${i}.label`)} />
               </Field>
               <Field label="Value" htmlFor={`${idPrefix}-cf${i}-value`} required error={e(`customFields.${i}.value`)} className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto">
-                <Input id={`${idPrefix}-cf${i}-value`} maxLength={500} placeholder="Enter the value" aria-invalid={!!e(`customFields.${i}.value`)} {...register(`customFields.${i}.value`)} />
+                <Input id={`${idPrefix}-cf${i}-value`} maxLength={500} placeholder="Enter the value" {...NO_AUTOFILL} aria-invalid={!!e(`customFields.${i}.value`)} {...register(`customFields.${i}.value`)} />
               </Field>
               <button
                 type="button"

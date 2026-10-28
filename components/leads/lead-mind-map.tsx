@@ -19,6 +19,19 @@ const SUCCESS = "#16a34a";
 
 const nodeId = (k: MapNode | "END") => `lead-node-${k}`;
 
+/** Node surface: 1px hairline border and a soft layered shadow; the state shows in the ring, icon and chip, not the border. */
+const SURFACE =
+  "border bg-surface shadow-[0_1px_2px_rgb(15_23_42/0.04),0_10px_28px_-18px_rgb(15_23_42/0.22)] transition-[box-shadow,opacity] duration-300 hover:shadow-[0_2px_6px_rgb(15_23_42/0.06),0_24px_40px_-22px_rgb(15_23_42/0.32)]";
+const HAIRLINE = "rgb(226 232 240 / 0.6)";
+/** Perspective for the hover tilt (3D-style depth with plain transforms). */
+const DEPTH = { transformPerspective: 900 } as const;
+/** Hover: lift with a slight tilt; none when reduced motion is asked for or the node cannot be opened. */
+const lift = (reduce: boolean | null, on = true) => (reduce || !on ? undefined : { y: -3, rotateX: 4, rotateY: -3, transition: { type: "spring" as const, stiffness: 320, damping: 22 } });
+/** Active node: soft tinted ring and coloured depth shadow. */
+const activeRing = (c: string) => `0 0 0 3px ${c}1f, 0 16px 34px -20px ${c}`;
+/** Border by state: tinted when done / active, hairline otherwise. */
+const edge = (c: string, s: "done" | "active" | "idle") => (s === "active" ? `${c}66` : s === "done" ? `${c}40` : HAIRLINE);
+
 /** Small radial burst played on a node the moment its stage is completed. */
 function Burst({ color }: { color: string }) {
   return (
@@ -44,11 +57,11 @@ function Burst({ color }: { color: string }) {
  * Vertical connector between two stages. It fills with the stage colour once the upper stage is done; right after a
  * completion the fill "draws" downwards and a glowing dot travels to the next stage.
  */
-function Spine({ from, to, filled, travel }: { from: string; to: string; filled: boolean; travel: boolean }) {
+function Spine({ from, to, filled, travel, flow = false }: { from: string; to: string; filled: boolean; travel: boolean; flow?: boolean }) {
   const reduce = useReducedMotion();
   return (
-    <div className="relative mx-auto h-14 w-1" aria-hidden>
-      <span className="absolute inset-0 rounded-full bg-slate-200" />
+    <div className="relative mx-auto h-14 w-0.5" aria-hidden>
+      <span className="absolute inset-0 rounded-full bg-slate-200/80" />
       {filled && (
         <motion.span
           className="absolute inset-0 origin-top rounded-full"
@@ -58,6 +71,8 @@ function Spine({ from, to, filled, travel }: { from: string; to: string; filled:
           transition={{ duration: 0.7, ease: "easeInOut" }}
         />
       )}
+      {/* Into the active stage: a soft flow shows the direction. */}
+      {filled && flow && <span className="lm-flow absolute inset-0 rounded-full text-white/70" />}
       {travel && !reduce && (
         <motion.span
           className="absolute left-1/2 size-3.5 -translate-x-1/2 rounded-full"
@@ -67,7 +82,7 @@ function Spine({ from, to, filled, travel }: { from: string; to: string; filled:
           transition={{ duration: 0.85, ease: "easeInOut" }}
         />
       )}
-      <span className="absolute -bottom-1 left-1/2 size-2.5 -translate-x-1/2 rotate-45 border-b-2 border-r-2" style={{ borderColor: filled ? to : GREY }} />
+      <span className="absolute -bottom-1 left-1/2 size-2 -translate-x-1/2 rotate-45 rounded-[1px] border-b-[1.5px] border-r-[1.5px]" style={{ borderColor: filled ? to : GREY }} />
     </div>
   );
 }
@@ -83,9 +98,9 @@ function SideCard({ card, side, color, state, delay }: { card: BranchCard; side:
       transition={{ delay, duration: 0.35 }}
       className={cn("relative hidden w-full max-w-[260px] xl:block", side === "left" ? "justify-self-end" : "justify-self-start")}
     >
-      <span aria-hidden className={cn("absolute top-1/2 w-10 border-t-2 border-dashed", side === "left" ? "-right-10" : "-left-10")} style={{ borderColor: `${color}80` }} />
-      <span aria-hidden className={cn("absolute top-1/2 size-2 -translate-y-1/2 rounded-full", side === "left" ? "-right-1" : "-left-1")} style={{ background: color }} />
-      <div className="rounded-xl border bg-surface/90 p-3 shadow-soft backdrop-blur" style={{ borderColor: `${color}40` }}>
+      <span aria-hidden className={cn("absolute top-1/2 w-10 border-t border-dashed", side === "left" ? "-right-10" : "-left-10")} style={{ borderColor: `${color}66` }} />
+      <span aria-hidden className={cn("absolute top-1/2 size-1.5 -translate-y-1/2 rounded-full", side === "left" ? "-right-0.5" : "-left-0.5")} style={{ background: color }} />
+      <div className={cn("rounded-xl p-3", SURFACE)} style={{ borderColor: HAIRLINE }}>
         <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold" style={{ color }}>
           <card.icon className="size-3.5" aria-hidden /> {card.title}
         </p>
@@ -116,30 +131,35 @@ function StageNode({ s, badge, celebrate, closed, onOpen, delay }: { s: LeadStag
       initial={{ opacity: 0, y: 14 }}
       animate={celebrate && !reduce ? { opacity: 1, y: 0, scale: [1, 1.07, 1] } : { opacity: 1, y: 0, scale: 1 }}
       transition={celebrate ? { duration: 0.55 } : { delay, duration: 0.35 }}
-      whileHover={reduce ? undefined : { y: -2 }}
+      whileHover={lift(reduce)}
       aria-label={`${m.label}: ${statusText}`}
       className={cn(
-        "relative w-full max-w-[320px] justify-self-center rounded-2xl border-2 bg-surface px-4 py-3.5 text-left shadow-card transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2",
-        s.status === "PENDING" && "opacity-75",
+        "relative w-full max-w-[320px] justify-self-center rounded-2xl px-4 py-3.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2",
+        SURFACE,
+        s.status === "PENDING" && "border-dashed opacity-75",
       )}
       style={{
-        borderColor: current || done ? m.color : `${m.color}40`,
-        background: current ? `linear-gradient(135deg, ${m.soft}, #ffffff 70%)` : undefined,
-        boxShadow: current && !closed ? `0 0 0 4px ${m.color}1f, 0 10px 28px -10px ${m.color}66` : undefined,
+        ...DEPTH,
+        borderColor: edge(m.color, current ? "active" : done ? "done" : "idle"),
+        background: current ? `${m.color}0a` : undefined,
+        boxShadow: current && !closed ? activeRing(m.color) : undefined,
       }}
     >
       {current && !closed && !reduce && (
         <motion.span
           aria-hidden
-          className="pointer-events-none absolute -inset-1 rounded-[18px] border-2"
+          className="pointer-events-none absolute -inset-1 rounded-[18px] border"
           style={{ borderColor: m.color }}
-          animate={{ opacity: [0.55, 0, 0.55], scale: [1, 1.04, 1] }}
-          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ opacity: [0.45, 0, 0.45] }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
       {celebrate && !reduce && <Burst color={m.color} />}
       <span className="flex items-center gap-3">
-        <span className="relative flex size-11 shrink-0 items-center justify-center rounded-full text-base font-bold text-white" style={{ background: m.color }}>
+        <span
+          className="relative flex size-11 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]"
+          style={{ background: done || current ? m.color : "#cbd5e1" }}
+        >
           {done ? (
             <motion.span initial={celebrate && !reduce ? { scale: 0, rotate: -40 } : false} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16 }}>
               <Check className="size-5" strokeWidth={3} aria-hidden />
@@ -180,7 +200,7 @@ function Segment({ style, vertical, color, active, origin, draw, delay }: { styl
   return (
     <motion.span
       aria-hidden
-      className={cn("absolute", vertical ? "w-0 border-l-[3px]" : "h-0 border-t-[3px]", !active && "border-dashed")}
+      className={cn("absolute", vertical ? "w-0 border-l-2" : "h-0 border-t-2", !active && "border-dashed")}
       style={{ ...style, borderColor: active ? color : GREY, transformOrigin: origin }}
       initial={draw && !reduce ? (vertical ? { scaleY: 0 } : { scaleX: 0 }) : false}
       animate={vertical ? { scaleY: 1 } : { scaleX: 1 }}
@@ -272,10 +292,10 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
       animate={celebrate && assigned && !reduce ? { opacity: 1, y: 0, scale: [1, 1.06, 1] } : { opacity: locked ? 0.62 : 1, y: 0, scale: 1 }}
       transition={{ delay, duration: 0.4 }}
       aria-label={`${m.label}: ${status}`}
-      className={cn("relative mx-auto w-full max-w-[340px] rounded-2xl border-2 bg-surface px-4 py-3.5 shadow-card", !assigned && "border-dashed")}
+      className={cn("relative mx-auto w-full max-w-[340px] rounded-2xl px-4 py-3.5", SURFACE, locked && "border-dashed")}
       style={{
-        borderColor: assigned || active ? m.color : GREY,
-        background: active || assigned ? `linear-gradient(135deg, ${m.soft}, #ffffff 70%)` : undefined,
+        borderColor: edge(m.color, active ? "active" : assigned ? "done" : "idle"),
+        background: active || assigned ? `${m.color}0a` : undefined,
       }}
     >
       {celebrate && assigned && !reduce && <Burst color={m.color} />}
@@ -306,8 +326,11 @@ const TYPE_SHORT: Record<HandoverType, string> = { ASO: "ASO", SHOP_DETAILS: "Sh
 const STATE_CHIP: Record<StepState, string> = { DONE: "Done", CURRENT: "Now", NEXT: "Next", LOCKED: "Locked", DISABLED: "Disabled" };
 
 /** Connector between two steps of a branch: solid in the branch colour once the step above is done. */
-function StepLink({ color, filled }: { color: string; filled: boolean }) {
-  return <span aria-hidden className={cn("mx-auto block h-5 w-0 border-l-[3px]", !filled && "border-dashed")} style={{ borderColor: filled ? color : GREY }} />;
+function StepLink({ color, filled, flow }: { color: string; filled: boolean; flow: boolean }) {
+  if (filled && flow)
+    // Into the active step: soft flowing dashes show the direction.
+    return <span aria-hidden className="lm-flow mx-auto block h-5 w-0.5 rounded-full" style={{ color }} />;
+  return <span aria-hidden className={cn("mx-auto block h-5 w-0 border-l-2", !filled && "border-dashed")} style={{ borderColor: filled ? color : GREY }} />;
 }
 
 /** The three handover types under the Handover Type step, the chosen one highlighted. */
@@ -336,8 +359,9 @@ function TypeBranches({ chosen, color }: { chosen: HandoverType | null; color: s
 }
 
 /** One step: Done / Now open their drawer section; Next / Locked / Disabled say what comes first. */
-function StepNode({ s, n, color, onOpen, onBlocked, delay }: { s: ChainStep; n: number; color: string; onOpen: () => void; onBlocked: (why: string) => void; delay: number }) {
+function StepNode({ s, n, color: branch, onOpen, onBlocked, delay }: { s: ChainStep; n: number; color: string; onOpen: () => void; onBlocked: (why: string) => void; delay: number }) {
   const reduce = useReducedMotion();
+  const color = s.color ?? branch;
   const done = s.state === "DONE";
   const now = s.state === "CURRENT";
   const next = s.state === "NEXT";
@@ -351,32 +375,37 @@ function StepNode({ s, n, color, onOpen, onBlocked, delay }: { s: ChainStep; n: 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: grey ? 0.6 : 1, y: 0 }}
       transition={{ delay, duration: 0.3 }}
-      whileHover={reduce || !open ? undefined : { y: -2 }}
+      whileHover={lift(reduce, open)}
       aria-disabled={!open}
       title={open ? undefined : (s.blocked ?? undefined)}
       aria-label={`${s.label}: ${STATE_CHIP[s.state]}${s.info ? `, ${s.info}` : ""}${!open && s.blocked ? `. ${s.blocked}` : ""}`}
       className={cn(
-        "relative mx-auto block w-full max-w-[340px] rounded-xl border-2 bg-surface px-3 py-2.5 text-left shadow-soft focus-visible:outline-2 focus-visible:outline-offset-2",
-        !done && !now && "border-dashed",
+        "relative mx-auto block w-full max-w-[340px] rounded-xl px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2",
+        SURFACE,
+        grey && "border-dashed shadow-none hover:shadow-none",
         !open && "cursor-not-allowed",
       )}
       style={{
-        borderColor: done || now ? color : next ? `${color}99` : GREY,
-        background: now ? `linear-gradient(135deg, ${color}14, #ffffff 70%)` : undefined,
-        boxShadow: now ? `0 0 0 3px ${color}22` : undefined,
+        ...DEPTH,
+        borderColor: edge(color, now ? "active" : done ? "done" : "idle"),
+        background: now ? `${color}0a` : grey ? "rgb(248 250 252)" : undefined,
+        boxShadow: now ? activeRing(color) : undefined,
       }}
     >
       {now && !reduce && (
         <motion.span
           aria-hidden
-          className="pointer-events-none absolute -inset-1 rounded-[14px] border-2"
+          className="pointer-events-none absolute -inset-1 rounded-[14px] border"
           style={{ borderColor: color }}
-          animate={{ opacity: [0.5, 0, 0.5] }}
-          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ opacity: [0.45, 0, 0.45] }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
       <span className="flex items-start gap-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: done || now ? color : next ? `${color}99` : "#94a3b8" }}>
+        <span
+          className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]"
+          style={{ background: done || now ? color : next ? `${color}80` : "#cbd5e1" }}
+        >
           {done ? <Check className="size-4" strokeWidth={3} aria-hidden /> : now ? n : <LockKeyhole className="size-3.5" aria-hidden />}
         </span>
         <span className="min-w-0 flex-1">
@@ -408,19 +437,20 @@ function HistoryNode({ h, color, onOpen, onBlocked }: { h: NonNullable<ChainStep
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-center">
       <span />
-      <span aria-hidden className="block h-12 w-0 border-l-[3px] border-dashed" style={{ borderColor: GREY }} />
+      <span aria-hidden className="block h-12 w-0 border-l-2 border-dashed" style={{ borderColor: GREY }} />
       <span className="flex items-center">
-        <span aria-hidden className="block w-4 shrink-0 border-t-2 border-dashed sm:w-6" style={{ borderColor: h.enabled ? color : GREY }} />
+        <span aria-hidden className="block w-4 shrink-0 border-t border-dashed sm:w-6" style={{ borderColor: h.enabled ? color : GREY }} />
         <button
           type="button"
           onClick={() => (h.enabled ? onOpen() : onBlocked("Email History opens after the first project code request email"))}
           aria-disabled={!h.enabled}
           aria-label={`Email History: ${h.info}`}
           className={cn(
-            "flex min-w-0 items-center gap-1.5 rounded-full border bg-surface px-2.5 py-1 text-left text-[11px] shadow-soft focus-visible:outline-2 focus-visible:outline-offset-2",
-            h.enabled ? "hover:shadow-card" : "cursor-not-allowed opacity-60",
+            "flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-left text-[11px] focus-visible:outline-2 focus-visible:outline-offset-2",
+            SURFACE,
+            !h.enabled && "cursor-not-allowed border-dashed opacity-60 shadow-none hover:shadow-none",
           )}
-          style={{ borderColor: h.enabled ? color : GREY }}
+          style={{ borderColor: h.enabled ? `${color}55` : HAIRLINE }}
         >
           {h.enabled ? <History className="size-3.5 shrink-0" style={{ color }} aria-hidden /> : <LockKeyhole className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
           <span className="min-w-0">
@@ -463,16 +493,16 @@ function BranchColumn({
             const prevDone = i === 0 ? a.unlocked || assigned : steps[i - 1]!.state === "DONE";
             return (
               <li key={s.step}>
-                <StepLink color={color} filled={prevDone} />
+                <StepLink color={s.color ?? color} filled={prevDone} flow={s.state === "CURRENT"} />
                 <StepNode s={s} n={i + 1} color={color} onOpen={() => onOpen(s.step)} onBlocked={onBlocked} delay={delay + 0.05 * (i + 1)} />
-                {s.history && <HistoryNode h={s.history} color={color} onOpen={() => onOpen("history")} onBlocked={onBlocked} />}
+                {s.history && <HistoryNode h={s.history} color={s.color ?? color} onOpen={() => onOpen("history")} onBlocked={onBlocked} />}
               </li>
             );
           })}
         </ol>
       )}
       {/* Runs on to the merge line, whatever the other column's height. */}
-      <span aria-hidden className={cn("mx-auto hidden min-h-5 w-0 flex-1 border-l-[3px] sm:block", !assigned && "border-dashed")} style={{ borderColor: assigned && a.completed ? SUCCESS : GREY }} />
+      <span aria-hidden className={cn("mx-auto hidden min-h-5 w-0 flex-1 border-l-2 sm:block", !assigned && "border-dashed")} style={{ borderColor: assigned && a.completed ? SUCCESS : GREY }} />
     </div>
   );
 }
@@ -502,21 +532,20 @@ function ClientNode({ f, c, onOpen, delay }: { f: ClientType; c: ClientChoice; o
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: locked || (!ready && !done) ? 0.62 : 1, y: 0 }}
       transition={{ delay, duration: 0.35 }}
-      whileHover={reduce ? undefined : { y: -2 }}
+      whileHover={lift(reduce)}
       aria-label={`${m.label}: ${status}`}
-      className={cn(
-        "relative w-full max-w-[300px] justify-self-center rounded-2xl border-2 bg-surface px-4 py-3 text-left shadow-card transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2",
-        !done && "border-dashed",
-      )}
+      className={cn("relative w-full max-w-[300px] justify-self-center rounded-2xl px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2", SURFACE, locked && "border-dashed")}
       style={{
-        borderColor: done || ready ? m.color : GREY,
-        background: done || mine ? `linear-gradient(135deg, ${m.soft}, #ffffff 70%)` : undefined,
+        ...DEPTH,
+        borderColor: edge(m.color, mine && !c.done ? "active" : done ? "done" : "idle"),
+        background: done || mine ? `${m.color}0a` : undefined,
+        boxShadow: mine && !c.done ? activeRing(m.color) : undefined,
       }}
     >
       {mine && !c.done && !reduce && (
         <motion.span
           aria-hidden
-          className="pointer-events-none absolute -inset-1 rounded-[18px] border-2 border-dashed"
+          className="pointer-events-none absolute -inset-1 rounded-[18px] border border-dashed"
           style={{ borderColor: m.color }}
           animate={{ opacity: [0.5, 0, 0.5] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
@@ -574,7 +603,10 @@ function EndNode({ a, celebrate }: { a: AssignState; celebrate: boolean }) {
         initial={{ opacity: 0, y: 10 }}
         animate={celebrate && done && !reduce ? { opacity: 1, y: 0, scale: [1, 1.1, 1] } : { opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.5, delay: celebrate ? 0.9 : 0.3 }}
-        className={cn("relative inline-flex items-center gap-2.5 rounded-full border-2 px-4 py-2 text-sm font-semibold", done ? "border-success bg-success text-white shadow-card" : "border-dashed border-slate-300 bg-surface text-muted-foreground")}
+        className={cn(
+          "relative inline-flex items-center gap-2.5 rounded-full border px-4 py-2 text-sm font-semibold",
+          done ? "border-success/40 bg-success-soft text-success shadow-[0_12px_28px_-16px_rgb(22_163_74/0.7)]" : "border-dashed border-slate-200 bg-surface text-muted-foreground",
+        )}
       >
         {celebrate && done && !reduce && <Burst color={SUCCESS} />}
         <Flag className="size-4" aria-hidden />
@@ -651,7 +683,7 @@ export function LeadMindMap({
             {next && s.key === "NEW_LEAD" && client ? (
               <ClientFork c={client} onOpen={(f) => (onClientOpen ? onClientOpen(f) : onOpen("NEW_LEAD"))} draw={i === celebrateIdx} />
             ) : (
-              next && <Spine from={m.color} to={STAGE_META[next.key].color} filled={s.status === "DONE"} travel={i === celebrateIdx} />
+              next && <Spine from={m.color} to={STAGE_META[next.key].color} filled={s.status === "DONE"} travel={i === celebrateIdx} flow={next.status === "CURRENT" && !closed} />
             )}
           </div>
         );

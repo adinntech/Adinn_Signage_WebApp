@@ -123,8 +123,8 @@ export const ASSIGN_META: Record<"HANDOVER" | "RECCE", AssignMeta> = {
     label: "Assign to Client Servicing",
     short: "Client Servicing",
     icon: Handshake,
-    color: "#f97316",
-    soft: "#fff7ed",
+    color: "#6366f1",
+    soft: "#eef2ff",
     items: ["Handover type: ASO / Shop Details / Shop + Measurement", "Contacts, notes, voice notes, documents", "Client Servicing person and note"],
   },
   RECCE: {
@@ -137,6 +137,8 @@ export const ASSIGN_META: Record<"HANDOVER" | "RECCE", AssignMeta> = {
   },
 };
 export const HANDOVER_META = ASSIGN_META.HANDOVER;
+/** Email steps on the mind map (project code request email, Email History). */
+export const EMAIL_COLOR = "#0891b2";
 
 /** Client Selection under Create Project: New Client (Client Management) or Existing Client (Zoho). */
 export const CLIENT_META: Record<ClientType, AssignMeta> = {
@@ -152,8 +154,8 @@ export const CLIENT_META: Record<ClientType, AssignMeta> = {
     label: "Existing Client",
     short: "Existing",
     icon: Repeat,
-    color: "#059669",
-    soft: "#ecfdf5",
+    color: "#64748b",
+    soft: "#f1f5f9",
     items: ["Zoho customer list", "Client details auto-filled"],
   },
 };

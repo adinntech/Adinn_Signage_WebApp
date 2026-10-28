@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { useClient, useSaveClient } from "@/lib/api/clients";
 import { useAuth } from "@/lib/auth";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDateTime, formatDateTimeIST } from "@/lib/format";
 
 /** Screen 05: View Client Details. */
 export function ClientDetailsView() {
@@ -91,7 +91,7 @@ export function ClientDetailsView() {
             <DetailItem label="Client ID">
               <span className="font-mono text-brand">{c.clientNo ?? c.code}</span>
             </DetailItem>
-            <DetailItem label="Created Date">{formatDate(c.createdAt)}</DetailItem>
+            <DetailItem label="Created Date">{formatDateTimeIST(c.createdAt)}</DetailItem>
             <DetailItem label="Created By">{c.createdBy?.name}</DetailItem>
             <DetailItem label="Last Updated">{formatDateTime(c.updatedAt)}</DetailItem>
             <DetailItem label="Total Related Orders">

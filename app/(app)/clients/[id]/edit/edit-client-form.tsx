@@ -57,7 +57,7 @@ export function EditClientForm() {
   const busy = save.isPending || upload.isPending;
 
   return (
-    <form noValidate onSubmit={onSubmit} className="mx-auto max-w-7xl">
+    <form noValidate autoComplete="off" onSubmit={onSubmit} className="mx-auto max-w-7xl">
       <PageHeader
         icon={Pencil}
         title={`Edit ${q.data.name}`}
@@ -65,7 +65,7 @@ export function EditClientForm() {
         className="mb-5"
         actions={
           <Button variant="ghost" asChild>
-            <Link href={`/clients/${id}`}>
+            <Link href="/clients">
               <ArrowLeft className="size-4" aria-hidden /> Back to Client
             </Link>
           </Button>

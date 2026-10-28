@@ -23,6 +23,12 @@ export const formatDateTime = (v?: string | number | Date | null) => {
   const d = valid(v);
   return d ? dateTimeFmt.format(d) : "-";
 };
+const istFmt = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
+/** India time with AM / PM, e.g. "28 Oct 2026, 10:43 AM". */
+export const formatDateTimeIST = (v?: string | number | Date | null) => {
+  const d = valid(v);
+  return d ? istFmt.format(d).replace(/\b(am|pm)\b/i, (m) => m.toUpperCase()) : "-";
+};
 export const formatNumber = (v?: number | null) => (v === null || v === undefined ? "-" : numFmt.format(v));
 export const formatCurrency = (v?: number | null) => (v === null || v === undefined ? "-" : curFmt.format(v));
 export const formatBytes = (n?: number | null) => {

@@ -50,7 +50,8 @@ export interface Client {
   clientType?: ClientType;
   source?: "CRM" | "ZOHO";
   zohoId?: string;
-  status: "ACTIVE" | "INACTIVE";
+  /** DRAFT: an Add Client form saved part-way (no Client ID, not offered in pickers until saved as a client). */
+  status: "ACTIVE" | "INACTIVE" | "DRAFT";
   createdAt?: string;
   updatedAt?: string;
 }
@@ -94,6 +95,17 @@ export interface ClientSummary {
   totalClients: number;
   activeClients: number;
   clientsThisMonth: number;
+  /** Saved Add Client drafts (not counted in the client numbers). */
+  draftClients?: number;
+}
+/** Add Client "Save Draft" body: whatever is typed so far, no checks. */
+export interface ClientDraftInput {
+  name: string;
+  clientName: string;
+  email: string;
+  phone: string;
+  gstin: string;
+  customFields: CustomField[];
 }
 /** Add / Edit Client form body (no order). Contact persons are managed on the client page and at handover. */
 export type CompanyInput = Omit<ClientInput, "code" | "status" | "notes" | "contacts"> & { contacts?: ClientContact[] };
@@ -154,6 +166,25 @@ export function useRegisterCompany() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CompanyInput) => api<Client>("/clients/company", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+  });
+}
+
+/** Add Client "Save Draft": the first save creates the draft, later saves (with its id) update the same one. */
+export function useSaveClientDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: ClientDraftInput }) =>
+      id ? api<Client>(`/clients/drafts/${id}`, { method: "PUT", body: JSON.stringify(body) }) : api<Client>("/clients/drafts", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+  });
+}
+
+/** "Save Client" on a draft: full checks, then the draft becomes the client (same record, new Client ID). */
+export function useFinalizeClientDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: CompanyInput }) => api<Client>(`/clients/drafts/${id}/finalize`, { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
   });
 }
