@@ -225,7 +225,7 @@ export function ZohoImportPage() {
                 </ul>
               )}
             </Card> */}
-            <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 rounded-xl border bg-card p-4">
+            <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 rounded-xl border bg-card p-4 bg-white">
               {p.imported && (
                 <span className="mr-auto flex items-center gap-1.5 text-sm text-success">
                   <BadgeCheck className="size-4" aria-hidden /> Already in Clients ({p.clientNo}). OK refreshes it.
