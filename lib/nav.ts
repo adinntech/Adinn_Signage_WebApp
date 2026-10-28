@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   MapPin,
+  Route,
   ScanSearch,
   Store,
   Wallet,
@@ -15,6 +16,7 @@ import {
   ClipboardList,
   ReceiptIndianRupee,
   Waypoints,
+  CloudDownload,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,7 +40,8 @@ export type Permission =
   | "sales:write"
   | "templates:manage"
   | "ratecards:manage"
-  | "approvals:client";
+  | "approvals:client"
+  | "zoho:sync";
 
 export interface NavLeaf {
   label: string;
@@ -101,6 +104,8 @@ export const NAV: NavItem[] = [
   { label: "Reports & Analytics", icon: BarChart3, href: "/reports", permission: "reports:read" },
   { label: "Users & Roles", icon: Users, href: "/users", permission: "users:manage" },
   { label: "Master Data", icon: Database, href: "/master-data", permission: "users:manage" },
+  { label: "Import from Zoho", icon: CloudDownload, href: "/admin/zoho-import", permission: "zoho:sync" },
+  { label: "Cost Rates", icon: ReceiptIndianRupee, href: "/admin/cost-rates", permission: "finance:manage" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -180,9 +185,10 @@ export function navFor(role: string | undefined, can: (p?: string) => boolean): 
 const OPERATIONS_NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/operations/dashboard", permission: "dashboard:view" },
   { label: "Projects", icon: FolderKanban, href: "/operations/projects", permission: "projects:read" },
+  { label: "Cost Comparison", icon: BarChart3, href: "/operations/cost", permission: "sites:read" },
   { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
+  { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
   { label: "Vendors", icon: Store, href: "/operations/vendors", permission: "vendors:manage" },
-  { label: "Field Monitoring", icon: ScanSearch, href: "/operations/monitoring", permission: "sites:read" },
   { label: "Approvals", icon: AlertTriangle, href: "/operations/approvals", permission: "verification:manage" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];

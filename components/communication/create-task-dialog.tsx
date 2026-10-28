@@ -99,7 +99,7 @@ export function CreateTaskDialog({ message, onClose }: { message: Message; onClo
             <Input id="t-date" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
           </Field>
           <Field label="Expected sites" htmlFor="t-sites" error={errors.expectedSites}>
-            <Input id="t-sites" inputMode="numeric" value={expectedSites} onChange={(e) => setExpectedSites(e.target.value)} />
+            <Input id="t-sites" format="digits" value={expectedSites} onChange={(e) => setExpectedSites(e.target.value)} />
           </Field>
           <Field label="Recce coordinator" htmlFor="t-coord">
             <UserSelect id="t-coord" roles={["RECCE_COORDINATOR"]} value={coordinatorId} onChange={(e) => setCoordinatorId(e.target.value)} />

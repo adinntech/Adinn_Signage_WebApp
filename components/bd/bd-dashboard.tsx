@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Ban, CheckCircle2, ClipboardList, Clock3, Eye, FolderKanban, Inbox, Loader, Plus, Search, ThumbsUp, X } from "lucide-react";
+import { Ban, CheckCircle2, ClipboardList, Clock3, Eye, FileEdit, FolderKanban, Inbox, Loader, Pencil, Plus, Search, ThumbsUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GradientHeader } from "@/components/ui/gradient-header";
 import { Input } from "@/components/ui/input";
@@ -25,10 +25,11 @@ import { ProjectStatusBadge } from "./status-badge";
 
 const PAGE_SIZE = 8;
 
-type TabKey = "all" | "pending" | "assigned" | "progress" | "approval" | "completed" | "cancelled";
+type TabKey = "all" | "drafts" | "pending" | "assigned" | "progress" | "approval" | "completed" | "cancelled";
 const TABS: { key: TabKey; label: string; statuses: string[] }[] = [
   { key: "all", label: "All Projects", statuses: [] },
-  { key: "pending", label: "Recce Pending", statuses: ["DRAFT", "ENQUIRY", "NEW"] },
+  { key: "drafts", label: "Drafts", statuses: ["DRAFT"] },
+  { key: "pending", label: "Recce Pending", statuses: ["ENQUIRY", "NEW"] },
   { key: "assigned", label: "Recce Assigned", statuses: ["RECCE_ASSIGNED", "PLANNING"] },
   { key: "progress", label: "In Progress", statuses: ["IN_PROGRESS"] },
   { key: "approval", label: "Client Approval", statuses: ["CLIENT_APPROVAL"] },
@@ -82,7 +83,9 @@ export function BdDashboard() {
 
   const rows = list.data?.data ?? [];
   const filtered = !!(dq || clientId || status);
-  const openProject = (p: Project) => router.replace(`/bd/dashboard?view=${p._id}`, { scroll: false });
+  /** A draft is unfinished work: clicking it resumes the form. Every other project opens its detail drawer. */
+  const openProject = (p: Project) => (p.status === "DRAFT" ? router.push(`/bd/projects/new?edit=${p._id}`) : router.replace(`/bd/dashboard?view=${p._id}`, { scroll: false }));
+  const draftCount = by.DRAFT ?? 0;
   const closeProject = () => router.replace("/bd/dashboard", { scroll: false });
   const pickTab = (t: TabKey) => {
     setTab(t);
@@ -112,13 +115,20 @@ export function BdDashboard() {
         />
         <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-7">
           <KpiCard label="Total Projects" value={summary.data ? total : "–"} icon={FolderKanban} color="blue" active={tab === "all"} onClick={() => pickTab("all")} />
-          <KpiCard label="New Enquiries" value={summary.data ? countOf(["ENQUIRY", "NEW"]) : "–"} icon={Inbox} color="rose" delay={0.04} active={tab === "pending"} onClick={() => pickTab("pending")} />
+          <KpiCard label="Enquiries" value={summary.data ? countOf(["ENQUIRY", "NEW"]) : "–"} icon={Inbox} color="rose" delay={0.04} active={tab === "pending"} onClick={() => pickTab("pending")} />
           <KpiCard label="Recce Assigned" value={summary.data ? countOf(["RECCE_ASSIGNED", "PLANNING"]) : "–"} icon={ClipboardList} color="teal" delay={0.08} active={tab === "assigned"} onClick={() => pickTab("assigned")} />
           <KpiCard label="In Progress" value={summary.data ? countOf(["IN_PROGRESS"]) : "–"} icon={Loader} color="green" delay={0.12} active={tab === "progress"} onClick={() => pickTab("progress")} />
           <KpiCard label="Awaiting Client Approval" value={summary.data ? countOf(["CLIENT_APPROVAL"]) : "–"} icon={ThumbsUp} color="orange" delay={0.16} active={tab === "approval"} onClick={() => pickTab("approval")} />
           <KpiCard label="Completed" value={summary.data ? countOf(["COMPLETED"]) : "–"} icon={CheckCircle2} color="purple" delay={0.2} active={tab === "completed"} onClick={() => pickTab("completed")} />
           <KpiCard label="Cancelled" value={summary.data ? countOf(["CANCELLED"]) : "–"} icon={Ban} color="red" delay={0.24} active={tab === "cancelled"} onClick={() => pickTab("cancelled")} />
         </div>
+        {draftCount > 0 && tab !== "drafts" && (
+          <div className="mx-4 mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-[#ffd9a8] bg-[#fff6e8] px-3 py-2 text-sm text-approval">
+            <FileEdit className="size-4" aria-hidden />
+            <span className="flex-1">You have <strong>{draftCount}</strong> unfinished draft{draftCount > 1 ? "s" : ""}. Click a draft to continue it; <strong>Create Project</strong> always starts a fresh one.</span>
+            <Button size="sm" variant="outline" onClick={() => pickTab("drafts")}>View drafts</Button>
+          </div>
+        )}
         {summary.isError && <p role="alert" className="px-4 pb-3 text-xs text-danger">Could not load the counts. <button type="button" className="underline" onClick={() => summary.refetch()}>Retry</button></p>}
       </div>
 
@@ -186,8 +196,8 @@ export function BdDashboard() {
                       <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDate(p.targetDate)}</td>
                       <td className="px-4 py-3"><ProjectStatusBadge status={p.status} /></td>
                       <td className="px-4 py-3 text-right">
-                        <Button size="sm" className="bg-royal hover:bg-royal/90" onClick={(e) => { e.stopPropagation(); openProject(p); }} aria-label={`View project ${p.code}`}>
-                          <Eye className="size-3.5" aria-hidden /> View
+                        <Button size="sm" className={p.status === "DRAFT" ? "bg-approval hover:bg-approval/90" : "bg-royal hover:bg-royal/90"} onClick={(e) => { e.stopPropagation(); openProject(p); }} aria-label={`${p.status === "DRAFT" ? "Resume draft" : "View project"} ${p.code}`}>
+                          {p.status === "DRAFT" ? <><Pencil className="size-3.5" aria-hidden /> Resume</> : <><Eye className="size-3.5" aria-hidden /> View</>}
                         </Button>
                       </td>
                     </tr>
@@ -197,7 +207,7 @@ export function BdDashboard() {
             )}
             {list.isSuccess && rows.length === 0 && (
               <EmptyState
-                title={filtered || tab !== "all" ? "No projects match your filters" : "No projects yet"}
+                title={tab === "drafts" && !filtered ? "No drafts" : filtered || tab !== "all" ? "No projects match your filters" : "No projects yet"}
                 description={filtered || tab !== "all" ? "Try clearing the search or switching tab." : "Create your first recce project to assign it to Operations."}
                 action={<Button asChild className="bg-royal hover:bg-royal/90"><Link href="/bd/projects/new"><Plus className="size-4" aria-hidden /> Create Project</Link></Button>}
               />

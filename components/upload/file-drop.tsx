@@ -56,7 +56,7 @@ export function FileTypeIcon({ kind, name, className }: { kind: FileKind; name?:
  * Drag-and-drop picker. Files are only collected here; the caller uploads them to the server
  * (so nothing is half-saved while a form is still being filled in).
  */
-export function FileDrop({ onFiles, onError }: { onFiles: (files: PickedFile[]) => void; onError?: (msg: string) => void }) {
+export function FileDrop({ onFiles, onError, variant = "zone", label = "Add Document" }: { onFiles: (files: PickedFile[]) => void; onError?: (msg: string) => void; /** "button" shows only a compact button (the picker and the same file checks), no drop zone. */ variant?: "zone" | "button"; label?: string }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   /** Files turned away at selection time, shown under the drop zone until the next pick. */
@@ -98,6 +98,26 @@ export function FileDrop({ onFiles, onError }: { onFiles: (files: PickedFile[]) 
     setRejected(turnedAway);
     if (out.length) onFiles(out);
     if (input.current) input.current.value = "";
+  }
+
+  if (variant === "button") {
+    return (
+      <div className="space-y-2">
+        <button type="button" disabled={!limits} onClick={() => input.current?.click()} className="flex items-center gap-1.5 rounded-lg bg-royal px-3.5 py-2 text-sm font-medium text-white hover:bg-royal/90 disabled:opacity-60">
+          <UploadCloud className="size-4" aria-hidden /> {label}
+        </button>
+        <input ref={input} type="file" multiple accept={accept} className="sr-only" onChange={(e) => handle(e.target.files)} aria-label="Upload documents" />
+        {rejected.length > 0 && (
+          <div role="alert" data-testid="rejected-files" className="rounded-lg border border-[#ffc9c9] bg-[#fff5f5] p-3 text-sm text-loss">
+            <div className="flex items-start justify-between gap-2">
+              <p className="flex items-center gap-1.5 font-medium"><AlertTriangle className="size-4" aria-hidden /> Not added</p>
+              <button type="button" onClick={() => setRejected([])} aria-label="Dismiss" className="rounded p-0.5 hover:bg-loss/10"><X className="size-4" aria-hidden /></button>
+            </div>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">{rejected.map((m) => <li key={m}>{m}</li>)}</ul>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (

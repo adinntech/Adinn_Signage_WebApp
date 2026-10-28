@@ -18,11 +18,14 @@ export function StoredFileRow({
   onPreview,
   onDelete,
   deleting,
+  tag,
 }: {
   file: StoredFile;
   onPreview: (f: StoredFile) => void;
   onDelete?: (f: StoredFile) => void;
   deleting?: boolean;
+  /** Small coloured label after the name, e.g. where the file came from. */
+  tag?: React.ReactNode;
 }) {
   const toast = useToast();
   const thumb = useFileUrl(file.id, file.kind === "image");
@@ -53,7 +56,7 @@ export function StoredFileRow({
         )}
       </button>
       <button type="button" onClick={() => onPreview(file)} className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-sm font-medium text-foreground hover:underline">{file.originalName}</span>
+        <span className="flex items-center gap-2"><span className="truncate text-sm font-medium text-foreground hover:underline">{file.originalName}</span>{tag}</span>
         <span className="block text-xs text-muted-foreground">{formatBytes(file.size)} · {formatDateTime(file.createdAt)}</span>
       </button>
       <div className="flex shrink-0 items-center">

@@ -19,6 +19,7 @@ export const MAPPABLE = [
   "district",
   "address1",
   "address2",
+  "address3",
   "pincode",
   "mobile",
   "gstin",
@@ -42,6 +43,7 @@ export const FIELD_LABELS: Record<MappableField, string> = {
   district: "District",
   address1: "Address Line 1",
   address2: "Address Line 2",
+  address3: "Address Line 3",
   pincode: "Pincode",
   mobile: "Mobile",
   gstin: "GST No",
@@ -83,6 +85,7 @@ export interface Site {
   district?: string;
   address1?: string;
   address2?: string;
+  address3?: string;
   pincode?: string;
   mobile?: string;
   mobileAlt?: string;
@@ -112,6 +115,7 @@ export interface SiteFields {
   district?: string;
   address1?: string;
   address2?: string;
+  address3?: string;
   pincode?: string;
   mobile?: string;
   gstin?: string;
@@ -168,6 +172,7 @@ export const SITE_COLUMNS: { key: string; label: string; sortable?: boolean; ali
   { key: "district", label: "District", sortable: true, width: 140 },
   { key: "address1", label: "Address 1", width: 220 },
   { key: "address2", label: "Address 2", width: 180 },
+  { key: "address3", label: "Address 3", width: 160 },
   { key: "pincode", label: "Pincode", width: 100 },
   { key: "mobile", label: "Mobile", width: 130 },
   { key: "gstin", label: "GST No", width: 170 },
@@ -331,6 +336,10 @@ export function uploadImport(pid: string, file: File): Promise<UploadResult> {
   fd.append("file", file);
   return api<UploadResult>(`/projects/${pid}/sites/imports`, { method: "POST", body: fd });
 }
+
+/** Stage the Excel / CSV that BD already attached to the project, without downloading and uploading it again. */
+export const extractFromFile = (pid: string, fileId: string) =>
+  api<UploadResult>(`/projects/${pid}/sites/imports/from-file`, { method: "POST", body: JSON.stringify({ fileId }) });
 
 export interface PreviewBody {
   mapping: Record<string, MapTarget>;

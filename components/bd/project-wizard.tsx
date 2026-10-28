@@ -23,6 +23,8 @@ import { ProjectDocuments } from "@/components/upload/project-documents";
 import { Stepper } from "@/components/workflow/stepper";
 import { ApiError, errorMessage, fieldErrorsOf } from "@/lib/api";
 import {
+  ASSIGNEE_ROLE_LABEL,
+  assigneesFor,
   useAssignees,
   useAssignProject,
   useCreatePipelineProject,
@@ -95,18 +97,28 @@ const STEP_FIELDS: FieldPath<FormValues>[][] = [
   ["assigneeId", "instructions"],
 ];
 
+/**
+ * The form's identity follows the address. A draft created by this form moves the address to ?edit=<id> without remounting it,
+ * and any other change of address (Create Project, another draft) starts a clean form, so a saved draft never leaks into a new project.
+ */
 export function ProjectWizard() {
   const editId = useSearchParams().get("edit");
-  const project = useProject(editId ?? "");
-  if (editId) {
+  const [session, setSession] = useState({ n: 0, editId, adopted: null as string | null });
+  if (session.editId !== editId) setSession({ n: session.n + (editId && editId === session.adopted ? 0 : 1), editId, adopted: session.adopted });
+  const mine = !!editId && editId === session.adopted;
+  const project = useProject(editId && !mine ? editId : "");
+  const onCreated = (id: string) => {
+    setSession((x) => ({ ...x, adopted: id }));
+    window.history.replaceState(null, "", `/bd/projects/new?edit=${id}`);
+  };
+  if (editId && !mine) {
     if (project.isPending) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading project…</p>;
     if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} title="Could not load the project" />;
-    return <WizardForm key={project.data._id} existing={project.data} />;
   }
-  return <WizardForm />;
+  return <WizardForm key={session.n} existing={mine ? undefined : project.data} onCreated={onCreated} />;
 }
 
-function WizardForm({ existing }: { existing?: Project }) {
+function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (id: string) => void }) {
   const router = useRouter();
   const toast = useToast();
   const assignees = useAssignees();
@@ -198,6 +210,7 @@ function WizardForm({ existing }: { existing?: Project }) {
     const created = await createProject.mutateAsync({ ...body, clientId: x.clientId, status: "DRAFT" });
     savedRef.current = created._id;
     setSavedId(created._id);
+    onCreated?.(created._id);
     return created._id;
   }
 
@@ -387,7 +400,7 @@ function WizardForm({ existing }: { existing?: Project }) {
                             <Input id={`c-email-${i}`} type="email" {...register(`contacts.${i}.email`)} aria-invalid={!!errors.contacts?.[i]?.email} />
                           </Field>
                           <Field label="Mobile" htmlFor={`c-mobile-${i}`} required error={errors.contacts?.[i]?.phone?.message}>
-                            <Input id={`c-mobile-${i}`} inputMode="numeric" autoComplete="tel" placeholder="10-digit mobile" {...register(`contacts.${i}.phone`)} aria-invalid={!!errors.contacts?.[i]?.phone} />
+                            <Input id={`c-mobile-${i}`} format="phone" autoComplete="tel" placeholder="10-digit mobile" {...register(`contacts.${i}.phone`)} aria-invalid={!!errors.contacts?.[i]?.phone} />
                           </Field>
                         </div>
                       </div>
@@ -425,7 +438,7 @@ function WizardForm({ existing }: { existing?: Project }) {
                       </p>
                     ) : (
                       <Field label="Total Shops" htmlFor="expectedShops" required error={errors.expectedShops?.message} hint="The number of shops the client expects; Operations imports the actual list." className="max-w-xs">
-                        <Input id="expectedShops" inputMode="numeric" {...register("expectedShops")} aria-invalid={!!errors.expectedShops} placeholder="e.g. 250" />
+                        <Input id="expectedShops" format="digits" maxLength={6} {...register("expectedShops")} aria-invalid={!!errors.expectedShops} placeholder="e.g. 250" />
                       </Field>
                     )}
                   </div>
@@ -441,12 +454,12 @@ function WizardForm({ existing }: { existing?: Project }) {
                 {step === 4 && (
                   <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
-                      <Field label="Assign to Operations" htmlFor="assigneeId" required error={errors.assigneeId?.message}>
+                      <Field label={reqType === "ASO" ? "Assign to Operations or Recce (mobile)" : "Assign to Operations"} htmlFor="assigneeId" required error={errors.assigneeId?.message}>
                         <Select id="assigneeId" {...register("assigneeId")} aria-invalid={!!errors.assigneeId} disabled={assignees.isPending}>
                           <option value="">{assignees.isPending ? "Loading team…" : "Select team member"}</option>
-                          {assignees.data?.map((a) => (
+                          {assigneesFor(assignees.data, reqType).map((a) => (
                             <option key={a.id} value={a.id}>
-                              {a.name} ({a.role === "RECCE_COORDINATOR" ? "Recce Coordinator" : "Operations"})
+                              {a.name} ({ASSIGNEE_ROLE_LABEL[a.role] ?? a.role})
                             </option>
                           ))}
                         </Select>

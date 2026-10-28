@@ -32,15 +32,17 @@ export function AsoSurvey({ projectId, canEdit }: { projectId: string; canEdit: 
   function submit(form: HTMLFormElement) {
     const fd = new FormData(form);
     const area = String(fd.get("area") ?? "").trim();
-    const raw = String(fd.get("shopsFound") ?? "").trim();
+    const raw = String(fd.get("shopsFound") ?? "").trim() || "0";
     const shopsFound = Number(raw);
+    const approxRaw = String(fd.get("approxShops") ?? "").trim();
     const e: Record<string, string> = {};
     if (area.length < 2) e.area = "Enter the area or sales office name";
     if (!/^\d+$/.test(raw) || !Number.isInteger(shopsFound)) e.shopsFound = "Shops found must be a whole number (0 or more)";
+    if (approxRaw && !/^\d+$/.test(approxRaw)) e.approxShops = "Enter a whole number";
     setErrors(e);
     if (Object.keys(e).length) return;
     save.mutate(
-      { id: edit.area?._id, body: { area, shopsFound, notes: String(fd.get("notes") ?? "").trim() || undefined } },
+      { id: edit.area?._id, body: { area, shopsFound, ...(approxRaw ? { approxShops: Number(approxRaw) } : {}), address: String(fd.get("address") ?? "").trim() || undefined, notes: String(fd.get("notes") ?? "").trim() || undefined } },
       {
         onSuccess: () => {
           toast(edit.area ? "Survey area updated" : "Survey area added");
@@ -68,7 +70,7 @@ export function AsoSurvey({ projectId, canEdit }: { projectId: string; canEdit: 
         </div>
       </div>
       <p className="rounded-lg bg-[#dcf7f3] p-3 text-sm text-recce">
-        The shop count is <strong>unknown</strong> for this ASO project. Record each area visited, the shops found and upload the conversation report / proof.
+        The shop count is <strong>unknown</strong> for this ASO project. Record each area visited, the shops found and upload the conversation report / proof. Shop-wise details go in the <strong>Shop details</strong> tab — use the same area name in the Location / Area column to link them.
       </p>
 
       <section className="rounded-xl border border-border bg-surface">
@@ -88,10 +90,13 @@ export function AsoSurvey({ projectId, canEdit }: { projectId: string; canEdit: 
               <li key={a._id} className="flex flex-wrap items-start gap-3 p-4">
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-navy">{a.area}</p>
+                  {a.address && <p className="mt-0.5 flex items-start gap-1.5 text-sm text-navy"><MapPinned className="mt-0.5 size-3.5 shrink-0 text-recce" aria-hidden />{a.address}</p>}
                   {a.notes && <p className="mt-0.5 text-sm text-muted-foreground">{a.notes}</p>}
+                  {a.approxShops != null && <p className="text-xs text-muted-foreground">About {a.approxShops} shops expected</p>}
                   <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(a.createdAt)}</p>
                 </div>
-                <span className="rounded-full bg-[#e8f0ff] px-3 py-1 text-sm font-semibold text-royal">{a.shopsFound} shops</span>
+                <span className="rounded-full bg-[#e8f0ff] px-3 py-1 text-sm font-semibold text-royal">{a.shopsFound} found</span>
+                <span className="rounded-full bg-[#e2f8ea] px-3 py-1 text-sm font-semibold text-finance" title="Shops entered in the Shop details sheet with this Location / Area">{a.shopsEntered ?? 0} entered</span>
                 {canEdit && (
                   <div className="flex gap-1">
                     <Button variant="ghost" size="icon" aria-label={`Edit ${a.area}`} onClick={() => { setErrors({}); setEdit({ open: true, area: a }); }}><Pencil className="size-4" aria-hidden /></Button>
@@ -125,8 +130,14 @@ export function AsoSurvey({ projectId, canEdit }: { projectId: string; canEdit: 
           <Field label="Area / Sales office" htmlFor="area" required error={errors.area}>
             <Input id="area" name="area" defaultValue={edit.area?.area} aria-invalid={!!errors.area} />
           </Field>
-          <Field label="Shops found" htmlFor="shopsFound" required error={errors.shopsFound}>
-            <Input id="shopsFound" name="shopsFound" inputMode="numeric" defaultValue={edit.area?.shopsFound ?? 0} aria-invalid={!!errors.shopsFound} />
+          <Field label="Location / approximate shop" htmlFor="address" hint="Where the recce person should go, e.g. “Near Theppakulam bus stop, Madurai”" error={errors.address}>
+            <Textarea id="address" name="address" rows={2} maxLength={300} defaultValue={edit.area?.address} />
+          </Field>
+          <Field label="Approximate number of shops" htmlFor="approxShops" error={errors.approxShops}>
+            <Input id="approxShops" name="approxShops" format="digits" defaultValue={edit.area?.approxShops} aria-invalid={!!errors.approxShops} />
+          </Field>
+          <Field label="Shops found so far" htmlFor="shopsFound" error={errors.shopsFound}>
+            <Input id="shopsFound" name="shopsFound" format="digits" defaultValue={edit.area?.shopsFound ?? 0} aria-invalid={!!errors.shopsFound} />
           </Field>
           <Field label="Conversation notes" htmlFor="notes" error={errors.notes}>
             <Textarea id="notes" name="notes" rows={3} defaultValue={edit.area?.notes} />

@@ -55,7 +55,7 @@ function loadColumns(): string[] {
 
 const NO_FILTER: FilterState = { district: "", scenario: "", missing: "", importBatchId: "" };
 
-export function SitesTab({ project, readOnly }: { project: Project; readOnly?: boolean }) {
+export function SitesTab({ project, readOnly, allowImport = true }: { project: Project; readOnly?: boolean; /** false hides the Excel upload (shops then come from the attachments panel or are added by hand). */ allowImport?: boolean }) {
   const pid = project._id;
   const { can } = useAuth();
   const toast = useToast();
@@ -225,9 +225,11 @@ export function SitesTab({ project, readOnly }: { project: Project; readOnly?: b
 
   const importCta = canWrite ? (
     <div className="flex flex-wrap justify-center gap-2">
-      <Button onClick={() => setWizard(true)}>
-        <Upload className="size-4" aria-hidden /> Import Excel
-      </Button>
+      {allowImport && (
+        <Button onClick={() => setWizard(true)}>
+          <Upload className="size-4" aria-hidden /> Import Excel
+        </Button>
+      )}
       <Button variant="outline" onClick={() => setAdding(true)}>
         <Plus className="size-4" aria-hidden /> Add site
       </Button>
@@ -247,6 +249,7 @@ export function SitesTab({ project, readOnly }: { project: Project; readOnly?: b
         onToggleColumn={toggleColumn}
         canWrite={canWrite}
         onImport={() => setWizard(true)}
+        allowImport={allowImport}
         onAdd={() => setAdding(true)}
         onHistory={() => setHistory(true)}
         onExport={runExport}
@@ -318,7 +321,7 @@ export function SitesTab({ project, readOnly }: { project: Project; readOnly?: b
               title="No sites yet"
               description={
                 canWrite
-                  ? "Import the client's Excel sheet or add a site manually."
+                  ? allowImport ? "Import the client's Excel sheet or add a site manually." : "Extract the shops from the sheet BD attached above, or add a shop manually."
                   : "Sites will appear here once they are imported."
               }
               action={importCta}

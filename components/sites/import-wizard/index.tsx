@@ -6,8 +6,10 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { errorMessage } from "@/lib/api";
 import {
   discardImport,
+  extractFromFile,
   sitesKey,
   type ImportBatch,
   type ImportSummary,
@@ -52,11 +54,14 @@ function Stepper({ step }: { step: number }) {
 export function ImportWizard({
   projectId,
   defaultScenario,
+  fromFile,
   onClose,
   onViewSites,
 }: {
   projectId: string;
   defaultScenario: Scenario;
+  /** A sheet already attached to the project (BD's Excel): its rows are read straight from the server, with no upload. */
+  fromFile?: { id: string; name: string };
   onClose: () => void;
   onViewSites: (batchId: string) => void;
 }) {
@@ -71,6 +76,20 @@ export function ImportWizard({
   const [result, setResult] = React.useState<ImportBatch | null>(null);
   const [confirmCancel, setConfirmCancel] = React.useState(false);
   const [discarding, setDiscarding] = React.useState(false);
+  const [extractError, setExtractError] = React.useState<string | null>(null);
+  const started = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!fromFile || started.current) return;
+    started.current = true;
+    extractFromFile(projectId, fromFile.id)
+      .then((r) => {
+        setUpload(r);
+        setSettings({ mapping: r.suggestedMapping, scenario: defaultScenario, unit: "ft", policy: "skip" });
+        setStep(2);
+      })
+      .catch((e) => setExtractError(errorMessage(e)));
+  }, [fromFile, projectId, defaultScenario]);
 
   const staged = !!upload && !result;
 
@@ -98,6 +117,17 @@ export function ImportWizard({
   }
 
   const body = (() => {
+    if (fromFile && !upload) {
+      return extractError ? (
+        <div role="alert" className="space-y-3 p-6 text-center">
+          <p className="text-sm font-medium text-danger">Could not read {fromFile.name}</p>
+          <p className="text-sm text-muted-foreground">{extractError}</p>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </div>
+      ) : (
+        <p role="status" className="p-10 text-center text-sm text-muted-foreground">Reading {fromFile.name} from the project…</p>
+      );
+    }
     if (step === 1 || !upload) {
       return (
         <UploadStep
@@ -152,7 +182,7 @@ export function ImportWizard({
       );
     }
     if (step === 4 && result) {
-      return <ResultStep batch={result} onView={() => onViewSites(result._id)} onAnother={reset} />;
+      return <ResultStep batch={result} onView={() => onViewSites(result._id)} onAnother={fromFile ? onClose : reset} />;
     }
     return null;
   })();
@@ -162,8 +192,8 @@ export function ImportWizard({
       <Modal
         open
         onOpenChange={(o) => !o && requestClose()}
-        title="Import sites from Excel"
-        description="Upload, map columns, review and import. Nothing is saved until you confirm the import."
+        title={fromFile ? `Extract shops from ${fromFile.name}` : "Import sites from Excel"}
+        description={fromFile ? "The columns are matched for you. Check them, review the rows and confirm. You can edit every shop afterwards." : "Upload, map columns, review and import. Nothing is saved until you confirm the import."}
         className="h-[92vh] max-w-6xl"
       >
         <Stepper step={step} />

@@ -157,7 +157,7 @@ export function RequirementFields({ form, idPrefix = "r" }: { form: UseFormRetur
             <Input id={id("cname")} {...register("contactName")} />
           </Field>
           <Field label="Phone" htmlFor={id("cphone")} error={errors.contactPhone?.message}>
-            <Input id={id("cphone")} inputMode="tel" aria-invalid={!!errors.contactPhone} {...register("contactPhone")} />
+            <Input id={id("cphone")} format="phone" aria-invalid={!!errors.contactPhone} {...register("contactPhone")} />
           </Field>
           <Field label="Email" htmlFor={id("cemail")} error={errors.contactEmail?.message}>
             <Input id={id("cemail")} type="email" aria-invalid={!!errors.contactEmail} {...register("contactEmail")} />
@@ -171,7 +171,7 @@ export function RequirementFields({ form, idPrefix = "r" }: { form: UseFormRetur
         </h3>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Expected sites" htmlFor={id("exp")} error={errors.expectedSites?.message}>
-            <Input id={id("exp")} inputMode="numeric" aria-invalid={!!errors.expectedSites} {...register("expectedSites")} />
+            <Input id={id("exp")} format="digits" aria-invalid={!!errors.expectedSites} {...register("expectedSites")} />
           </Field>
           <Field
             label="Locations"

@@ -92,6 +92,7 @@ export function SitesToolbar({
   onToggleColumn,
   canWrite,
   onImport,
+  allowImport = true,
   onAdd,
   onHistory,
   onExport,
@@ -109,6 +110,7 @@ export function SitesToolbar({
   onToggleColumn: (key: string) => void;
   canWrite: boolean;
   onImport: () => void;
+  allowImport?: boolean;
   onAdd: () => void;
   onHistory: () => void;
   onExport: (format: "xlsx" | "csv") => void;
@@ -224,9 +226,11 @@ export function SitesToolbar({
         </Button>
         {canWrite && (
           <>
-            <Button variant="secondary" size="sm" onClick={onImport}>
-              <Upload className="size-4" aria-hidden /> Import Excel
-            </Button>
+            {allowImport && (
+              <Button variant="secondary" size="sm" onClick={onImport}>
+                <Upload className="size-4" aria-hidden /> Import Excel
+              </Button>
+            )}
             <Button size="sm" onClick={onAdd}>
               <Plus className="size-4" aria-hidden /> Add site
             </Button>

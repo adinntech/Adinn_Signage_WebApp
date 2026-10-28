@@ -15,6 +15,7 @@ export const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   COMPLETED: { label: "Completed", tone: "info" },
   ON_HOLD: { label: "On Hold", tone: "neutral" },
   CANCELLED: { label: "Cancelled", tone: "danger" },
+  LOSS: { label: "Loss", tone: "danger" },
 };
 export const statusLabel = (s: string) => STATUS_META[s]?.label ?? s;
 
@@ -38,7 +39,9 @@ export const REQUIREMENT_LABEL: Record<RequirementType, string> = {
   SHOP_DETAILS: "Shop details only",
   SHOP_MEASUREMENT: "Shop + measurement",
 };
-export const reqLabel = (t?: RequirementType) => (t ? REQUIREMENT_LABEL[t] : "Not set");
+/** The client's shop count plus any extra shops found during the recce. */
+export const totalExpected = (p: { expectedShops?: number | null; additionalShops?: number }) => (p.expectedShops ?? 0) + (p.additionalShops ?? 0);
+export const reqLabel =(t?: RequirementType) => (t ? REQUIREMENT_LABEL[t] : "Not set");
 
 export const PRIORITY_LABEL: Record<string, string> = { URGENT: "Urgent", HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
 export const PRIORITY_CLASS: Record<string, string> = {

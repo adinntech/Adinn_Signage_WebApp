@@ -23,6 +23,7 @@ import {
   type SiteFields,
   type SiteWarning,
 } from "@/lib/api/sites";
+import type { InputFormat } from "@/lib/input-format";
 
 const num = z
   .string()
@@ -37,6 +38,7 @@ const schema = z
     district: z.string().trim().max(250),
     address1: z.string().trim().max(250),
     address2: z.string().trim().max(250),
+    address3: z.string().trim().max(250),
     pincode: z.string().trim().max(20),
     mobile: z.string().trim().max(60),
     gstin: z.string().trim().max(30),
@@ -68,6 +70,7 @@ const toForm = (s: Site | null, scenario: Scenario): FormValues => ({
   district: s?.district ?? "",
   address1: s?.address1 ?? "",
   address2: s?.address2 ?? "",
+  address3: s?.address3 ?? "",
   pincode: s?.pincode ?? "",
   mobile: s?.mobile ?? "",
   gstin: s?.gstin ?? "",
@@ -92,6 +95,7 @@ function payload(v: FormValues, editing: boolean): SiteFields {
     district: text(v.district),
     address1: text(v.address1),
     address2: text(v.address2),
+    address3: text(v.address3),
     pincode: text(v.pincode),
     mobile: text(v.mobile),
     gstin: text(v.gstin),
@@ -207,9 +211,10 @@ export function SiteFormDialog({
   }
 
   const extra = Object.entries(site?.extra ?? {});
+  const FORMAT_OF: Partial<Record<keyof FormValues, InputFormat>> = { pincode: "pincode", mobile: "phone", gstin: "gst" };
   const f = (k: keyof FormValues, label: string, opts: { required?: boolean; className?: string; hint?: string } = {}) => (
     <Field label={label} htmlFor={`sf-${k}`} error={errors[k]?.message} required={opts.required} className={opts.className} hint={opts.hint}>
-      <Input id={`sf-${k}`} aria-invalid={!!errors[k]} disabled={readOnly} {...register(k)} />
+      <Input id={`sf-${k}`} format={FORMAT_OF[k]} aria-invalid={!!errors[k]} disabled={readOnly} {...register(k)} />
     </Field>
   );
 
@@ -278,6 +283,7 @@ export function SiteFormDialog({
           {f("district", "District")}
           {f("address1", "Address line 1")}
           {f("address2", "Address line 2")}
+          {f("address3", "Address line 3")}
           {f("pincode", "Pincode")}
           {f("mobile", "Mobile", { hint: "10-digit Indian number" })}
           {f("gstin", "GST No")}
@@ -288,10 +294,10 @@ export function SiteFormDialog({
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Field label="Width" htmlFor="sf-width" error={errors.width?.message} required={scenario === "CLIENT_PROVIDED"}>
-            <Input id="sf-width" inputMode="decimal" aria-invalid={!!errors.width} disabled={readOnly} {...register("width")} />
+            <Input id="sf-width" format="decimal" aria-invalid={!!errors.width} disabled={readOnly} {...register("width")} />
           </Field>
           <Field label="Height" htmlFor="sf-height" error={errors.height?.message} required={scenario === "CLIENT_PROVIDED"}>
-            <Input id="sf-height" inputMode="decimal" aria-invalid={!!errors.height} disabled={readOnly} {...register("height")} />
+            <Input id="sf-height" format="decimal" aria-invalid={!!errors.height} disabled={readOnly} {...register("height")} />
           </Field>
           <Field label="Unit" htmlFor="sf-unit">
             <Select id="sf-unit" disabled={readOnly} {...register("unit")}>
@@ -303,7 +309,7 @@ export function SiteFormDialog({
             </Select>
           </Field>
           <Field label="Qty" htmlFor="sf-quantity" error={errors.quantity?.message}>
-            <Input id="sf-quantity" inputMode="numeric" aria-invalid={!!errors.quantity} disabled={readOnly} {...register("quantity")} />
+            <Input id="sf-quantity" format="digits" aria-invalid={!!errors.quantity} disabled={readOnly} {...register("quantity")} />
           </Field>
         </div>
         {site && (

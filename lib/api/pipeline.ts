@@ -47,6 +47,14 @@ export function useUpdatePipelineProject() {
   });
 }
 
+export function useSetAdditionalShops(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { count: number; note?: string }) => api<Project>(`/projects/${id}/additional-shops`, { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
 export function useAssignProject() {
   const qc = useQueryClient();
   return useMutation({
@@ -89,6 +97,10 @@ export interface Assignee {
   email: string;
   phone?: string | null;
 }
+export const ASSIGNEE_ROLE_LABEL: Record<string, string> = { OPERATIONS: "Operations", RECCE_COORDINATOR: "Recce Coordinator", RECCE_EXECUTIVE: "Recce · mobile" };
+/** Recce executives can be given an ASO survey directly (it has no shop list to plan); for other types only Operations. */
+export const assigneesFor = (list: Assignee[] | undefined, requirementType?: string) => (list ?? []).filter((a) => a.role !== "RECCE_EXECUTIVE" || requirementType === "ASO");
+
 export function useAssignees(enabled = true) {
   return useQuery({ queryKey: ["projects", "assignees"], queryFn: () => api<Assignee[]>("/projects/assignees"), enabled, staleTime: 60_000 });
 }
@@ -210,12 +222,19 @@ export interface SurveyArea {
   project: string;
   area: string;
   notes?: string;
+  /** The location or approximate shop to go to. */
+  address?: string;
+  approxShops?: number;
   shopsFound: number;
+  /** Shops in the shop sheet whose Location / Area matches this area. */
+  shopsEntered?: number;
   createdAt: string;
 }
 export interface SurveyAreaInput {
   area: string;
   notes?: string;
+  address?: string;
+  approxShops?: number;
   shopsFound: number;
 }
 const areasKey = (pid: string) => ["survey-areas", pid] as const;
@@ -379,4 +398,23 @@ export function uploadFileWithProgress(projectId: string, category: FileCategory
   fd.set("category", category);
   fd.append("files", file);
   return apiUpload<StoredFile[]>(`/projects/${projectId}/files`, fd, signal ? { onProgress, signal } : { onProgress });
+}
+
+/* ------------------------- approval summary (per level) ------------------------- */
+
+export interface LevelSummary {
+  approved: number;
+  pending: number;
+  correction: number;
+  total: number;
+  lastBy?: string;
+  lastAt?: string;
+  note?: string;
+}
+export function useApprovalSummary(pid: string, enabled = true) {
+  return useQuery({
+    queryKey: ["sites", pid, "approval-summary"],
+    queryFn: () => api<Record<ApprovalLevel, LevelSummary>>(`/projects/${pid}/sites/approval-summary`),
+    enabled: enabled && !!pid,
+  });
 }
