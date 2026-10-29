@@ -488,9 +488,10 @@ export function useHandover(id: string) {
   return useQuery({ queryKey: handoverKey(id), queryFn: () => api<HandoverState>(`/sales/orders/${id}/handover`) });
 }
 
-export function useHandoverShops(id: string, params: { page: number; limit: number; state?: ShopState | "" }, enabled = true) {
+/** `type`: the handover type shown, so one type's cached rows never show for the other (each type has its own list). */
+export function useHandoverShops(id: string, params: { page: number; limit: number; state?: ShopState | "" }, enabled = true, type?: HandoverType | null) {
   return useQuery({
-    queryKey: [...handoverKey(id), "shops", params],
+    queryKey: [...handoverKey(id), "shops", type ?? null, params],
     queryFn: () => apiPage<HandoverShop>(`/sales/orders/${id}/handover/shops${qs(params)}`),
     placeholderData: keepPreviousData,
     enabled,

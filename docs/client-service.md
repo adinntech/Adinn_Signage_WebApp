@@ -84,6 +84,8 @@ The shop row schema comment says the rows "become project sites when Client Serv
 | `SHOP_MEASUREMENT` (Shop + Measurement) | Shop table with optional Size (W × H) + Unit, and up to 10 images per shop |
 | Toggle OFF | Client details and contact persons only (type and shops not required) |
 
+Only the **selected** type's data reaches CS (handover API, shop list, Excel export, snapshot, notification); the other types' stored datasets never do. SO contacts go only with ASO and the toggle ON.
+
 **Data source:** the CS view reads the **live** client (`order.client`). The `handoverClient` snapshot taken at assignment is used by the Operations BD Handover view, not by the CS tab.
 
 ## 4. Handover chat: CS permissions (verified)

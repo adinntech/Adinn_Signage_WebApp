@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Info, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 
-type ToastKind = "success" | "error" | "info";
+type ToastKind = "success" | "error" | "info" | "warning";
 
 interface ToastItem {
   id: number;
@@ -18,6 +18,7 @@ const ToastContext = React.createContext<Push | null>(null);
 const LOOKS = {
   success: { icon: CheckCircle2, title: "Success", tint: "text-success bg-success-soft", bar: "bg-success", ring: "border-success/30" },
   error: { icon: XCircle, title: "Something went wrong", tint: "text-danger bg-danger-soft", bar: "bg-danger", ring: "border-danger/30" },
+  warning: { icon: AlertTriangle, title: "Done, with items to check", tint: "text-warning bg-warning-soft", bar: "bg-warning", ring: "border-warning/30" },
   info: { icon: Info, title: "Heads up", tint: "text-[#2563EB] bg-[#2563EB]/10", bar: "bg-[#2563EB]", ring: "border-[#2563EB]/30" },
 } as const;
 
@@ -65,7 +66,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const push = React.useCallback<Push>((message, kind = "success") => {
     const id = ++idRef.current;
     // Replace an identical visible toast instead of stacking duplicates.
-    setItems((s) => [...s.filter((t) => !(t.message === message && t.kind === kind)), { id, kind, message, duration: kind === "error" ? 6000 : 4500 }].slice(-4));
+    setItems((s) => [...s.filter((t) => !(t.message === message && t.kind === kind)), { id, kind, message, duration: kind === "error" || kind === "warning" ? 6000 : 4500 }].slice(-4));
   }, []);
   return (
     <ToastContext.Provider value={push}>

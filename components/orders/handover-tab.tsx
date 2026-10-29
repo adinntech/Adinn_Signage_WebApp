@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ListPlus,
   Pencil,
-  AlertTriangle,
   BadgeCheck,
   Building2,
   CheckCircle2,
@@ -146,7 +145,7 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
         })}
       </div>
       )}
-      {data.full && editable && data.shopList && data.type && <p className="mt-3 text-xs text-muted-foreground">To change the type, remove the uploaded shop list first (it is checked by the type).</p>}
+      {data.full && editable && <p className="mt-3 text-xs text-muted-foreground">Each type keeps its own details: switching shows that type&apos;s shop list (empty the first time) and keeps the others.</p>}
     </Card>
   );
 }
@@ -159,6 +158,12 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
   const c = order.client;
   // null: closed; -1: add; >= 0: edit that contact.
   const [editing, setEditing] = useState<number | null>(null);
+  // Each open gets a fresh form (no values, errors or index left from the previous add / edit).
+  const [session, setSession] = useState(0);
+  const openContact = (i: number) => {
+    setSession((s) => s + 1);
+    setEditing(i);
+  };
   const crm = order.clientType !== "EXISTING";
   const certificates = crm ? (c.gstCertificates ?? []) : [];
   const custom = crm ? (c.customFields ?? []) : [];
@@ -171,13 +176,13 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         description={aso ? "Auto-filled from Client Management. Contact persons are optional; add the client's SO contacts in the ASO section below." : "Auto-filled from Client Management. Contact persons are optional."}
         action={
           canAddContact && (
-            <Button variant="brand-outline" size="sm" onClick={() => setEditing(-1)}>
+            <Button variant="brand-outline" size="sm" onClick={() => openContact(-1)}>
               <UserPlus className="size-4" aria-hidden /> Add Contact Person
             </Button>
           )
         }
       />
-      <ContactDialog client={c} index={editing === -1 ? null : editing} open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} />
+      <ContactDialog key={session} client={c} index={editing === -1 ? null : editing} open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} />
       <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
@@ -225,9 +230,9 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
           </dl>
         </div>
       )}
-      <div className="mt-5 overflow-x-auto rounded-lg border border-border">
+      <div className="mt-5 max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-2.5">Contact Person</th>
               <th className="px-4 py-2.5">Designation</th>
@@ -266,7 +271,7 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
                 </td>
                 {canAddContact && (
                   <td className="px-4 py-1.5 text-right">
-                    <Button variant="ghost" size="icon" onClick={() => setEditing(i)} aria-label={`Edit ${k.name}`} title="Edit contact">
+                    <Button variant="ghost" size="icon" onClick={() => openContact(i)} aria-label={`Edit ${k.name}`} title="Edit contact">
                       <Pencil className="size-4" aria-hidden />
                     </Button>
                   </td>
@@ -371,9 +376,9 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No SO contacts{editable ? " yet. They are optional." : "."}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <div className="max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2.5">Name</th>
                 <th className="px-3 py-2.5">Phone Number</th>
@@ -601,7 +606,7 @@ function StatusBanner({ data }: { data: HandoverState }) {
 
 /**
  * Handover Type & Details for one order, shared by Order Management, the Client Servicing route and the Recce route.
- * Order: 1. Handover Type (with the "Send handover details" toggle), 2. Client & Contact Persons, 3. Shop list (shop
+ * Order: 1. Client & Contact Persons, 2. Handover Type (with the "Send handover details" toggle), 3. Shop list (shop
  * types), 4. Communication & attachments, 5. Assign Client Servicing Person + Save & Complete Handover (completes the
  * lead). Client Servicing sees the same details read-only.
  *
@@ -654,14 +659,9 @@ export function HandoverTab({
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
             {/* SO contacts stay on the order for other types too (hidden, not deleted). */}
             {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={canWrite && open} />}
-            {data.type === "ASO" && !!data.shopList?.total && open && (
-              <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-                <AlertTriangle className="size-4" aria-hidden /> Shops were added earlier. ASO hands over without a shop list: clear it below, or choose a shop type.
-              </p>
-            )}
-            {/* Shop types always show the table; ASO only when rows are left over (to clear them). */}
-            {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || !!data.shopList?.total) && (
-              <ShopTable orderId={order._id} type={data.type ?? "SHOP_DETAILS"} summary={data.shopList} columns={data.columns} editable={canWrite && open} canAddImages={canWrite} />
+            {/* Each shop type has its own list; keyed by type so nothing of the other type's table stays on screen. */}
+            {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT") && (
+              <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={canWrite && open} canAddImages={canWrite} />
             )}
           </motion.div>
         )}

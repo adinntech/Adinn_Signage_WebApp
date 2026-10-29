@@ -241,10 +241,16 @@ Assignment needs an empty gap list.
 |---|---|
 | Toggle OFF | Nothing (contacts are optional) |
 | No type chosen | "Choose the handover type: ASO, Shop Details Only or Shop + Measurement" |
-| `ASO` | The shop table must be empty ("Clear the shop list…"). Contacts and SO contacts are optional. |
+| `ASO` | Nothing (no shop list; the shop types' datasets stay stored and are not cleared). Contacts and SO contacts are optional. |
 | `SHOP_DETAILS` / `SHOP_MEASUREMENT` | At least one shop row, and **no row in state `ERROR`** |
 
 ### Shop table
+
+**One dataset per handover type (2026-10-29):**
+- Shop Details Only and Shop + Measurement each keep their own rows, columns, counts, uploaded files and history. The type can be switched at any time before handover; no Clear is needed.
+- The selected type's dataset is in `handoverShopsArray` / `shopColumns` / `shopList`. Switching (`setHandoverType` → `swapShopSet`) stores it in `order.shopSets[<old type>]` and restores the new type's (empty the first time). History entries (`handoverShopLogs.type`) and shop list files (`handoverDocumentsArray.shopType`) are tagged with the type they leave with; untagged = the selected type.
+- ASO shows, requires and hands over no shop data. `getHandover`, `listShops`, `exportShops` and the history only ever return the selected shop type's data (ASO: none).
+- Older orders: rows left from before (no type, or kept when ASO was chosen) go to the first shop type chosen that has no dataset yet. Nothing is migrated or deleted.
 
 **The table is the uploaded Excel (imported columns, 2026-10-29):**
 - `order.shopColumns` `[{ id: "c1"…, header, field }]` keeps the sheet's columns in order:
@@ -292,6 +298,8 @@ Assignment needs an empty gap list.
   - In such a file only, these app columns are ignored: Images, Status, Issues, Modified At, Modified By, and Size / Unit (when the sheet had no size column).
   - A duplicate of an existing shop is added with a "Same shop as row N" warning.
   - The upload is refused when the file has no new or changed rows.
+  - The same file as the last upload (SHA-256 in `shopList.fileHash`) is refused with 409 `SHOP_LIST_ALREADY_IMPORTED`, so a retry never adds the rows twice. The UI shows it as a warning.
+- **Upload message:** a clean import shows a success toast; an import with rows to check shows a warning toast ("Done, with items to check"); only real failures show an error.
 
 **Row actions:**
 - Add / Edit / Delete row (drawer form with the imported columns).
@@ -324,7 +332,9 @@ Assignment needs an empty gap list.
 | Voice note | Record with **Pause / Resume**; **Send** (stop) sends at once; ✕ discards. Max 5 min. |
 | Audio upload | One audio file sent on its own goes as a voice note |
 
-**Display:** grouped by date, sender + role + IST time, "after handover" tag, image / PDF preview, download, voice playback.
+**Display:** grouped by date, sender + role + IST time, "after handover" tag, image / PDF preview, download, voice playback. The message list scrolls inside the card (max 360px); the composer stays below it.
+
+**Delete:** a ⌄ menu at the top right of each message the user may delete (their own, or any for a Super Admin, before handover; same rule as the server) opens **Delete** (mouse, touch and keyboard), then a confirmation. Works for text, file and voice messages.
 
 **Posting permissions:**
 

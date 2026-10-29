@@ -106,7 +106,7 @@ function RowDialog({ orderId, measurement, row, open, onClose }: { orderId: stri
     body.extra = Object.fromEntries(extra.filter((x) => x.key.trim() && x.value.trim()).map((x) => [x.key.trim(), x.value.trim()]));
     try {
       const r = row ? await update.mutateAsync({ rowId: row.rowId, body }) : await add.mutateAsync(body);
-      toast(r.state === "ERROR" ? `Saved with errors: ${r.issues.join("; ")}` : row ? "Shop updated" : "Shop added", r.state === "ERROR" ? "error" : "success");
+      toast(r.state === "ERROR" ? `Saved with errors: ${r.issues.join("; ")}` : row ? "Shop updated" : "Shop added", r.state === "ERROR" ? "warning" : "success");
       onClose();
     } catch (e) {
       toast(errorMessage(e), "error");
@@ -198,7 +198,7 @@ function ColumnRowDialog({ orderId, columns, measurement, row, onClose }: { orde
     const body: ShopRowInput = { cells: filled, ...(appSize ? { width: size.width.trim(), height: size.height.trim(), unit: size.unit.trim() } : {}) };
     try {
       const r = row ? await update.mutateAsync({ rowId: row.rowId, body }) : await add.mutateAsync(body);
-      toast(r.state === "ERROR" ? `Saved with errors: ${r.issues.join("; ")}` : row ? "Row updated" : "Row added", r.state === "ERROR" ? "error" : "success");
+      toast(r.state === "ERROR" ? `Saved with errors: ${r.issues.join("; ")}` : row ? "Row updated" : "Row added", r.state === "ERROR" ? "warning" : "success");
       onClose();
     } catch (e) {
       toast(errorMessage(e), "error");
@@ -354,7 +354,7 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
     return { ...rest, ...Object.fromEntries(Object.entries((extra as Record<string, unknown>) ?? {}).map(([k, x]) => [`extra:${k}`, x])) } as Record<string, unknown>;
   };
   return (
-    <Modal open onOpenChange={(o) => !o && onClose()} title={row ? `Row History · ${row.shopName ?? row.dealerName ?? `Row ${row.rowNumber}`}` : "Shop List History"} description="Newest first" className="max-w-2xl">
+    <Modal open onOpenChange={(o) => !o && onClose()} title={row ? `Row History · ${row.shopName ?? row.dealerName ?? `Row ${row.rowNumber}`}` : "Shop List History"} description="Newest first" className="max-w-3xl" titleClassName="text-lg">
       {q.isPending ? (
         <RowsSkeleton rows={4} />
       ) : q.isError ? (
@@ -362,7 +362,7 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
       ) : !q.data.length ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No changes recorded yet.</p>
       ) : (
-        <ol className="space-y-3">
+        <ol className="space-y-3.5">
           {q.data.map((l) => {
             const before = flat(l.before);
             const after = flat(l.after);
@@ -372,22 +372,22 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
               ...[...new Set([...Object.keys(before), ...Object.keys(after)])].map((k) => ({ name: fieldName(k), before: l.before ? text(before[k]) : undefined, after: l.after ? text(after[k]) : undefined })),
             ];
             return (
-              <li key={l._id} className="rounded-lg border border-border px-3 py-2 text-sm">
+              <li key={l._id} className="rounded-lg border border-border px-4 py-3 text-sm leading-relaxed">
                 <p className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-foreground">
+                  <span className="text-base font-semibold text-foreground">
                     {ACTION_LABEL[l.action]}
                     {!row && l.label && <span className="ml-1.5 font-normal text-muted-foreground">· {l.label}</span>}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {l.by?.name ?? "-"} · {formatDateTimeIST(l.at)}
                   </span>
                 </p>
-                {l.note && <p className="text-xs text-muted-foreground">{l.note}</p>}
+                {l.note && <p className="mt-0.5 break-words text-sm text-muted-foreground">{l.note}</p>}
                 {entries.length > 0 && (
-                  <dl className="mt-1.5 grid gap-1 text-xs">
+                  <dl className="mt-2 grid gap-1.5 text-sm">
                     {entries.map((e, i) => (
-                      <div key={`${e.name}-${i}`} className="grid grid-cols-[140px_1fr] gap-2">
-                        <dt className="break-words text-muted-foreground">{e.name}</dt>
+                      <div key={`${e.name}-${i}`} className="grid grid-cols-[minmax(110px,180px)_1fr] gap-3">
+                        <dt className="break-words font-medium text-muted-foreground">{e.name}</dt>
                         <dd className="break-words">
                           {l.action === "EDIT" ? (
                             <>
@@ -595,7 +595,7 @@ export function ShopTable({
   const upload = useUploadShopList(orderId);
   const del = useDeleteShopRow(orderId);
   const clear = useRemoveShopList(orderId);
-  const orderRows = useHandoverShops(orderId, { page, limit: 25, state }, !projectId && !!summary?.total);
+  const orderRows = useHandoverShops(orderId, { page, limit: 25, state }, !projectId && !!summary?.total, type);
   const projectRows = useProjectHandoverShops(projectId ?? "", { page, limit: 25, state }, !!projectId && !!summary?.total);
   const rows = projectId ? projectRows : orderRows;
   const source: FileSource = projectId ? { projectId } : { orderId };
@@ -622,11 +622,15 @@ export function ShopTable({
       setState("");
       setLastImport(r.imported ?? null);
       const flagged = r.imported?.flaggedCount ?? 0;
-      toast(`Shop list uploaded: ${r.imported?.added ?? 0} added, ${r.imported?.updated ?? 0} updated${flagged ? `, ${flagged} to check` : ""}. Total Shops: ${r.shopList?.total ?? 0}.`, flagged ? "error" : "success");
+      toast(`Shop list uploaded: ${r.imported?.added ?? 0} added, ${r.imported?.updated ?? 0} updated${flagged ? `, ${flagged} to check` : ""}. Total Shops: ${r.shopList?.total ?? 0}.`, flagged ? "warning" : "success");
     } catch (e) {
       const preview = previewOf(e);
       if (preview) setMappingStep(preview);
-      else toast(errorMessage(e), "error");
+      else if (e instanceof ApiError && e.code === "SHOP_LIST_ALREADY_IMPORTED") {
+        // A retry of a file that did go in: nothing new, nothing failed.
+        setFile([]);
+        toast(errorMessage(e), "warning");
+      } else toast(errorMessage(e), "error");
     }
   };
   /** Mapping step: a fresh preview for another sheet / header row (imports nothing). */
@@ -750,7 +754,7 @@ export function ShopTable({
         <ErrorState error={rows.error} onRetry={() => rows.refetch()} />
       ) : (
         <>
-          <div className="max-h-[560px] overflow-auto border-t border-border">
+          <div className="max-h-[min(420px,60dvh)] overflow-auto overscroll-contain border-t border-border">
             <table className="w-max min-w-full text-left text-sm" style={cols ? undefined : { minWidth: 1100 }}>
               <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold text-muted-foreground">
                 {cols && (

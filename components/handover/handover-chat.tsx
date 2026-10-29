@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, Eye, FileText, Image as ImageIcon, MessageSquareText, Paperclip, SendHorizontal, Trash2, X } from "lucide-react";
+import { ChevronDown, Download, Eye, FileText, Image as ImageIcon, MessageSquareText, Paperclip, SendHorizontal, Trash2, X } from "lucide-react";
 import { AUDIO_ACCEPT, audioDuration, clock, isAudioName, VOICE_MAX_SEC, VoicePlayer, VoiceRecorder } from "@/components/orders/voice-notes";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SectionTitle } from "@/components/ui/page-header";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -67,7 +68,7 @@ export function HandoverChat({
   messages: HandoverMessage[];
   source: FileSource;
   canPost: boolean;
-  /** Before handover the sender may delete their own messages. */
+  /** Before handover the sender (or a Super Admin, as the server allows) may delete a message. */
   canDelete?: boolean;
   title?: string;
 }) {
@@ -146,7 +147,7 @@ export function HandoverChat({
           action={<span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">{messages.length}</span>}
         />
       </div>
-      <div ref={list} className="max-h-[460px] min-h-40 space-y-3 overflow-y-auto overscroll-contain bg-[#efeae2]/60 px-4 py-4 sm:px-6" data-testid="chat-history" aria-live="polite">
+      <div ref={list} className="max-h-[min(360px,55dvh)] min-h-40 space-y-3 overflow-y-auto overscroll-contain bg-[#efeae2]/60 px-4 py-4 sm:px-6" data-testid="chat-history" aria-live="polite">
         {messages.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">No messages yet.{canPost ? " Write a note, attach files or record a voice note." : ""}</p>}
         {days.map((d) => (
           <div key={d.day} className="space-y-2">
@@ -154,10 +155,11 @@ export function HandoverChat({
             <AnimatePresence initial={false}>
               {d.items.map((m) => {
                 const mine = !!user && m.by?._id === user.id;
+                const deletable = !!canDelete && (mine || user?.role === "SUPER_ADMIN");
                 return (
                   <motion.div key={m._id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cn("flex", mine ? "justify-end" : "justify-start")}>
                     <div className={cn("group relative max-w-[85%] rounded-2xl px-3.5 py-2 shadow-soft sm:max-w-[70%]", mine ? "rounded-tr-sm bg-[#d9fdd3]" : "rounded-tl-sm bg-surface")}>
-                      <p className="mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-brand">
+                      <p className={cn("mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-brand", deletable && "pr-7")}>
                         {mine ? "You" : (m.by?.name ?? "Unknown")}
                         {m.role && <span className="font-normal text-muted-foreground">· {m.role.replace(/_/g, " ").toLowerCase()}</span>}
                       </p>
@@ -176,15 +178,20 @@ export function HandoverChat({
                           {timeOf(m.createdAt)}
                         </time>
                       </p>
-                      {canDelete && mine && (
-                        <button
-                          type="button"
-                          onClick={() => setDeleting(m)}
-                          aria-label="Delete message"
-                          className="absolute -left-8 top-1/2 hidden -translate-y-1/2 rounded-full p-1.5 text-muted-foreground hover:bg-danger-soft hover:text-danger group-hover:block"
-                        >
-                          <Trash2 className="size-3.5" aria-hidden />
-                        </button>
+                      {deletable && (
+                        <DropdownMenu modal={false}>
+                          <DropdownMenuTrigger
+                            aria-label="Message options"
+                            className="absolute right-1 top-1 flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-ring data-[state=open]:bg-black/5"
+                          >
+                            <ChevronDown className="size-4" aria-hidden />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={4} className="min-w-36">
+                            <DropdownMenuItem onSelect={() => setDeleting(m)} className="text-danger data-[highlighted]:bg-danger-soft">
+                              <Trash2 className="size-4" aria-hidden /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
                   </motion.div>
@@ -275,6 +282,7 @@ export function HandoverChat({
           try {
             await remove.mutateAsync(deleting!._id);
             setDeleting(null);
+            toast("Message deleted");
           } catch (e) {
             toast(errorMessage(e), "error");
           }

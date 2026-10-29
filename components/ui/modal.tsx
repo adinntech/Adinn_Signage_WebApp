@@ -16,6 +16,7 @@ export function Modal({
   children,
   variant = "dialog",
   className,
+  titleClassName,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -25,6 +26,7 @@ export function Modal({
   children: React.ReactNode;
   variant?: "dialog" | "drawer";
   className?: string;
+  titleClassName?: string;
 }) {
   const drawer = variant === "drawer";
   return (
@@ -61,7 +63,7 @@ export function Modal({
                 >
                   <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
                     <div className="min-w-0">
-                      <Dialog.Title className="text-base font-semibold text-primary">{title}</Dialog.Title>
+                      <Dialog.Title className={cn("text-base font-semibold text-primary", titleClassName)}>{title}</Dialog.Title>
                       <Dialog.Description className={cn("mt-0.5 text-sm text-muted-foreground", !description && "sr-only")}>
                         {description ?? title}
                       </Dialog.Description>
