@@ -36,6 +36,8 @@ export interface AssignState {
     clientId?: string | null;
     emails?: { count: number; lastSentAt: string | null; lastStatus: string | null; done?: boolean };
     handoverReady?: boolean;
+    /** Step 1 confirmed with "Continue" (not just free of gaps). */
+    handoverDone?: boolean;
     missing?: string | null;
   };
 }
@@ -134,7 +136,7 @@ function recceSteps(a: AssignState): ChainStep[] {
   const r = a.recce;
   const sent = r.emails?.count ?? 0;
   const labels = ["Handover Type & Details", "Project Code Request Email", "Project Code & Estimation Code", "Assign to Recce / Operations"];
-  const s = sequence([!!r.handoverReady || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
+  const s = sequence([!!r.handoverDone || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
   const last = r.emails?.lastStatus === "SKIPPED" ? "not sent (mail off)" : r.emails?.lastStatus === "FAILED" ? "failed" : "sent";
   return [
     {

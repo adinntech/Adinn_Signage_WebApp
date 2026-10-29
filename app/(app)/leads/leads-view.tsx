@@ -20,6 +20,7 @@ import { LEAD_FLOW, useLeads, useLeadSummary, type LeadStage } from "@/lib/api/l
 import { useAuth } from "@/lib/auth";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { clientIdOf } from "@/lib/api/clients";
 
 /** Lead Management list: every lead with its current mind map stage. Opening one shows its mind map. */
 export function LeadsView() {
@@ -157,7 +158,7 @@ export function LeadsView() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="block font-medium">{l.client?.name ?? "-"}</span>
-                        <span className="block text-xs text-muted-foreground">{[l.client?.clientName, l.client?.clientNo, l.client?.city].filter(Boolean).join(" · ")}</span>
+                        <span className="block text-xs text-muted-foreground">{[l.client?.clientName, clientIdOf(l.client, l.clientType), l.client?.city].filter(Boolean).join(" · ")}</span>
                       </td>
                       <td className="px-4 py-3">
                         <ClientTypeBadge type={l.clientType} full />

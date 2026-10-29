@@ -23,8 +23,10 @@ export interface RecceState {
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
   /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
-  /** Handover Type & Details (step 1) complete: unlocks the request email. */
+  /** Handover Type & Details has no gaps. */
   handoverReady?: boolean;
+  /** Handover Type & Details confirmed with "Continue" (step 1 done): unlocks the request email. */
+  handoverDone?: boolean;
   clientType?: "NEW" | "EXISTING";
   /** Client ID in Zoho: Existing clients have it from Zoho (read-only); New clients type it at Project Code. */
   zohoClientId?: { value: string | null; fromZoho: boolean };
@@ -84,6 +86,10 @@ export const useSendCodeRequest = (id: string) =>
     qc.invalidateQueries({ queryKey: ["sales", "order", id, "emails"] }),
   );
 
+/** Step 1: confirms Handover Type & Details ("Continue: Project Code Request Email"). */
+export const useConfirmRecceHandover = (id: string) =>
+  useRecceMutation(id, () => api<RecceState>(`/sales/orders/${id}/recce/handover-done`, { method: "POST" }), (qc) => qc.invalidateQueries({ queryKey: ["leads"] }));
+
 export const useSaveRecceCodes = (id: string) =>
   useRecceMutation(id, (body: { projectCode: string; estimationCode: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
 
@@ -112,6 +118,9 @@ export interface ProjectHandover {
     name: string;
     clientName?: string;
     clientNo?: string;
+    clientType?: "NEW" | "EXISTING" | null;
+    /** Zoho customer number: the Client ID of an Existing client. */
+    zohoCustomerNo?: string;
     email?: string;
     phone?: string;
     gstin?: string;

@@ -278,8 +278,12 @@ export interface ZohoClientOption {
   industry?: string;
   /** Only on the single-customer read (useZohoClient). */
   contacts?: { name: string; designation?: string; phone?: string; email?: string; isPrimary: boolean }[];
+  /** Local client linked to this Zoho customer (null until the first order adds it). */
   clientId: string | null;
+  /** Local Client ID (CLI-0023) of the linked client. */
   clientNo: string | null;
+  /** Business Client Code of the linked client (normally the Zoho customer number). */
+  code?: string | null;
 }
 
 /** One Zoho customer with its contact persons (read-only Existing Client preview). */

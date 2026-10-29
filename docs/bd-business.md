@@ -37,9 +37,9 @@
 | 1 | **Create Project** (`/leads/new`), or **Create Order** dialog (`/orders`) | BD | Active, non-draft client, or a Zoho customer | Order (`stage: NEW_ORDER`) and lead created at `PROJECT_ASSIGN` in one write | Step 2 |
 | 2 | **Project Assign**: pick a branch on the mind map | BD | Lead `OPEN` at `PROJECT_ASSIGN` | Route taken (see §4) | 3A or 3B |
 | 3A | CS route › **Handover Type & Details** (assignment inside) | BD | Handover gaps empty | **Save & Complete Handover** assigns CS; lead `COMPLETED` | — |
-| 3B-1 | Recce › **Handover Type & Details** | BD | — | Gaps empty (always full handover) | 3B-2 |
-| 3B-2 | Recce › **Project Code Request Email** | BD | Handover complete | Email recorded `SENT` or `SKIPPED` (`FAILED` does not count) | 3B-3 |
-| 3B-3 | Recce › **Project Code & Estimation Code** (+ **Client ID (Zoho)** for New clients) | BD | Email done | Codes saved | 3B-4 |
+| 3B-1 | Recce › **Handover Type & Details** | BD | — | Gaps empty (always full handover) **and** "Continue: Project Code Request Email" saved (`POST …/recce/handover-done` → `recce.handoverDoneAt`); opens the email drawer | 3B-2 |
+| 3B-2 | Recce › **Project Code Request Email** | BD | Step 3B-1 confirmed (older orders: an email already recorded) | Email recorded `SENT` or `SKIPPED` (`FAILED` does not count) | 3B-3 |
+| 3B-3 | Recce › **Project Code & Estimation Code** (+ **Client ID (Zoho)** input for New clients only; Existing keep their client code automatically) | BD | Email done | Codes saved | 3B-4 |
 | 3B-4 | Recce › **Assign to Recce / Operations** | BD | Codes, Client ID (New), handover complete (contacts optional) | Project created and assigned; lead `COMPLETED` | Operations workflow |
 
 **Continuation:** "Save & Create Order" on `/leads/new` opens the new lead with the **Project Assign** drawer already open (`?stage=PROJECT_ASSIGN`). Picking a branch opens its current step in the same drawer; on the Recce route, each step's **Continue** opens the next step only after that step is saved. A failed save keeps the drawer on the same step. Closing the drawer and clicking a step on the map later still works (resume).
@@ -102,7 +102,7 @@ Shared form: `components/clients/company-form.tsx` (`CompanyFormFields`, `useCom
 | GST Certificate | Up to 5 files (`.pdf .jpg .jpeg .png .webp`). Uploaded after the client is saved. View/Preview opens a modal; Remove asks for confirmation. |
 | Custom Fields | Up to 30 label + value pairs, both required. Labels are unique (case-insensitive). The rows scroll inside the card (max 340px). |
 | Client ID (`clientNo`) | Generated `CLI-0001`… at registration / finalize. `code` is generated from the name. |
-| `zohoCustomerNo` | The Zoho Client ID. Comes from Zoho for Existing clients; saved at Project Code for New clients. |
+| `zohoCustomerNo` | The business client code in Zoho (e.g. 11001). Comes from Zoho for Existing clients; for New clients it is typed at Project Code and also saved as `code` (when no other client has it). Never the same field as `_id`, `clientNo` (CLI-0023, local) or the Zoho contact id (`zohoId` / `zohoContactId`). |
 | `clientType` | `NEW` (Client Management) or `EXISTING` (Zoho). `source` is `CRM` or `ZOHO`. |
 
 **GST duplicate check:**
@@ -170,7 +170,11 @@ The picker is shared by `/leads/new` and the Create Order dialog: `OrderClientFo
 - Blocked when:
   - the client is a draft or inactive;
   - the flag is `NEW` and the client's GSTIN matches a Zoho customer (`ZOHO_DUPLICATE_GST`).
-- A Zoho pick is linked to, or created as, a local `EXISTING` client (`linkZohoCustomer`). This copies the Zoho contacts when the local client has none and uses the Zoho customer number as `code`.
+- A Zoho pick is linked to, or created as, a local `EXISTING` client (`linkZohoCustomer`), using the Zoho customer number as `code`.
+  - The link is found by `zohoId` **or** `zohoContactId` (clients from Admin › Zoho Import), so an imported client is reused, never matched to another client by GST / email / name.
+  - On each pick, Zoho's company, email, phone (mobile first), GST, industry, address, city, state and PIN overwrite the local values (blanks in Zoho keep them). Zoho's contact persons are added when missing (same mobile, email or name = same contact) and Zoho's primary becomes the primary; CRM-added contacts are kept.
+- **Client ID for Existing clients = `zohoCustomerNo`** (Zoho's customer number, e.g. 11001), everywhere: picker card, lead / order lists and headers, Lead Management company details, Order Management, handover details (live and the `handoverClient` snapshot, which now keeps `zohoCustomerNo`) and the project code request email. Never the local `clientNo` (CLI-0023) or Zoho's API contact id (`zohoId` / `contactId`), which stay stored for links only. New clients show the CRM `clientNo` (temporary) until the Zoho client ID is entered at Project Code. Helper: `clientIdOf(client, clientType)` in `lib/api/clients.ts`.
+- The picker card shows **Client ID** (`zohoCustomerNo`) and **Zoho Contact ID** (labelled as such), then company name, email, GST, industry, address and the Contact Persons list. The New / Existing branch is always the one the user chose.
 - Creates the order `orderNo` (e.g. `20261028ORD#1`) with `stage: NEW_ORDER`.
 - Creates the lead with `stage: PROJECT_ASSIGN`, and logs `START` and `COMPLETE NEW_LEAD → PROJECT_ASSIGN`.
 
@@ -383,17 +387,20 @@ Assignment needs an empty gap list.
 All Recce endpoints need `sales:write`.
 
 **Get state:** `GET /sales/orders/:id/recce`. Returns:
-- `handoverReady`, `emailDone`, `route`, `codes`;
+- `handoverReady` (no gaps), `handoverDone` (step 1 confirmed), `emailDone`, `route`, `codes`;
 - `zohoClientId { value, fromZoho }`;
 - `autoAttachments { shopExcel, documents }`;
 - `missing`, in order: handover gaps → email → codes → Client ID;
-- `draft`: To and CC empty; subject `Project Code Request - <client> (<orderNo>)`; the body lists client details, contact persons and the attachments.
+- `draft`: To and CC empty; the body lists client details, contact persons and the attachments.
+  - Existing client: subject `Project Code Request - <client> (<orderNo>)`; asks for the project / estimation code under the client's **Client ID** (`zohoCustomerNo`).
+  - New client: subject `Client Code & Project Code Request - <client> (<orderNo>)`; asks for the client code in Zoho **and** the project / estimation code. Client ID shows "To be created in Zoho"; the CRM Client ID is labelled a temporary reference.
+- **Drawer:** From / To aligned, CC and Subject full width, a taller body editor, a separate Attachments panel listing each automatic file (shop Excel: Download; handover documents: Preview / Download through the signed-link API) and each added file (Preview), and a sticky footer with Send.
 
 **Request email:** `POST /sales/orders/:id/recce/code-request` (multipart `payload` + `files`).
 
 | Rule | Detail |
 |---|---|
-| Prerequisite | Handover complete (`HANDOVER_INCOMPLETE`) |
+| Prerequisite | Handover complete and step 1 confirmed (`HANDOVER_INCOMPLETE`) |
 | Route | The first email takes the `RECCE` route |
 | Attached automatically | Shop table Excel (shop types with rows, a snapshot at send time) + every chat attachment. Manual files can be added. |
 | Status | `SENT`, `FAILED` or `SKIPPED` (mail not configured) |

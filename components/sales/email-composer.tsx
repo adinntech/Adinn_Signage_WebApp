@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { AlertTriangle, Mail, Send } from "lucide-react";
+import { AlertTriangle, Mail, Paperclip, Send } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -99,7 +99,7 @@ export function EmailComposer({
           {notConfigured}
         </p>
       )}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid items-start gap-x-5 gap-y-4 md:grid-cols-2">
         <Field label="From Email" htmlFor={id("from")} hint="Auto display">
           <Input id={id("from")} value={from ?? "Not configured"} readOnly disabled />
         </Field>
@@ -113,7 +113,7 @@ export function EmailComposer({
           <Input id={id("subject")} value={v.subject} maxLength={250} aria-invalid={!!errors.subject} onChange={(e) => setV({ ...v, subject: e.target.value })} />
         </Field>
       </div>
-      <Field label="Email Body" htmlFor={id("body")} required error={errors.body}>
+      <Field label="Email Body" htmlFor={id("body")} required error={errors.body} className="[&_.ProseMirror]:min-h-56 [&_[contenteditable]]:min-h-56 [&_[contenteditable]]:leading-relaxed">
         <RichTextEditor id={id("body")} ariaLabel="Email body" value={v.body} onChange={(body) => setV({ ...v, body })} invalid={!!errors.body} />
       </Field>
       {showNotes && (
@@ -121,8 +121,10 @@ export function EmailComposer({
           <Textarea id={id("notes")} className="min-h-16" maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       )}
-      <div className="rounded-lg border border-border bg-background p-3">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">{attachmentLabel}</p>
+      <div className="rounded-xl border border-border bg-background p-4">
+        <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <Paperclip className="size-4 text-muted-foreground" aria-hidden /> {attachmentLabel}
+        </p>
         {attachmentArea ??
           (attachments.length ? (
             <div className="flex flex-wrap gap-2">
@@ -134,7 +136,8 @@ export function EmailComposer({
             <p className="text-sm text-danger">{blockedReason ?? "No attachment available"}</p>
           ))}
       </div>
-      <div className="flex justify-end">
+      <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
+        <span className="text-xs text-muted-foreground">{mailEnabled ? `Sends from ${from ?? "the configured mailbox"}` : "Email is off: the email is recorded, not sent."}</span>
         <Button variant="brand" onClick={send} loading={sending} disabled={!!blockedReason}>
           {sending ? <Mail className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />} Send Email
         </Button>

@@ -22,6 +22,7 @@ import { downloadFile, formData, openFile } from "@/lib/api/files";
 import { APPROVAL_DOC_TYPES, useApproval, useCompleteApproval, useDeleteApproval, useUpdateApproval, useUploadApproval, type ApprovalDoc, type ApprovalDocType } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, toDateInput } from "@/lib/format";
+import { clientIdOf } from "@/lib/api/clients";
 
 const ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.docx";
 
@@ -194,7 +195,7 @@ export function ApprovalTab({ orderId, inLead = false }: { orderId: string; inLe
           <dl className="grid gap-5 sm:grid-cols-3">
             <DetailItem label="Client Name">{order.client.name}</DetailItem>
             <DetailItem label="Client ID">
-              <span className="font-mono">{order.client.clientNo ?? order.client.code}</span>
+              <span className="font-mono">{clientIdOf(order.client, order.clientType)}</span>
             </DetailItem>
             <DetailItem label="Order ID">
               <span className="font-mono text-brand">{order.orderNo}</span>

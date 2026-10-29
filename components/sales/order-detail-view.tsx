@@ -22,6 +22,7 @@ import { OrderOverview } from "./order-overview";
 import { PipelineHistory } from "./pipeline-history";
 import { RateCardStage } from "./rate-card/rate-card-stage";
 import { StageBadge } from "./stage";
+import { clientIdOf } from "@/lib/api/clients";
 
 export type OrderTab = "overview" | "profile" | "ratecard" | "approval" | "comments" | "history";
 export const STAGE_TAB: Record<OrderStage, OrderTab> = { NEW_ORDER: "overview", COMPANY_PROFILE: "profile", RATE_CARD: "ratecard", CLIENT_APPROVAL: "approval" };
@@ -137,7 +138,7 @@ export function OrderDetailView({
             )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">{o.client.name}</span> · {o.client.clientNo ?? o.client.code} · BD: {o.owner?.name ?? "Unassigned"}
+            <span className="font-semibold text-foreground">{o.client.name}</span> · {clientIdOf(o.client, o.clientType)} · BD: {o.owner?.name ?? "Unassigned"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

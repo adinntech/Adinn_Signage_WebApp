@@ -60,7 +60,7 @@ The shop row schema comment says the rows "become project sites when Client Serv
 | Section | What CS sees |
 |---|---|
 | Status banner | "Handed over to <CS> on <date> by <BD>", the assignment note, and an Opened / Not opened yet badge |
-| Client & Contact Persons (shown first) | Company name, Client Name, **Client ID** (CRM `clientNo`), **Zoho Client ID** (`client.zohoCustomerNo`, when known), email, phone, GST number, contact persons (optional; may be empty). **GST Certificate** and **Custom Fields** appear for New clients only. No Add / Edit contact. |
+| Client & Contact Persons (shown first) | Company name, Client Name, **Client ID** (CRM `clientNo`), **Client Code (Zoho)** (`client.zohoCustomerNo`, when known), email, phone, GST number, contact persons (optional; may be empty). **GST Certificate** and **Custom Fields** appear for New clients only. No Add / Edit contact. |
 | Handover Type | The chosen type is highlighted. The toggle appears as a badge: "Handover details sent" or "Client details only". |
 | SO Contacts (ASO only) | Name, phone, optional email, primary. Read-only. |
 | Shop table (shop types) | See below |
@@ -141,7 +141,7 @@ This applies to orders assigned on the **Recce** route; the CS route never creat
 | New | Typed at Project Code & Estimation Code (`recce.clientId`, and `client.zohoCustomerNo` when empty) |
 | Existing | Taken from Zoho |
 
-CS sees it as **Zoho Client ID** on the client section when `client.zohoCustomerNo` is set.
+CS sees it as **Client Code (Zoho)** on the client section when `client.zohoCustomerNo` is set.
 
 ## 7. Invariants to preserve
 
@@ -165,7 +165,7 @@ CS sees it as **Zoho Client ID** on the client section when `client.zohoCustomer
 
 - [ ] CS login lands on My Orders. Only assigned orders are listed. The New badge clears after opening.
 - [ ] Opening another CS's order URL gives "not found". `/leads` is not reachable.
-- [ ] Handover tab: client (Client ID, Zoho Client ID, GST certificate / custom fields for New), contacts, type, shop table, images preview, Template / Download Excel all work. No edit controls.
+- [ ] Handover tab: client (Client ID, Client Code (Zoho), GST certificate / custom fields for New), contacts, type, shop table, images preview, Template / Download Excel all work. No edit controls.
 - [ ] Chat: the assigned CS can send text, files and voice (pause / resume / send). There is no delete control. The BD receives "Client Servicing replied on a handover".
 - [ ] Unassigned CS posting via the API → 404. Delete or shop edit via the API → 403.
 - [ ] Operations project › BD Handover shows codes, Client ID, client, read-only chat, shop table and export.

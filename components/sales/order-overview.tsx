@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import type { OrderTab } from "./order-detail-view";
 import { STAGE_ICONS, StageBadge } from "./stage";
+import { clientIdOf } from "@/lib/api/clients";
 
 const STAGE_TAB = { COMPANY_PROFILE: "profile", RATE_CARD: "ratecard", CLIENT_APPROVAL: "approval" } as const;
 
@@ -33,7 +34,7 @@ export function OrderOverview({ order, onOpenTab }: { order: Order; onOpenTab?: 
             <span className="font-mono text-brand">{order.orderNo}</span>
           </DetailItem>
           <DetailItem label="Client ID">
-            <span className="font-mono">{c.clientNo ?? c.code}</span>
+            <span className="font-mono">{clientIdOf(c, order.clientType)}</span>
           </DetailItem>
           <DetailItem label="Company Name">{c.name}</DetailItem>
           <DetailItem label="Company Email">{c.email}</DetailItem>

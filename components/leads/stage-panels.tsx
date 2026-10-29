@@ -144,7 +144,7 @@ export function NewLeadDone({ detail, canWrite }: { detail: LeadDetail; canWrite
     <div className="space-y-4">
       <ChangeClientCard detail={detail} canWrite={canWrite} />
       <FlagExplain type={detail.order.clientType} />
-      <CompanyDetailsCard client={detail.order.client} extras={detail.order.clientType === "NEW"} />
+      <CompanyDetailsCard client={detail.order.client} extras={detail.order.clientType === "NEW"} clientType={detail.order.clientType} />
       <ContactsCard contacts={detail.order.client.contacts ?? []} />
       <Card className="space-y-3 p-5">
         <Field label="Initial Notes" htmlFor="lead-notes-edit">

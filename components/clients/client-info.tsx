@@ -4,13 +4,13 @@ import { Building2, ListPlus, Star, Users } from "lucide-react";
 import { AttachmentChip } from "@/components/sales/order-comments";
 import { Card } from "@/components/ui/card";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
-import type { Client, ClientContact } from "@/lib/api/clients";
+import { clientIdOf, type Client, type ClientContact } from "@/lib/api/clients";
 
 /**
  * Read-only company details (View Client Details, Order Management view, Lead Management). Older clients may still
  * carry an address / industry from the previous form: those show only when saved.
  */
-export function CompanyDetailsCard({ client: c, className, extras = true }: { client: Client; className?: string; extras?: boolean }) {
+export function CompanyDetailsCard({ client: c, className, extras = true, clientType }: { client: Client; className?: string; extras?: boolean; clientType?: string | null }) {
   const address = [c.address, c.city, c.district, c.state, c.pincode].filter(Boolean).join(", ");
   const certificates = c.gstCertificates ?? [];
   const custom = extras ? (c.customFields ?? []) : [];
@@ -18,6 +18,11 @@ export function CompanyDetailsCard({ client: c, className, extras = true }: { cl
     <Card className={className ?? "p-5 sm:p-6"}>
       <SectionTitle icon={Building2} title="Company Details" />
       <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {clientType && (
+          <DetailItem label="Client ID">
+            <span className="font-mono">{clientIdOf(c, clientType)}</span>
+          </DetailItem>
+        )}
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
         <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Company Email">{c.email}</DetailItem>

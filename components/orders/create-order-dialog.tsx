@@ -85,8 +85,8 @@ export function OrderClientForm({
 
   const zohoPick = flag === "EXISTING" ? zohoRows.find((z) => z.zohoId === picked?.value) : undefined;
   const crmPick = flag === "NEW" && details.data?._id === picked?.value ? details.data : undefined;
-  // The full read carries the contact persons; the search row shows meanwhile.
-  const zohoView = zohoDetail.data ?? zohoPick;
+  // The full read carries the contact persons; the search row shows meanwhile. Only the selected customer's detail is used.
+  const zohoView = (zohoDetail.data?.zohoId === picked?.value ? zohoDetail.data : undefined) ?? zohoPick;
 
   const switchToZoho = (pick: SearchOption) => {
     setAdding(false);

@@ -56,6 +56,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { clientIdOf } from "@/lib/api/clients";
 import { HandoverChat } from "@/components/handover/handover-chat";
 import { ShopTable } from "@/components/handover/shop-table";
 
@@ -187,10 +188,11 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
         <DetailItem label="Client ID">
-          <span className="font-mono text-brand">{c.clientNo ?? c.code}</span>
+          <span className="font-mono text-brand">{clientIdOf(c, order.clientType)}</span>
         </DetailItem>
-        {c.zohoCustomerNo && (
-          <DetailItem label="Zoho Client ID">
+        {/* New client: the confirmed Zoho client ID next to the temporary CRM one. */}
+        {order.clientType !== "EXISTING" && c.zohoCustomerNo && (
+          <DetailItem label="Client Code (Zoho)">
             <span className="font-mono">{c.zohoCustomerNo}</span>
           </DetailItem>
         )}

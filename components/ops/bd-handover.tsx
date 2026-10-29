@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/states";
 import type { ProjectHandover } from "@/lib/api/recce";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { formatDate } from "@/lib/format";
+import { clientIdOf } from "@/lib/api/clients";
 
 /** Operations project > BD Handover: what the BD handed over in Lead Management (read-only). */
 export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHandover }) {
@@ -43,7 +44,7 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
           <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <DetailItem label="Company Name">{c.name}</DetailItem>
             <DetailItem label="Client Name">{c.clientName}</DetailItem>
-            <DetailItem label="Client ID">{c.clientNo}</DetailItem>
+            <DetailItem label="Client ID">{clientIdOf(c, c.clientType) ?? (c.clientType === "EXISTING" ? h.clientId : undefined)}</DetailItem>
             <DetailItem label="Company Email">{c.email}</DetailItem>
             <DetailItem label="Phone Number">{c.phone}</DetailItem>
             <DetailItem label="GST Number">{c.gstin}</DetailItem>

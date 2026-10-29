@@ -15,6 +15,7 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useOrder } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
+import { clientIdOf } from "@/lib/api/clients";
 
 type Tab = "client" | "handover" | "comments" | "history";
 
@@ -69,7 +70,7 @@ export function OrderWorkspace() {
               <Link href={`/clients/${o.client._id}`} className="font-semibold text-foreground hover:text-brand hover:underline">
                 {o.client.name}
               </Link>
-              {o.client.clientName && <> · {o.client.clientName}</>} · {o.client.clientNo ?? o.client.code}
+              {o.client.clientName && <> · {o.client.clientName}</>} · {clientIdOf(o.client, o.clientType)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               {o.clientType === "NEW" ? "First order of a newly registered client." : "Repeat order of an already registered client."}

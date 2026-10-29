@@ -239,3 +239,11 @@ export function useDeactivateClient() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
   });
 }
+
+/**
+ * The Client ID shown to users. Existing (Zoho) clients: Zoho's customer number (`zohoCustomerNo`, e.g. 11001), never
+ * the local CLI- number or Zoho's API contact id. New clients: the CRM Client ID (temporary until the Zoho client ID is
+ * entered at Project Code). Local ids stay as they are internally.
+ */
+export const clientIdOf = (c: { clientNo?: string | null; code?: string | null; zohoCustomerNo?: string | null } | null | undefined, clientType?: string | null) =>
+  !c ? undefined : clientType === "EXISTING" ? (c.zohoCustomerNo ?? undefined) : (c.clientNo ?? c.code ?? undefined);

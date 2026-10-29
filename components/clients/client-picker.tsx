@@ -107,7 +107,9 @@ export function CrmClientCard({ client: c, onEdit }: { client: ClientDetails; on
 
 /** Existing Client (Zoho) preview: everything Zoho has, read-only (edits happen in Zoho, not here). */
 export function ZohoClientCard({ zoho: z, loadingContacts }: { zoho: ZohoClientOption; loadingContacts?: boolean }) {
-  const address = [z.address, z.city, z.state, z.pincode].filter(Boolean).join(", ");
+  // Zoho's street often already ends with the city / PIN ("…,Madurai-625010"): parts already in it are not repeated.
+  const street = z.address ?? "";
+  const address = [z.address, ...[z.city, z.state, z.pincode].filter((p) => p && !street.toLowerCase().includes(p.toLowerCase()))].filter(Boolean).join(", ");
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-2">
@@ -120,11 +122,15 @@ export function ZohoClientCard({ zoho: z, loadingContacts }: { zoho: ZohoClientO
         </span>
       </div>
       <dl className="grid gap-4 sm:grid-cols-2">
+        {/* Existing client: the Client ID is Zoho's customer number (never the local CLI- number or Zoho's API contact id). */}
+        <DetailItem label="Client ID">
+          <span className="font-mono">{z.zohoCustomerNo}</span>
+        </DetailItem>
+        <DetailItem label="Zoho Contact ID">
+          <span className="font-mono text-xs">{z.zohoId}</span>
+        </DetailItem>
         <DetailItem label="Company Name">{z.name}</DetailItem>
-        <DetailItem label="Zoho Client ID">{z.zohoCustomerNo}</DetailItem>
-        <DetailItem label="Client Name">{z.clientName}</DetailItem>
         <DetailItem label="Company Email">{z.email}</DetailItem>
-        <DetailItem label="Phone Number">{z.phone}</DetailItem>
         <DetailItem label="GST Number">{z.gstin}</DetailItem>
         {z.industry && <DetailItem label="Industry">{z.industry}</DetailItem>}
         {address && (

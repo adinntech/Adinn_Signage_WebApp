@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { BadgeCheck, Check, CircleAlert, ExternalLink, FileSpreadsheet, Lock, Paperclip, Save, Send, UserRound } from "lucide-react";
+import { BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Lock, Paperclip, Save, Send, UserRound } from "lucide-react";
+import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
 import { EmailHistory } from "@/components/sales/email-history";
@@ -20,8 +21,10 @@ import { ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
+import { downloadFile } from "@/lib/api/files";
+import { downloadShopExcel } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
-import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
+import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
 import { formatDateTimeIST } from "@/lib/format";
 import { RouteNotice, StepFooter } from "./assign-panels";
 import { ASSIGN_META } from "./stage-meta";
@@ -29,29 +32,76 @@ import { ASSIGN_META } from "./stage-meta";
 const TEAL = ASSIGN_META.RECCE.color;
 const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
 
-/** What goes with every request email by itself: client details + contacts (in the message), shop Excel, handover documents. */
-function AutoIncluded({ r }: { r: RecceState }) {
-  const a = r.autoAttachments;
+/** One attachment line: icon, file name, what it is, Preview (images / PDF; others download) and Download. */
+function AttachmentRow({ icon: Icon, name, meta, onPreview, onDownload }: { icon: typeof FileText; name: string; meta?: string; onPreview?: () => void; onDownload: () => void }) {
   return (
-    <div className="mb-3 space-y-1.5 rounded-lg bg-[#ecfeff] px-3 py-2 text-xs" data-testid="auto-attachments">
-      <p className="font-semibold text-[#0e7490]">Included automatically</p>
-      <p className="flex items-center gap-1.5">
-        <UserRound className="size-3.5 shrink-0 text-[#0891b2]" aria-hidden /> Client details and contact persons (in the message)
-      </p>
-      {a?.shopExcel && (
-        <p className="flex items-center gap-1.5">
-          <FileSpreadsheet className="size-3.5 shrink-0 text-[#0891b2]" aria-hidden /> Shop list Excel: {a.shopExcel.rows} shop{a.shopExcel.rows === 1 ? "" : "s"}
-          {a.shopExcel.sized ? " with sizes" : ""} (as the table is when you send)
+    <li className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+      <Icon className="size-4 shrink-0 text-[#0891b2]" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground" title={name}>
+          {name}
+        </span>
+        {meta && <span className="block text-xs text-muted-foreground">{meta}</span>}
+      </span>
+      <span className="flex shrink-0 gap-1.5">
+        {onPreview && (
+          <Button variant="outline" size="sm" onClick={onPreview} aria-label={`Preview ${name}`}>
+            <Eye className="size-4" aria-hidden /> Preview
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={onDownload} aria-label={`Download ${name}`}>
+          <Download className="size-4" aria-hidden /> Download
+        </Button>
+      </span>
+    </li>
+  );
+}
+
+/**
+ * What goes with every request email by itself (client details + contacts in the message, the shop Excel, handover
+ * documents), each file on its own line with Preview / Download, then the files added for this email.
+ */
+function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFiles: (f: File[]) => void }) {
+  const toast = useToast();
+  const a = r.autoAttachments;
+  const source = { orderId: r.orderId };
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const fail = (e: unknown) => toast(errorMessage(e), "error");
+  return (
+    <div className="space-y-4" data-testid="auto-attachments">
+      <section>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#0e7490]">Included automatically</p>
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-[#a5f3fc] bg-[#ecfeff]/60">
+          <li className="flex items-center gap-3 px-3 py-2.5 text-sm">
+            <UserRound className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Client details and contact persons (in the message)
+          </li>
+          {a?.shopExcel && (
+            <AttachmentRow
+              icon={FileSpreadsheet}
+              name={`Shop list (${a.shopExcel.rows} shop${a.shopExcel.rows === 1 ? "" : "s"}).xlsx`}
+              meta={`${a.shopExcel.sized ? "With sizes · " : ""}as the table is when you send · Excel opens after download`}
+              onDownload={() => void downloadShopExcel(r.orderId).catch(fail)}
+            />
+          )}
+          {a?.documents.map((d) => (
+            <AttachmentRow
+              key={d.fileId}
+              icon={FileText}
+              name={d.name ?? "File"}
+              meta="From Communication & Attachments"
+              onPreview={() => setPreview({ saved: d, source })}
+              onDownload={() => void downloadFile(d.fileId, source, d.name ?? "file").catch(fail)}
+            />
+          ))}
+        </ul>
+      </section>
+      <section>
+        <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <Paperclip className="size-3.5" aria-hidden /> Added for this email
         </p>
-      )}
-      {!!a?.documents.length && (
-        <p className="flex items-start gap-1.5">
-          <Paperclip className="mt-0.5 size-3.5 shrink-0 text-[#0891b2]" aria-hidden />
-          <span>
-            {a.documents.length} document{a.documents.length === 1 ? "" : "s"} from Communication & Attachments: {a.documents.map((d) => d.name).join(", ")}
-          </span>
-        </p>
-      )}
+        <FileUploader id="recce-mail-files" files={files} onChange={onFiles} accept={DOC_ACCEPT} multiple compact onPreview={(f) => setPreview({ local: f })} hint="Optional: PDF, images, Word, PowerPoint, Excel · up to 10" />
+      </section>
+      <FileRefPreview target={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }
@@ -85,12 +135,7 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
         draft={r.draft}
         attachments={[]}
         attachmentLabel="Attachments"
-        attachmentArea={
-          <>
-            <AutoIncluded r={r} />
-            <FileUploader id="recce-mail-files" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple compact hint="More files (optional): PDF, images, Word, PowerPoint, Excel · up to 10" />
-          </>
-        }
+        attachmentArea={<Attachments r={r} files={files} onFiles={setFiles} />}
         sending={send.isPending}
         onSend={async (v) => {
           const fd = new FormData();
@@ -128,7 +173,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
         <DetailItem label="Estimation Code">
           <span className="font-mono text-base">{r.codes.estimationCode}</span>
         </DetailItem>
-        <DetailItem label={fromZoho ? "Zoho Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
+        <DetailItem label={fromZoho ? "Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
         <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTimeIST(r.codes.savedAt)}` : formatDateTimeIST(r.codes.savedAt)}</DetailItem>
       </dl>
     );
@@ -152,7 +197,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const changed = project !== (r.codes?.projectCode ?? "") || `EST-${est}` !== (r.codes?.estimationCode ?? "EST-") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? ""));
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={fromZoho ? "grid gap-4 sm:grid-cols-2" : "grid gap-4 sm:grid-cols-3"}>
         <Field label="Project Code" htmlFor="recce-project-code" required error={errors.projectCode} hint="8 digits, e.g. 22070277">
           <Input
             id="recce-project-code"
@@ -178,19 +223,18 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
             />
           </div>
         </Field>
-        {fromZoho ? (
-          <Field label="Zoho Client ID" htmlFor="recce-client-id" hint="Existing client: taken from Zoho">
-            <div className="relative">
-              <Input id="recce-client-id" readOnly value={r.zohoClientId?.value ?? "Not found in Zoho"} className="bg-muted pr-9 font-mono" />
-              <Lock className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            </div>
-          </Field>
-        ) : (
-          <Field label="Client ID (Zoho)" htmlFor="recce-client-id" required error={errors.clientId} hint="New client: the ID created in Zoho">
+        {/* Existing client: its client code is kept automatically (no input). New client: the code created in Zoho. */}
+        {!fromZoho && (
+          <Field label="Client ID (Zoho)" htmlFor="recce-client-id" required error={errors.clientId} hint="New client: the client code created in Zoho">
             <Input id="recce-client-id" className="font-mono tracking-wider" maxLength={20} placeholder="e.g. 30196" value={clientId} aria-invalid={!!errors.clientId} onChange={(e) => setClientId(e.target.value.replace(/[^A-Za-z0-9-]/g, ""))} />
           </Field>
         )}
       </div>
+      {fromZoho && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Lock className="size-3.5" aria-hidden /> Existing client: Client ID <span className="font-mono font-semibold text-foreground">{r.zohoClientId?.value ?? "not found in Zoho"}</span> is kept automatically.
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground">{r.codes ? `Saved by ${r.codes.savedBy ?? "-"} · ${formatDateTimeIST(r.codes.savedAt)}` : "Each code can be used for one project only."}</span>
         <Button variant="brand" onClick={submit} loading={save.isPending} disabled={!changed} style={changed ? { background: TEAL } : undefined}>
@@ -362,6 +406,7 @@ export type RecceStep = "email" | "history" | "codes" | "handover" | "assign";
  */
 export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail: LeadDetail; step: RecceStep; onDone: () => void; onAssigned?: () => void }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
+  const confirm = useConfirmRecceHandover(detail.order._id);
   if (q.isPending)
     return (
       <div className="space-y-4">
@@ -384,7 +429,16 @@ export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail:
       {step === "handover" && (
         <>
           <HandoverTab order={detail.order} mode="recce" locked={locked} />
-          {!locked && <StepFooter orderId={r.orderId} next="Project Code Request Email" onContinue={onDone} full />}
+          {!locked && <StepFooter
+              orderId={r.orderId}
+              next="Project Code Request Email"
+              full
+              // Saves step 1 as done (server-checked), then opens the email drawer.
+              onContinue={async () => {
+                await confirm.mutateAsync(undefined);
+                onDone();
+              }}
+            />}
         </>
       )}
       {step === "assign" &&

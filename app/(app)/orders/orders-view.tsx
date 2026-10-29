@@ -19,6 +19,7 @@ import { useDebounced } from "@/hooks/use-debounced";
 import { useOrders } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
+import { clientIdOf } from "@/lib/api/clients";
 
 /**
  * Order Management: create orders for registered clients and view them with their New / Existing flag.
@@ -145,7 +146,7 @@ export function OrdersView() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="block font-medium">{o.client?.name ?? "-"}</span>
-                        <span className="block text-xs text-muted-foreground">{[o.client?.clientName, o.client?.clientNo, o.client?.city].filter(Boolean).join(" · ")}</span>
+                        <span className="block text-xs text-muted-foreground">{[o.client?.clientName, clientIdOf(o.client, o.clientType), o.client?.city].filter(Boolean).join(" · ")}</span>
                       </td>
                       <td className="px-4 py-3">
                         <ClientTypeBadge type={o.clientType} full />
