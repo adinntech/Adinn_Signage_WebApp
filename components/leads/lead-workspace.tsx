@@ -30,6 +30,7 @@ import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
+import type { SearchOption } from "@/components/ui/search-select";
 import { OrderClientForm } from "@/components/orders/create-order-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/states";
@@ -52,7 +53,7 @@ import {
 } from "@/lib/api/leads";
 import { useAuth } from "@/lib/auth";
 import type { ClientType } from "@/lib/api/clients";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AssignChooser } from "./assign-panels";
 import { RecceBranchPanel, type RecceStep } from "./recce-panel";
@@ -86,6 +87,7 @@ const assignOf = (d: LeadDetail): AssignState => ({
   cs: {
     assignee: d.handover.assignee,
     assignedAt: d.handover.assignedAt,
+    updatedAt: d.handover.updatedAt ?? null,
     type: d.handover.type,
     full: d.handover.full,
     shops: d.handover.shops,
@@ -105,6 +107,7 @@ function historyText(h: LeadHistoryEntry) {
   if (h.action === "BACK") return `Moved back: ${from} → ${to}`;
   if (h.action === "CLOSE") return `Lead closed${h.note ? `: ${h.note}` : ""}`;
   if (h.action === "REOPEN") return "Lead reopened";
+  if (h.action === "STEP" || h.action === "CLIENT_CHANGE") return h.note ?? h.action;
   return h.action;
 }
 
@@ -132,7 +135,7 @@ function CompletedBanner({ detail }: { detail: LeadDetail }) {
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-success">Lead completed: the project is assigned</p>
         <p className="text-sm text-muted-foreground">
-          {detail.lead.completedBy?.name ?? "-"} · {formatDateTime(detail.lead.completedAt)}
+          {detail.lead.completedBy?.name ?? "-"} · {formatDateTimeIST(detail.lead.completedAt)}
           {detail.handover.assignee ? ` · assigned to Client Servicing (${detail.handover.assignee.name})` : detail.recce.assignee ? ` · assigned to the Recce team (${detail.recce.assignee.name})` : ""}
         </p>
       </div>
@@ -174,7 +177,7 @@ function SidePanel({
         <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
           {[
             { icon: UserRound, label: "Created By", value: lead.startedBy?.name ?? order.owner?.name ?? "-" },
-            { icon: CalendarDays, label: "Created Date", value: formatDate(lead.startedAt) },
+            { icon: CalendarDays, label: "Created Date", value: formatDateTimeIST(lead.startedAt) },
             { icon: Building2, label: "Industry", value: order.client.industry || "-" },
             { icon: MapPin, label: "Location", value: [order.client.city, order.client.state].filter(Boolean).join(", ") || "-" },
           ].map((d) => (
@@ -186,7 +189,7 @@ function SidePanel({
             </div>
           ))}
         </dl>
-        {!open && lead.closeReason && <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">Closed {formatDate(lead.closedAt)}: {lead.closeReason}</p>}
+        {!open && lead.closeReason && <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">Closed {formatDateTimeIST(lead.closedAt)}: {lead.closeReason}</p>}
       </Card>
 
       <Card className="p-4">
@@ -205,7 +208,7 @@ function SidePanel({
                   </span>
                   <span className={cn("min-w-0 flex-1 truncate", s.status === "SKIPPED" && "text-muted-foreground line-through")}>{m.label}</span>
                   <span className="shrink-0 text-[11px] text-muted-foreground">
-                    {s.status === "DONE" ? formatDate(s.completedAt) : s.status === "CURRENT" ? <span style={{ color: m.color }}>In Progress</span> : s.status === "SKIPPED" ? "Skipped" : "Pending"}
+                    {s.status === "DONE" ? formatDateTimeIST(s.completedAt) : s.status === "CURRENT" ? <span style={{ color: m.color }}>In Progress</span> : s.status === "SKIPPED" ? "Skipped" : "Pending"}
                   </span>
                 </button>
               </li>
@@ -310,7 +313,7 @@ function LeadStrip({
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
         {[
           { icon: UserRound, label: "Created By", value: lead.startedBy?.name ?? order.owner?.name ?? "-" },
-          { icon: CalendarDays, label: "Created", value: formatDate(lead.startedAt) },
+          { icon: CalendarDays, label: "Created", value: formatDateTimeIST(lead.startedAt) },
           { icon: Building2, label: "Industry", value: order.client.industry || "-" },
           { icon: MapPin, label: "Location", value: [order.client.city, order.client.state].filter(Boolean).join(", ") || "-" },
         ].map((d) => (
@@ -365,7 +368,7 @@ function LeadStrip({
             </Button>
           ) : null)}
       </div>
-      {!open && lead.closeReason && <p className="w-full rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">Closed {formatDate(lead.closedAt)}: {lead.closeReason}</p>}
+      {!open && lead.closeReason && <p className="w-full rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">Closed {formatDateTimeIST(lead.closedAt)}: {lead.closeReason}</p>}
     </Card>
   );
 }
@@ -378,7 +381,7 @@ function HistoryList({ history }: { history: LeadHistoryEntry[] }) {
           <p className="font-medium text-foreground">{historyText(h)}</p>
           {h.action === "BACK" && h.note && <p className="text-muted-foreground">Reason: {h.note}</p>}
           <p className="text-muted-foreground">
-            {h.by || "-"} · {formatDateTime(h.at)}
+            {h.by || "-"} · {formatDateTimeIST(h.at)}
           </p>
         </li>
       ))}
@@ -518,6 +521,8 @@ export function NewLeadWorkspace() {
   const router = useRouter();
   const [drawer, setDrawer] = useState(true);
   const [flag, setFlag] = useState<ClientType | null>(null);
+  /** Client to pre-pick after a switch (a New Client GSTIN that is a Zoho customer -> Existing Client). */
+  const [seed, setSeed] = useState<SearchOption>();
 
   // Next keeps visited routes mounted (React Activity): start again from the client choice on every visit.
   useLayoutEffect(
@@ -529,6 +534,7 @@ export function NewLeadWorkspace() {
   );
 
   const pick = (f: ClientType) => {
+    setSeed(undefined);
     setFlag(f);
     setDrawer(true);
   };
@@ -561,7 +567,15 @@ export function NewLeadWorkspace() {
           <OrderClientForm
             key={flag}
             fixedFlag={flag}
-            onChangeFlag={() => setFlag(null)}
+            onChangeFlag={() => {
+              setSeed(undefined);
+              setFlag(null);
+            }}
+            onFlagChange={(f, p) => {
+              setSeed(p);
+              setFlag(f);
+            }}
+            initialPick={seed}
             withNotes
             submitLabel="Save & Create Order"
             onCancel={() => setDrawer(false)}
@@ -699,16 +713,10 @@ export function LeadWorkspace() {
       if (branchStep.blocked) return <EmptyState icon={LockKeyhole} title="Not open yet" description={branchStep.blocked} />;
       if (selected === "RECCE") {
         const s = (branchStep.history ? "history" : branchStep.step.step) as RecceStep;
-        return <RecceBranchPanel key={s} detail={d} step={s} onDone={() => void finishStep("RECCE", s, s === "handover")} onAssigned={assigned} />;
+        return <RecceBranchPanel key={s} detail={d} step={s} onDone={() => void finishStep("RECCE", s, s === "handover" || s === "email" || s === "codes")} onAssigned={assigned} />;
       }
       return (
-        <HandoverPanel
-          key={branchStep.step.step}
-          detail={d}
-          step={branchStep.step.step === "assign" ? "assign" : "details"}
-          onDone={() => void finishStep("HANDOVER", "details", true)}
-          onAssigned={assigned}
-        />
+<HandoverPanel key={branchStep.step.step} detail={d} onAssigned={assigned} />
       );
     }
     const reached = stageState && (stageState.status === "DONE" || stageState.status === "CURRENT");

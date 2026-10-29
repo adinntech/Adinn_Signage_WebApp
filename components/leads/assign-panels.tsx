@@ -5,21 +5,25 @@ import { ArrowRight, CheckCircle2, CircleAlert, Info, LockKeyhole, UserRoundChec
 import { Button } from "@/components/ui/button";
 import type { LeadDetail } from "@/lib/api/leads";
 import { useHandover } from "@/lib/api/sales";
-import { formatDate } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ASSIGN_META } from "./stage-meta";
 
 type Branch = "HANDOVER" | "RECCE";
 
-/** First step of a route, before any route is taken: saving here takes this route and disables the other one. */
+/**
+ * Before any route is taken. Handover details are shared by both routes; the route is taken by the Client Servicing
+ * assignment or the first project code request email, and the other route is then disabled.
+ */
 export function RouteNotice({ branch }: { branch: Branch }) {
   const m = ASSIGN_META[branch];
   const other = ASSIGN_META[branch === "HANDOVER" ? "RECCE" : "HANDOVER"];
+  const action = branch === "HANDOVER" ? "Assigning the Client Servicing person" : "Sending the project code request email";
   return (
     <p className="flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm" style={{ borderColor: `${m.color}55`, background: m.soft }}>
       <Info className="mt-0.5 size-4 shrink-0" style={{ color: m.color }} aria-hidden />
       <span>
-        Saving here continues with the <b>{m.short}</b> route. The <b>{other.short}</b> route will be disabled for this lead.
+        {action} continues with the <b>{m.short}</b> route, and the <b>{other.short}</b> route is then disabled. Handover details saved here are shared by both routes.
       </span>
     </p>
   );
@@ -82,7 +86,7 @@ export function AssignChooser({ detail, onOpen }: { detail: LeadDetail; onOpen: 
                   <span className="block text-base font-semibold text-primary">{m.label}</span>
                   <span className="block text-xs font-medium" style={{ color: blocked ? undefined : m.color }}>
                     {assigned
-                      ? `Assigned to ${r.assignee!.name}${r.at ? ` · ${formatDate(r.at)}` : ""}`
+                      ? `Assigned to ${r.assignee!.name}${r.at ? ` · ${formatDateTimeIST(r.at)}` : ""}`
                       : chosen === r.k
                         ? "In progress"
                         : chosen

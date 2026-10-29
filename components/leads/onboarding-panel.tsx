@@ -31,7 +31,7 @@ import {
   type OrganisationType,
 } from "@/lib/api/leads";
 import { useOrderEmails } from "@/lib/api/sales";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const COLOR = "#059669";
@@ -372,7 +372,7 @@ export function OnboardingPanel({ orderId, canWrite, open }: { orderId: string; 
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{d.pdf.name}</p>
               <p className="text-xs text-muted-foreground">
-                Generated {formatDateTime(d.pdfAt)}
+                Generated {formatDateTimeIST(d.pdfAt)}
                 {d.pdfBy ? ` by ${d.pdfBy}` : ""}
               </p>
             </div>

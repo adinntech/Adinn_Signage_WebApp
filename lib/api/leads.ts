@@ -44,10 +44,15 @@ export interface LeadStageState {
 }
 export interface LeadHistoryEntry {
   id: string;
-  action: "START" | "COMPLETE" | "BACK" | "CLOSE" | "REOPEN" | "NOTES";
+  /** STEP: a Project Assign step saved; CLIENT_CHANGE: the lead's client was switched. */
+  action: "START" | "COMPLETE" | "BACK" | "CLOSE" | "REOPEN" | "NOTES" | "STEP" | "CLIENT_CHANGE";
   fromStage: LeadStage | null;
   toStage: LeadStage | null;
   note: string | null;
+  step?: string | null;
+  /** Value before / after the change (STEP, CLIENT_CHANGE). */
+  oldValue?: unknown;
+  newValue?: unknown;
   by: string;
   role: string;
   at: string;
@@ -69,6 +74,8 @@ export interface LeadDetail {
     unlocked: boolean;
     assignee: UserRef | null;
     assignedAt: string | null;
+    /** Last save of any handover detail. */
+    updatedAt?: string | null;
     type: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
     /** Assign to Client Servicing toggle: full handover (true) or client details and contacts only (false). */
     full?: boolean;
@@ -84,6 +91,8 @@ export interface LeadDetail {
     assignedAt: string | null;
     projectCode?: string | null;
     estimationCode?: string | null;
+    codesSavedAt?: string | null;
+    clientId?: string | null;
     /** `done`: an email recorded as sent, or not sent only because mail is off (unlocks the codes). */
     emails?: { count: number; lastSentAt: string | null; lastStatus: "SENT" | "FAILED" | "SKIPPED" | null; done?: boolean };
     /** The full handover (type and details) is complete. */
@@ -94,6 +103,8 @@ export interface LeadDetail {
   /** Client Registered: latest onboarding form PDF, and whether the PHP mail service is connected. */
   onboarding: { pdf: FileRef | null; mailEnabled: boolean };
   history: LeadHistoryEntry[];
+  /** Create Project > Change Client: allowed until a Project Assign route is taken. */
+  clientChange?: { allowed: boolean; reason: string | null };
 }
 
 /** Shop list summary for the mind map: rows, valid rows, Total Shops and whether it is verified. */
@@ -251,6 +262,19 @@ export const useCompleteLeadStage = (id: string) => useLeadMutation(id, (b: { st
 export const usePreviousLeadStage = (id: string) => useLeadMutation(id, (b: { stage: LeadStage; note?: string }) => post(`/sales/leads/${id}/back`, b));
 export const useCloseLead = (id: string) => useLeadMutation(id, (reason: string) => post(`/sales/leads/${id}/close`, { reason }));
 export const useReopenLead = (id: string) => useLeadMutation(id, () => post(`/sales/leads/${id}/reopen`, {}));
+/** Create Project > Change Client (same order and lead; the switch is kept in the lead history). */
+export function useChangeLeadClient(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { clientType: "NEW" | "EXISTING"; clientId?: string; zohoId?: string }) => post(`/sales/leads/${id}/client`, b),
+    onSuccess: (data) => {
+      qc.setQueryData(leadKey(id), data);
+      invalidateLead(qc, id);
+      // Order Management shows the order's client too.
+      qc.invalidateQueries({ queryKey: ["sales"] });
+    },
+  });
+}
 export const useLeadInitialNotes = (id: string) =>
   useLeadMutation(id, (initialNotes: string) => api<LeadDetail>(`/sales/leads/${id}/notes`, { method: "PATCH", body: JSON.stringify({ initialNotes }) }));
 

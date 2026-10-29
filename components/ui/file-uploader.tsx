@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileText, UploadCloud, X } from "lucide-react";
+import { Eye, FileText, UploadCloud, X } from "lucide-react";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,7 @@ export function FileUploader({
   disabled,
   invalid,
   compact,
+  onPreview,
 }: {
   id: string;
   files: File[];
@@ -28,6 +29,8 @@ export function FileUploader({
   disabled?: boolean;
   invalid?: boolean;
   compact?: boolean;
+  /** Shows a View button on each picked file (e.g. to check a certificate before saving). */
+  onPreview?: (file: File) => void;
 }) {
   const [drag, setDrag] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -100,6 +103,11 @@ export function FileUploader({
               <FileText className="size-4 shrink-0 text-brand" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{f.name}</span>
               <span className="text-xs text-muted-foreground">{formatBytes(f.size)}</span>
+              {onPreview && (
+                <button type="button" aria-label={`View ${f.name}`} title="View" onClick={() => onPreview(f)} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-brand">
+                  <Eye className="size-4" aria-hidden />
+                </button>
+              )}
               <button
                 type="button"
                 aria-label={`Remove ${f.name}`}

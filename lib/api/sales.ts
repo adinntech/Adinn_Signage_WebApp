@@ -43,8 +43,9 @@ export interface HandoverInfo {
   seenAt?: string;
 }
 export interface ShopListSummary {
-  fileId: string;
-  fileName: string;
+  /** Last uploaded Excel (null when the shops were only typed in). */
+  fileId: string | null;
+  fileName: string | null;
   total: number;
   valid: number;
   warning: number;
@@ -56,8 +57,8 @@ export interface ShopListSummary {
 /** What the BD hands to Client Servicing. */
 export const HANDOVER_TYPES = {
   ASO: { label: "ASO", hint: "Client and contact persons only. Client Servicing calls the client and collects the shop details." },
-  SHOP_DETAILS: { label: "Shop Details Only", hint: "Upload the client's shop list (Excel, no sizes). Total Shops fills in from the valid rows; verify the count." },
-  SHOP_MEASUREMENT: { label: "Shop + Measurement", hint: "Shop list with sizes, plus photos and documents for each shop the client shared." },
+  SHOP_DETAILS: { label: "Shop Details Only", hint: "The client's shop list without sizes: upload the Excel or add shops, then edit them in the table." },
+  SHOP_MEASUREMENT: { label: "Shop + Measurement", hint: "Shop list with sizes (W × H) and up to 10 images per shop." },
 } as const;
 export type HandoverType = keyof typeof HANDOVER_TYPES;
 export interface Order extends Omit<OrderCard, "client"> {
@@ -270,8 +271,25 @@ export interface ZohoClientOption {
   gstin?: string;
   city?: string;
   state?: string;
+  /** Zoho's own customer number (the client's ID in Zoho). */
+  zohoCustomerNo?: string;
+  address?: string;
+  pincode?: string;
+  industry?: string;
+  /** Only on the single-customer read (useZohoClient). */
+  contacts?: { name: string; designation?: string; phone?: string; email?: string; isPrimary: boolean }[];
   clientId: string | null;
   clientNo: string | null;
+}
+
+/** One Zoho customer with its contact persons (read-only Existing Client preview). */
+export function useZohoClient(zohoId: string | undefined) {
+  return useQuery({
+    queryKey: ["sales", "zoho-client", zohoId],
+    queryFn: () => api<ZohoClientOption>(`/sales/zoho-clients/${encodeURIComponent(zohoId!)}`),
+    enabled: !!zohoId,
+    staleTime: 60_000,
+  });
 }
 
 /** Zoho customer search. `mode` is "sample" until the Zoho keys are set on the server. */
@@ -360,13 +378,16 @@ export interface HandoverDoc {
   role?: string;
   createdAt: string;
 }
-/** A voice note for Client Servicing (recorded in the browser or uploaded). */
-export interface VoiceNote {
+/** One message of the handover's Communication & Attachments (chat). */
+export interface HandoverMessage {
   _id: string;
-  file: FileRef;
-  durationSec?: number;
-  uploadedBy?: UserRef;
+  text?: string;
+  attachments: FileRef[];
+  /** A voice note (recorded in the browser or an uploaded audio file). */
+  voice?: { file: FileRef; durationSec?: number } | null;
+  by?: UserRef & { role?: string };
   role?: string;
+  afterHandover?: boolean;
   createdAt: string;
 }
 export interface HandoverState {
@@ -376,43 +397,63 @@ export interface HandoverState {
   handover: (Omit<HandoverInfo, "assignedBy"> & { assignedBy?: UserRef }) | null;
   /** Assign to Client Servicing toggle: full handover (true) or client details and contacts only (false). */
   full: boolean;
-  /** Additional notes for Client Servicing. */
-  notes: string;
-  voiceNotes: VoiceNote[];
   type: HandoverType | null;
+  /** Row counts of the shop table (total = Total Shops) and the last uploaded Excel. */
   shopList: ShopListSummary | null;
-  /** Total Shops: auto-filled with the valid rows of the list (the BD may correct it); must match them to verify. */
   declaredShopTotal: number | null;
-  verified: { at: string; by: string | null } | null;
   shopsWithFiles: number;
   shopFiles: number;
+  /** Uploaded shop list files, newest first. */
   documents: HandoverDoc[];
+  /** Communication & attachments, oldest first. */
+  messages: HandoverMessage[];
   /** Still needed before the order can be handed over (from the server). */
   missing: string[];
 }
 export type ShopState = "VALID" | "WARNING" | "ERROR";
 export interface HandoverShop {
+  rowId: string;
   rowNumber: number;
-  shopName?: string;
-  dealerName?: string;
-  location?: string;
-  district?: string;
-  address1?: string;
-  address2?: string;
-  pincode?: string;
-  mobile?: string;
-  contactPerson?: string;
-  width?: number;
-  height?: number;
-  unit?: string;
-  quantity?: number;
-  boardType?: string;
-  remarks?: string;
+  shopName?: string | null;
+  dealerName?: string | null;
+  location?: string | null;
+  district?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  address3?: string | null;
+  pincode?: string | null;
+  mobile?: string | null;
+  mobileAlt?: string | null;
+  gstin?: string | null;
+  contactPerson?: string | null;
+  width?: number | null;
+  height?: number | null;
+  unit?: string | null;
+  quantity?: number | null;
+  boardType?: string | null;
+  remarks?: string | null;
+  clientSiteCode?: string | null;
   state: ShopState;
   issues: string[];
-  /** Shop + Measurement: photos / documents for this shop. */
+  /** Shop + Measurement: up to 10 images of this shop. */
   attachments?: FileRef[];
+  updatedAt?: string;
+  updatedByName?: string | null;
 }
+/** Text values of a shop row as typed in the table (the server checks and cleans them). */
+export type ShopRowInput = Partial<Record<"shopName" | "dealerName" | "location" | "district" | "address1" | "address2" | "address3" | "pincode" | "mobile" | "mobileAlt" | "gstin" | "contactPerson" | "width" | "height" | "unit" | "boardType" | "quantity" | "remarks" | "clientSiteCode", string>>;
+export interface ShopLog {
+  _id: string;
+  rowId?: string | null;
+  action: "ADD" | "EDIT" | "DELETE" | "IMPORT" | "CLEAR" | "IMAGE_ADD" | "IMAGE_REMOVE";
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  note?: string;
+  by?: UserRef & { role?: string };
+  role?: string;
+  at: string;
+}
+export const MAX_ROW_IMAGES = 10;
 
 const handoverKey = (id: string) => ["sales", "order", id, "handover"] as const;
 
@@ -429,57 +470,62 @@ export function useHandoverShops(id: string, params: { page: number; limit: numb
   });
 }
 
-/** Every handover change refreshes the handover tab, the order header and the order list. */
-function useHandoverMutation<V>(id: string, fn: (v: V) => Promise<HandoverState>) {
+/** Every handover change refreshes the handover tab, the shop rows, the order header and the order list. */
+function useHandoverMutation<V, R = HandoverState>(id: string, fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
     onSuccess: (data) => {
-      qc.setQueryData(handoverKey(id), data);
+      if (data && typeof data === "object" && "orderId" in data) qc.setQueryData(handoverKey(id), data);
+      else qc.invalidateQueries({ queryKey: handoverKey(id), exact: true });
       qc.invalidateQueries({ queryKey: [...handoverKey(id), "shops"] });
+      qc.invalidateQueries({ queryKey: [...handoverKey(id), "history"] });
       invalidateOrder(qc, id);
     },
   });
 }
 
 export const useUploadShopList = (id: string) =>
-  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/shops`, { method: "POST", body }));
+  useHandoverMutation(id, (body: FormData) => api<HandoverState & { imported?: { added: number; updated: number } }>(`/sales/orders/${id}/handover/shops`, { method: "POST", body }));
+/** Clears the whole shop table. */
 export const useRemoveShopList = (id: string) => useHandoverMutation(id, () => api<HandoverState>(`/sales/orders/${id}/handover/shops`, { method: "DELETE" }));
-export const useAddHandoverDocs = (id: string) =>
-  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/documents`, { method: "POST", body }));
-export const useRemoveHandoverDoc = (id: string) =>
-  useHandoverMutation(id, (docId: string) => api<HandoverState>(`/sales/orders/${id}/handover/documents/${docId}`, { method: "DELETE" }));
 export const useSetHandoverType = (id: string) =>
   useHandoverMutation(id, (type: HandoverType) => api<HandoverState>(`/sales/orders/${id}/handover/type`, { method: "PATCH", body: JSON.stringify({ type }) }));
-export const useSetShopTotal = (id: string) =>
-  useHandoverMutation(id, (total: number) => api<HandoverState>(`/sales/orders/${id}/handover/shop-total`, { method: "PATCH", body: JSON.stringify({ total }) }));
-export const useVerifyShops = (id: string) => useHandoverMutation(id, () => api<HandoverState>(`/sales/orders/${id}/handover/verify`, { method: "POST", body: "{}" }));
+export const useAddShopRow = (id: string) =>
+  useHandoverMutation(id, (body: ShopRowInput) => api<HandoverShop>(`/sales/orders/${id}/handover/shop-rows`, { method: "POST", body: JSON.stringify(body) }));
+export const useUpdateShopRow = (id: string) =>
+  useHandoverMutation(id, ({ rowId, body }: { rowId: string; body: ShopRowInput }) => api<HandoverShop>(`/sales/orders/${id}/handover/shop-rows/${rowId}`, { method: "PUT", body: JSON.stringify(body) }));
+export const useDeleteShopRow = (id: string) =>
+  useHandoverMutation(id, (rowId: string) => api<unknown>(`/sales/orders/${id}/handover/shop-rows/${rowId}`, { method: "DELETE" }));
+/** Images of one shop row (Shop + Measurement, up to 10). */
+export const useAddShopImages = (id: string) =>
+  useHandoverMutation(id, ({ rowId, body }: { rowId: string; body: FormData }) => api<HandoverShop>(`/sales/orders/${id}/handover/shop-rows/${rowId}/files`, { method: "POST", body }));
+export const useRemoveShopImage = (id: string) =>
+  useHandoverMutation(id, ({ rowId, fileId }: { rowId: string; fileId: string }) => api<HandoverShop>(`/sales/orders/${id}/handover/shop-rows/${rowId}/files/${fileId}`, { method: "DELETE" }));
 
-/** Photos / documents of one shop row (Shop + Measurement). Refreshes the rows and the handover counts. */
-export function useShopFiles(id: string) {
-  const qc = useQueryClient();
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: handoverKey(id) });
-  };
-  const add = useMutation({
-    mutationFn: ({ row, body }: { row: number; body: FormData }) => api<unknown>(`/sales/orders/${id}/handover/shops/${row}/files`, { method: "POST", body }),
-    onSuccess: refresh,
+/** Changes of one shop row (or of the whole table), newest first. */
+export function useShopHistory(id: string, rowId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: [...handoverKey(id), "history", rowId ?? "all"],
+    queryFn: () => api<ShopLog[]>(`/sales/orders/${id}/handover/shop-history${qs({ rowId })}`),
+    enabled,
   });
-  const remove = useMutation({
-    mutationFn: ({ row, fileId }: { row: number; fileId: string }) => api<unknown>(`/sales/orders/${id}/handover/shops/${row}/files/${fileId}`, { method: "DELETE" }),
-    onSuccess: refresh,
-  });
-  return { add, remove };
+}
+
+/** The shop table as it is now (Excel with a Row ID column, so it can be edited and uploaded again). */
+export async function downloadShopExcel(id: string) {
+  const { blob, fileName } = await apiBlob(`/sales/orders/${id}/handover/shops/export`);
+  saveBlob(blob, fileName ?? "shop-list.xlsx");
 }
 
 export const useSetHandoverScope = (id: string) =>
   useHandoverMutation(id, (full: boolean) => api<HandoverState>(`/sales/orders/${id}/handover/scope`, { method: "PATCH", body: JSON.stringify({ full }) }));
-export const useSetHandoverNotes = (id: string) =>
-  useHandoverMutation(id, (notes: string) => api<HandoverState>(`/sales/orders/${id}/handover/notes`, { method: "PATCH", body: JSON.stringify({ notes }) }));
-export const useAddVoiceNote = (id: string) =>
-  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/voice-notes`, { method: "POST", body }));
-export const useRemoveVoiceNote = (id: string) =>
-  useHandoverMutation(id, (noteId: string) => api<HandoverState>(`/sales/orders/${id}/handover/voice-notes/${noteId}`, { method: "DELETE" }));
+
+/** Communication & attachments: a text, files, or one voice note (`voice=1` + `durationSec`) as multipart. */
+export const useAddHandoverMessage = (id: string) =>
+  useHandoverMutation(id, (body: FormData) => api<HandoverState>(`/sales/orders/${id}/handover/messages`, { method: "POST", body }));
+export const useRemoveHandoverMessage = (id: string) =>
+  useHandoverMutation(id, (messageId: string) => api<HandoverState>(`/sales/orders/${id}/handover/messages/${messageId}`, { method: "DELETE" }));
 
 /** Hands the order to Client Servicing. At Project Assign this also completes the lead, so the lead is refreshed too. */
 export function useAssignClientServicing(id: string) {

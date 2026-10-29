@@ -25,6 +25,7 @@ export function SearchSelect({
   onClear,
   inputClassName,
   action,
+  actionPlacement = "bottom",
   disabled,
 }: {
   id: string;
@@ -42,6 +43,8 @@ export function SearchSelect({
   inputClassName?: string;
   /** Pinned last row of the list (e.g. "Add Industry"); reachable with the arrow keys like an option. */
   action?: { label: string; onSelect: () => void };
+  /** "top": the action is the first row, shown whatever the search finds (e.g. "+ Add New Client"). */
+  actionPlacement?: "top" | "bottom";
   disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -49,7 +52,12 @@ export function SearchSelect({
   const boxRef = React.useRef<HTMLDivElement>(null);
   const listId = `${id}-list`;
   const total = options.length + (action ? 1 : 0);
-  const onAction = action && active === options.length;
+  // With the action on top it takes row 0 and the options move down one row.
+  const top = !!action && actionPlacement === "top";
+  const shift = top ? 1 : 0;
+  const actionRow = top ? 0 : options.length;
+  const onAction = action && active === actionRow;
+  const activeOption = options[active - shift];
 
   React.useEffect(() => {
     if (!open) return;
@@ -69,6 +77,24 @@ export function SearchSelect({
     action?.onSelect();
   };
 
+  const actionItem = action && (
+    <li
+      id={`${id}-action`}
+      role="option"
+      aria-selected={false}
+      onMouseDown={(e) => e.preventDefault()}
+      onMouseEnter={() => setActive(actionRow)}
+      onClick={runAction}
+      className={cn(
+        "sticky z-10 -mx-1 flex cursor-pointer items-center gap-2 border-border bg-surface px-4 py-2.5 text-sm font-semibold text-brand",
+        top ? "-top-1 -mt-1 mb-1 border-b" : "-bottom-1 -mb-1 mt-1 border-t",
+        onAction && "bg-brand-soft",
+      )}
+    >
+      <Plus className="size-4" aria-hidden /> {action.label}
+    </li>
+  );
+
   return (
     <div ref={boxRef} className="relative">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -79,7 +105,7 @@ export function SearchSelect({
         aria-controls={listId}
         aria-autocomplete="list"
         aria-invalid={invalid || undefined}
-        aria-activedescendant={open ? (options[active] ? `${id}-opt-${active}` : onAction ? `${id}-action` : undefined) : undefined}
+        aria-activedescendant={open ? (activeOption ? `${id}-opt-${active - shift}` : onAction ? `${id}-action` : undefined) : undefined}
         autoComplete="off"
         disabled={disabled}
         value={open ? query : (value?.label ?? query)}
@@ -98,9 +124,9 @@ export function SearchSelect({
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActive((a) => Math.max(a - 1, 0));
-          } else if (e.key === "Enter" && open && options[active]) {
+          } else if (e.key === "Enter" && open && activeOption) {
             e.preventDefault();
-            pick(options[active]!);
+            pick(activeOption);
           } else if (e.key === "Enter" && open && onAction) {
             e.preventDefault();
             runAction();
@@ -132,6 +158,7 @@ export function SearchSelect({
       )}
       {open && !disabled && (
         <ul id={listId} role="listbox" className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-card">
+          {top && actionItem}
           {options.length === 0 ? (
             <li className="px-3 py-2.5 text-sm text-muted-foreground">{loading ? "Searching..." : emptyText}</li>
           ) : (
@@ -142,9 +169,9 @@ export function SearchSelect({
                 role="option"
                 aria-selected={value?.value === o.value}
                 onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setActive(i)}
+                onMouseEnter={() => setActive(i + shift)}
                 onClick={() => pick(o)}
-                className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm", i === active && "bg-muted")}
+                className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm", i + shift === active && "bg-muted")}
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{o.label}</span>
@@ -154,22 +181,7 @@ export function SearchSelect({
               </li>
             ))
           )}
-          {action && (
-            <li
-              id={`${id}-action`}
-              role="option"
-              aria-selected={false}
-              onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => setActive(options.length)}
-              onClick={runAction}
-              className={cn(
-                "sticky -bottom-1 -mx-1 -mb-1 mt-1 flex cursor-pointer items-center gap-2 border-t border-border bg-surface px-4 py-2.5 text-sm font-semibold text-brand",
-                onAction && "bg-brand-soft",
-              )}
-            >
-              <Plus className="size-4" aria-hidden /> {action.label}
-            </li>
-          )}
+          {!top && actionItem}
         </ul>
       )}
     </div>

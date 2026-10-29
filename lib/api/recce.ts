@@ -1,8 +1,9 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiPage } from "@/lib/api";
+import { api, apiBlob, apiPage, saveBlob } from "@/lib/api";
 import type { ClientContact, ClientFile, CustomField } from "./clients";
 import { qs } from "./common";
-import type { HandoverDoc, HandoverShop, HandoverType, SentEmail, ShopListSummary, VoiceNote } from "./sales";
+import type { FileRef } from "./files";
+import type { HandoverDoc, HandoverMessage, HandoverShop, HandoverType, SentEmail, ShopListSummary } from "./sales";
 
 interface UserRef {
   _id: string;
@@ -18,10 +19,17 @@ export interface RecceState {
   orderNo: string;
   /** The lead is open at Project Assign and Client Servicing has not been assigned. */
   unlocked: boolean;
-  codes: { projectCode: string; estimationCode: string; savedAt: string | null; savedBy: string | null } | null;
+  codes: { projectCode: string; estimationCode: string; clientId?: string | null; savedAt: string | null; savedBy: string | null } | null;
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
-  /** Step 1 done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
+  /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
+  /** Handover Type & Details (step 1) complete: unlocks the request email. */
+  handoverReady?: boolean;
+  clientType?: "NEW" | "EXISTING";
+  /** Client ID in Zoho: Existing clients have it from Zoho (read-only); New clients type it at Project Code. */
+  zohoClientId?: { value: string | null; fromZoho: boolean };
+  /** Sent automatically with every request email (besides the client details and contacts in the message). */
+  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; documents: FileRef[] };
   /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
   route: "HANDOVER" | "RECCE" | null;
   /** Client contacts with both a mobile number and an email (they go on the operations project). */
@@ -77,7 +85,7 @@ export const useSendCodeRequest = (id: string) =>
   );
 
 export const useSaveRecceCodes = (id: string) =>
-  useRecceMutation(id, (body: { projectCode: string; estimationCode: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
+  useRecceMutation(id, (body: { projectCode: string; estimationCode: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
 
 /** Creates the operations project, assigns it and completes the lead. */
 export const useAssignRecce = (id: string) =>
@@ -94,6 +102,8 @@ export interface ProjectHandover {
   orderNo: string;
   projectCode: string | null;
   estimationCode: string | null;
+  /** Client ID in Zoho (typed for a New client at Project Code, from Zoho for an Existing one). */
+  clientId?: string | null;
   assignedAt: string | null;
   assignedBy: string | null;
   note: string | null;
@@ -110,8 +120,8 @@ export interface ProjectHandover {
     contacts: ClientContact[];
   } | null;
   type: HandoverType | null;
-  notes: string;
-  voiceNotes: VoiceNote[];
+  /** Communication & attachments (chat) from the BD. */
+  messages: HandoverMessage[];
   documents: HandoverDoc[];
   shopList: ShopListSummary | null;
   declaredShopTotal: number | null;
@@ -122,7 +132,13 @@ export function useProjectHandover(projectId: string) {
   return useQuery({ queryKey: ["projects", projectId, "bd-handover"], queryFn: () => api<ProjectHandover | null>(`/projects/${projectId}/bd-handover`) });
 }
 
-export function useProjectHandoverShops(projectId: string, params: { page: number; limit: number }, enabled = true) {
+/** The BD's shop table as it is now, as Excel (Operations / Recce view of a project). */
+export async function downloadProjectShopExcel(projectId: string) {
+  const { blob, fileName } = await apiBlob(`/projects/${projectId}/bd-handover/shops/export`);
+  saveBlob(blob, fileName ?? "shop-list.xlsx");
+}
+
+export function useProjectHandoverShops(projectId: string, params: { page: number; limit: number; state?: string }, enabled = true) {
   return useQuery({
     queryKey: ["projects", projectId, "bd-handover", "shops", params],
     queryFn: () => apiPage<HandoverShop>(`/projects/${projectId}/bd-handover/shops${qs(params)}`),

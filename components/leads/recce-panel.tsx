@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { BadgeCheck, Check, CircleAlert, ExternalLink, Save, Send } from "lucide-react";
+import { BadgeCheck, Check, CircleAlert, ExternalLink, FileSpreadsheet, Lock, Paperclip, Save, Send, UserRound } from "lucide-react";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
 import { EmailHistory } from "@/components/sales/email-history";
@@ -22,16 +22,44 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import type { LeadDetail } from "@/lib/api/leads";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { RouteNotice, StepFooter } from "./assign-panels";
 import { ASSIGN_META } from "./stage-meta";
 
 const TEAL = ASSIGN_META.RECCE.color;
 const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
 
+/** What goes with every request email by itself: client details + contacts (in the message), shop Excel, handover documents. */
+function AutoIncluded({ r }: { r: RecceState }) {
+  const a = r.autoAttachments;
+  return (
+    <div className="mb-3 space-y-1.5 rounded-lg bg-[#ecfeff] px-3 py-2 text-xs" data-testid="auto-attachments">
+      <p className="font-semibold text-[#0e7490]">Included automatically</p>
+      <p className="flex items-center gap-1.5">
+        <UserRound className="size-3.5 shrink-0 text-[#0891b2]" aria-hidden /> Client details and contact persons (in the message)
+      </p>
+      {a?.shopExcel && (
+        <p className="flex items-center gap-1.5">
+          <FileSpreadsheet className="size-3.5 shrink-0 text-[#0891b2]" aria-hidden /> Shop list Excel: {a.shopExcel.rows} shop{a.shopExcel.rows === 1 ? "" : "s"}
+          {a.shopExcel.sized ? " with sizes" : ""} (as the table is when you send)
+        </p>
+      )}
+      {!!a?.documents.length && (
+        <p className="flex items-start gap-1.5">
+          <Paperclip className="mt-0.5 size-3.5 shrink-0 text-[#0891b2]" aria-hidden />
+          <span>
+            {a.documents.length} document{a.documents.length === 1 ? "" : "s"} from Communication & Attachments: {a.documents.map((d) => d.name).join(", ")}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
- * Step 1: ask for the project code by email (To / CC / subject / message / attachments). An email recorded as sent (or
- * not sent only because mail is off) completes the step; a failed one stays here to be sent again.
+ * Step 2: ask for the project code (and, for a New client, the Zoho Client ID) by email. The client details, contacts,
+ * shop Excel and handover documents go automatically; more files can be added. An email recorded as sent (or not sent
+ * only because mail is off) completes the step; a failed one stays here to be sent again.
  */
 function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean; onSent: () => void }) {
   const send = useSendCodeRequest(r.orderId);
@@ -39,7 +67,7 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
   if (locked)
     return (
       <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-        {r.requests.count} email{r.requests.count === 1 ? "" : "s"} recorded, last on {formatDateTime(r.requests.lastSentAt)}. Open Email History on the mind map to see them.
+        {r.requests.count} email{r.requests.count === 1 ? "" : "s"} recorded, last on {formatDateTimeIST(r.requests.lastSentAt)}. Open Email History on the mind map to see them.
       </p>
     );
   return (
@@ -56,8 +84,13 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
         mailEnabled={r.mail.enabled}
         draft={r.draft}
         attachments={[]}
-        attachmentLabel="Attachments (optional): PDF, images, Word, PowerPoint, Excel"
-        attachmentArea={<FileUploader id="recce-mail-files" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple compact hint="Up to 10 files" />}
+        attachmentLabel="Attachments"
+        attachmentArea={
+          <>
+            <AutoIncluded r={r} />
+            <FileUploader id="recce-mail-files" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple compact hint="More files (optional): PDF, images, Word, PowerPoint, Excel · up to 10" />
+          </>
+        }
         sending={send.isPending}
         onSend={async (v) => {
           const fd = new FormData();
@@ -74,33 +107,40 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
   );
 }
 
-/** Step 2: the 8-digit project code and the EST- estimation code. */
+/**
+ * Step 3: the 8-digit project code and the EST- estimation code, with the Client ID in Zoho: typed for a New client
+ * (created in Zoho after the request email), read-only from Zoho for an Existing client.
+ */
 function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onSaved: () => void }) {
   const toast = useToast();
   const save = useSaveRecceCodes(r.orderId);
   const [project, setProject] = useState(r.codes?.projectCode ?? "");
   const [est, setEst] = useState((r.codes?.estimationCode ?? "").replace(/^EST-/, ""));
+  const fromZoho = !!r.zohoClientId?.fromZoho;
+  const [clientId, setClientId] = useState(r.codes?.clientId ?? (fromZoho ? "" : (r.zohoClientId?.value ?? "")));
   const [errors, setErrors] = useState<Record<string, string>>({});
   if (locked && r.codes)
     return (
-      <dl className="grid gap-4 sm:grid-cols-3">
+      <dl className="grid gap-4 sm:grid-cols-4">
         <DetailItem label="Project Code">
           <span className="font-mono text-base">{r.codes.projectCode}</span>
         </DetailItem>
         <DetailItem label="Estimation Code">
           <span className="font-mono text-base">{r.codes.estimationCode}</span>
         </DetailItem>
-        <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTime(r.codes.savedAt)}` : formatDateTime(r.codes.savedAt)}</DetailItem>
+        <DetailItem label={fromZoho ? "Zoho Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
+        <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTimeIST(r.codes.savedAt)}` : formatDateTimeIST(r.codes.savedAt)}</DetailItem>
       </dl>
     );
   const submit = async () => {
     const e: Record<string, string> = {};
     if (!/^\d{8}$/.test(project)) e.projectCode = "Project code must be exactly 8 digits";
     if (!/^\d{6}$/.test(est)) e.estimationCode = "Enter the 6 digits after EST-";
+    if (!fromZoho && !/^[A-Za-z0-9-]{2,20}$/.test(clientId.trim())) e.clientId = "Enter the Client ID created in Zoho (2-20 letters, digits or -)";
     setErrors(e);
     if (Object.keys(e).length) return;
     try {
-      await save.mutateAsync({ projectCode: project, estimationCode: `EST-${est}` });
+      await save.mutateAsync({ projectCode: project, estimationCode: `EST-${est}`, clientId: fromZoho ? undefined : clientId.trim() });
       toast("Project and estimation codes saved");
       onSaved();
     } catch (err) {
@@ -109,10 +149,10 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       toast(errorMessage(err), "error");
     }
   };
-  const changed = project !== (r.codes?.projectCode ?? "") || `EST-${est}` !== (r.codes?.estimationCode ?? "EST-");
+  const changed = project !== (r.codes?.projectCode ?? "") || `EST-${est}` !== (r.codes?.estimationCode ?? "EST-") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? ""));
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Project Code" htmlFor="recce-project-code" required error={errors.projectCode} hint="8 digits, e.g. 22070277">
           <Input
             id="recce-project-code"
@@ -138,9 +178,21 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
             />
           </div>
         </Field>
+        {fromZoho ? (
+          <Field label="Zoho Client ID" htmlFor="recce-client-id" hint="Existing client: taken from Zoho">
+            <div className="relative">
+              <Input id="recce-client-id" readOnly value={r.zohoClientId?.value ?? "Not found in Zoho"} className="bg-muted pr-9 font-mono" />
+              <Lock className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            </div>
+          </Field>
+        ) : (
+          <Field label="Client ID (Zoho)" htmlFor="recce-client-id" required error={errors.clientId} hint="New client: the ID created in Zoho">
+            <Input id="recce-client-id" className="font-mono tracking-wider" maxLength={20} placeholder="e.g. 30196" value={clientId} aria-invalid={!!errors.clientId} onChange={(e) => setClientId(e.target.value.replace(/[^A-Za-z0-9-]/g, ""))} />
+          </Field>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">{r.codes ? `Saved by ${r.codes.savedBy ?? "-"} · ${formatDateTime(r.codes.savedAt)}` : "Each code can be used for one project only."}</span>
+        <span className="text-xs text-muted-foreground">{r.codes ? `Saved by ${r.codes.savedBy ?? "-"} · ${formatDateTimeIST(r.codes.savedAt)}` : "Each code can be used for one project only."}</span>
         <Button variant="brand" onClick={submit} loading={save.isPending} disabled={!changed} style={changed ? { background: TEAL } : undefined}>
           <Save className="size-4" aria-hidden /> Save Codes
         </Button>
@@ -193,7 +245,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
           ))}
           {r.projectContacts === 0 && (
             <li className="flex items-center gap-2">
-              <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden /> Add a contact person with both a mobile number and an email (step 3): the Recce team calls them
+              <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden /> Add a contact person with both a mobile number and an email (step 1): the Recce team calls them
             </li>
           )}
         </ul>
@@ -286,7 +338,7 @@ function AssignedBanner({ r }: { r: RecceState }) {
       </span>
       <div className="min-w-0 flex-1 text-sm">
         <p>
-          Assigned to <b>{r.assignee?.name}</b> (Recce team) on {formatDate(r.assignedAt)}
+          Assigned to <b>{r.assignee?.name}</b> (Recce team) on {formatDateTimeIST(r.assignedAt)}
           {r.assignedBy ? ` by ${r.assignedBy}` : ""}.
         </p>
         <p className="text-muted-foreground">
@@ -308,9 +360,9 @@ function AssignedBanner({ r }: { r: RecceState }) {
 export type RecceStep = "email" | "history" | "codes" | "handover" | "assign";
 
 /**
- * Project Assign > Assign to Recce Team, one step at a time (opened from the mind map): the project code request email,
- * Email History, the codes, the handover (same details as for Client Servicing, always in full) and the Recce /
- * Operations person. `onDone` moves on to the next step; assigning creates the operations project and completes the lead.
+ * Project Assign > Assign to Recce Team, one step at a time (opened from the mind map): the handover (same details as
+ * for Client Servicing, always in full), the project code request email (+ Email History), the codes with the Client
+ * ID, and the Recce / Operations person. `onDone` moves on; assigning creates the operations project and completes the lead.
  */
 export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail: LeadDetail; step: RecceStep; onDone: () => void; onAssigned?: () => void }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
@@ -329,14 +381,14 @@ export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail:
   return (
     <div className="space-y-4">
       {assigned && <AssignedBanner r={r} />}
-      {step === "email" && !locked && !r.route && <RouteNotice branch="RECCE" />}
+      {step === "handover" && !locked && !r.route && <RouteNotice branch="RECCE" />}
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
       {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked} />}
       {step === "codes" && <CodesStep r={r} locked={locked} onSaved={onDone} />}
       {step === "handover" && (
         <>
           <HandoverTab order={detail.order} mode="recce" locked={locked} />
-          {!locked && <StepFooter orderId={r.orderId} next="Assign to Recce / Operations" onContinue={onDone} full />}
+          {!locked && <StepFooter orderId={r.orderId} next="Project Code Request Email" onContinue={onDone} full />}
         </>
       )}
       {step === "assign" &&

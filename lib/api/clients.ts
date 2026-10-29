@@ -30,6 +30,8 @@ export interface Client {
   code: string;
   /** BD CRM Client ID, e.g. CLI-0001. */
   clientNo?: string;
+  /** Client ID in Zoho (customer number): from Zoho for Existing clients, saved at Project Code for New ones. */
+  zohoCustomerNo?: string;
   /** Optional client name typed by BD, shown alongside the company name. */
   clientName?: string;
   email?: string;
@@ -205,6 +207,29 @@ export function useGstCertificates() {
     onSuccess: done,
   });
   return { upload, remove };
+}
+
+/** Who already has a GSTIN: another client in Client Management, or a Zoho customer (an Existing Client). */
+export interface GstinCheck {
+  gstin: string;
+  local: { id: string; name: string; clientNo: string | null } | null;
+  zoho: { zohoId: string; name: string; clientName: string | null; email: string | null; phone: string | null; city: string | null; state: string | null } | null;
+  /** false: Zoho could not be asked, so "not in Zoho" is unconfirmed (never treated as a match). */
+  zohoChecked: boolean;
+}
+export const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
+export const gstinCheckKey = (gstin: string, exceptId?: string) => ["clients", "gstin-check", gstin, exceptId ?? null] as const;
+
+/** Runs only for a complete, valid GSTIN; `exceptId` is the client being edited (or the draft being resumed). */
+export function useGstinCheck(gstin: string, exceptId?: string) {
+  const g = gstin.trim().toUpperCase();
+  return useQuery({
+    queryKey: gstinCheckKey(g, exceptId),
+    queryFn: () => api<GstinCheck>(`/clients/gstin-check${qs({ gstin: g, exceptId })}`),
+    enabled: GSTIN_PATTERN.test(g),
+    staleTime: 30_000,
+    retry: false,
+  });
 }
 
 export function useDeactivateClient() {

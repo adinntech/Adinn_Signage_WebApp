@@ -1,22 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Download, Loader2, Mic, Pause, Play, Square, Trash2, Upload, X } from "lucide-react";
+import { motion } from "framer-motion";
+import { Download, Loader2, Mic, Pause, Play, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { downloadFile, fileUrl, type FileSource } from "@/lib/api/files";
-import { useAddVoiceNote, useRemoveVoiceNote, type VoiceNote } from "@/lib/api/sales";
-import { formatDateTime } from "@/lib/format";
+import { downloadFile, fileUrl, type FileRef, type FileSource } from "@/lib/api/files";
 import { cn } from "@/lib/utils";
 
 /** Recordings stop on their own at 5 minutes; uploaded files longer than that are refused. */
 export const VOICE_MAX_SEC = 300;
-const AUDIO_ACCEPT = ".mp3,.m4a,.webm,.ogg,.wav";
+export const AUDIO_ACCEPT = ".mp3,.m4a,.webm,.ogg,.wav";
+export const isAudioName = (name: string) => /\.(mp3|m4a|webm|ogg|wav)$/i.test(name);
 
-const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+export const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 
 /** First recorder format the browser supports, with the file extension the server accepts for it. */
 function recorderFormat() {
@@ -31,7 +29,7 @@ function recorderFormat() {
 }
 
 /** Length of an audio file, read from its metadata (null when the browser cannot tell). */
-function audioDuration(file: File) {
+export function audioDuration(file: File) {
   return new Promise<number | null>((resolve) => {
     const url = URL.createObjectURL(file);
     const a = new Audio();
@@ -48,23 +46,20 @@ function audioDuration(file: File) {
   });
 }
 
-interface Take {
-  blob: Blob;
-  url: string;
-  sec: number;
-  ext: string;
-}
-
-/** Record a voice note in the browser (microphone), listen to it, then save or discard it. */
-function Recorder({ disabled, onSave, saving }: { disabled: boolean; onSave: (file: File, sec: number) => Promise<boolean>; saving: boolean }) {
+/**
+ * WhatsApp-style voice note: tap the mic to record, Pause / Resume as needed, Stop sends it right away (`onDone`),
+ * the bin discards it. Recording stops on its own at 5 minutes. Only recorded time counts (paused time does not).
+ */
+export function VoiceRecorder({ disabled, onDone, onActiveChange }: { disabled?: boolean; onDone: (file: File, sec: number) => void; onActiveChange?: (active: boolean) => void }) {
   const toast = useToast();
-  const [recording, setRecording] = useState(false);
+  const [state, setState] = useState<"idle" | "recording" | "paused">("idle");
   const [sec, setSec] = useState(0);
-  const [take, setTake] = useState<Take | null>(null);
   const rec = useRef<MediaRecorder | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const started = useRef(0);
   const stream = useRef<MediaStream | null>(null);
+  const elapsed = useRef(0);
+  const lastTick = useRef(0);
+  const discardNext = useRef(false);
 
   const release = () => {
     if (timer.current) clearInterval(timer.current);
@@ -72,123 +67,121 @@ function Recorder({ disabled, onSave, saving }: { disabled: boolean; onSave: (fi
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   };
-  // Leaving the screen mid-recording releases the microphone.
+  // Leaving the screen mid-recording releases the microphone without sending.
   useEffect(
     () => () => {
-      if (rec.current?.state === "recording") rec.current.stop();
+      discardNext.current = true;
+      if (rec.current && rec.current.state !== "inactive") rec.current.stop();
       release();
     },
     [],
   );
+  const set = (s: typeof state) => {
+    setState(s);
+    onActiveChange?.(s !== "idle");
+  };
 
-  const stop = () => {
-    if (rec.current?.state === "recording") rec.current.stop();
+  const tick = () => {
+    const now = Date.now();
+    elapsed.current += (now - lastTick.current) / 1000;
+    lastTick.current = now;
+    setSec(elapsed.current);
+    if (elapsed.current >= VOICE_MAX_SEC) finish(false);
   };
 
   const start = async () => {
     const fmt = recorderFormat();
-    if (!fmt || !navigator.mediaDevices?.getUserMedia) return toast("This browser cannot record audio. Upload an audio file instead.", "error");
+    if (!fmt || !navigator.mediaDevices?.getUserMedia) return toast("This browser cannot record audio. Attach an audio file instead.", "error");
     let s: MediaStream;
     try {
       s = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      return toast("Microphone access was blocked. Allow the microphone for this site, or upload an audio file.", "error");
+      return toast("Microphone access was blocked. Allow the microphone for this site, or attach an audio file.", "error");
     }
     stream.current = s;
     const chunks: Blob[] = [];
     const r = new MediaRecorder(s, { mimeType: fmt.mime });
     r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     r.onstop = () => {
-      const length = Math.min(VOICE_MAX_SEC, Math.round((Date.now() - started.current) / 1000));
+      const length = Math.min(VOICE_MAX_SEC, Math.round(elapsed.current));
       release();
-      setRecording(false);
+      set("idle");
+      if (discardNext.current || !chunks.length) return;
       const blob = new Blob(chunks, { type: fmt.mime.split(";")[0] });
-      setTake({ blob, url: URL.createObjectURL(blob), sec: length, ext: fmt.ext });
+      const name = `Voice_note_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}.${fmt.ext}`;
+      onDone(new File([blob], name, { type: blob.type }), Math.max(1, length));
     };
     rec.current = r;
-    started.current = Date.now();
+    discardNext.current = false;
+    elapsed.current = 0;
+    lastTick.current = Date.now();
     setSec(0);
-    setTake(null);
-    setRecording(true);
+    set("recording");
     r.start(1000);
-    timer.current = setInterval(() => {
-      const elapsed = (Date.now() - started.current) / 1000;
-      setSec(elapsed);
-      if (elapsed >= VOICE_MAX_SEC) stop();
-    }, 250);
+    timer.current = setInterval(tick, 250);
   };
 
-  const discard = () => {
-    if (take) URL.revokeObjectURL(take.url);
-    setTake(null);
+  const pause = () => {
+    if (rec.current?.state !== "recording") return;
+    tick();
+    rec.current.pause();
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+    set("paused");
   };
-
-  const save = async () => {
-    if (!take) return;
-    const name = `Voice_note_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}.${take.ext}`;
-    if (await onSave(new File([take.blob], name, { type: take.blob.type }), take.sec)) discard();
+  const resume = () => {
+    if (rec.current?.state !== "paused") return;
+    rec.current.resume();
+    lastTick.current = Date.now();
+    timer.current = setInterval(tick, 250);
+    set("recording");
   };
+  /** Stop: send (`discard` false) or throw away. */
+  function finish(discard: boolean) {
+    if (!rec.current || rec.current.state === "inactive") return;
+    if (rec.current.state === "recording") tick();
+    discardNext.current = discard;
+    rec.current.stop();
+  }
 
+  if (state === "idle")
+    return (
+      <Button type="button" variant="ghost" size="sm" className="size-10 shrink-0 rounded-full p-0" onClick={start} disabled={disabled} aria-label="Record a voice note" title="Record a voice note">
+        <Mic className="size-5" aria-hidden />
+      </Button>
+    );
+  const live = state === "recording";
   return (
-    <div className="rounded-xl border border-border bg-background p-4">
-      <AnimatePresence mode="wait" initial={false}>
-        {recording ? (
-          <motion.div key="rec" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-wrap items-center gap-4">
-            <span className="relative flex size-11 items-center justify-center">
-              <motion.span className="absolute inset-0 rounded-full bg-danger/25" animate={{ scale: [1, 1.5, 1], opacity: [0.7, 0, 0.7] }} transition={{ duration: 1.4, repeat: Infinity }} />
-              <span className="relative flex size-11 items-center justify-center rounded-full bg-danger text-white">
-                <Mic className="size-5" aria-hidden />
-              </span>
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-danger">Recording...</p>
-              <div className="mt-1 flex items-center gap-3">
-                <span className="font-mono text-lg font-bold tabular-nums text-foreground" aria-live="polite">
-                  {clock(sec)}
-                </span>
-                <span className="text-xs text-muted-foreground">of {clock(VOICE_MAX_SEC)}</span>
-                <span className="flex h-6 items-end gap-0.5" aria-hidden>
-                  {Array.from({ length: 14 }).map((_, i) => (
-                    <motion.span key={i} className="w-1 rounded-full bg-danger/70" animate={{ height: ["20%", `${40 + ((i * 37) % 60)}%`, "20%"] }} transition={{ duration: 0.6 + (i % 4) * 0.15, repeat: Infinity }} />
-                  ))}
-                </span>
-              </div>
-              <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-                <div className="h-full bg-danger transition-[width]" style={{ width: `${Math.min(100, (sec / VOICE_MAX_SEC) * 100)}%` }} />
-              </div>
-            </div>
-            <Button variant="outline" className="border-danger/40 text-danger hover:bg-danger-soft" onClick={stop}>
-              <Square className="size-4 fill-current" aria-hidden /> Stop
-            </Button>
-          </motion.div>
-        ) : take ? (
-          <motion.div key="take" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
-            <p className="text-sm font-medium text-foreground">New voice note · {clock(take.sec)}</p>
-            <audio src={take.url} controls className="h-10 w-full" />
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="outline" onClick={discard} disabled={saving}>
-                <X className="size-4" aria-hidden /> Discard
-              </Button>
-              <Button variant="brand" onClick={save} loading={saving}>
-                <Upload className="size-4" aria-hidden /> Save Voice Note
-              </Button>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-wrap items-center gap-3">
-            <Button variant="brand-outline" onClick={start} disabled={disabled}>
-              <Mic className="size-4" aria-hidden /> Record Voice Note
-            </Button>
-            <span className="text-xs text-muted-foreground">Up to 5 minutes. Listen to it before you save.</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-danger/30 bg-danger-soft/60 py-1 pl-2 pr-1" role="group" aria-label="Recording a voice note">
+      <Button type="button" variant="ghost" size="sm" className="size-9 shrink-0 rounded-full p-0 text-danger" onClick={() => finish(true)} aria-label="Discard the recording" title="Discard">
+        <X className="size-4" aria-hidden />
+      </Button>
+      <span className="relative flex size-3 shrink-0">
+        {live && <motion.span className="absolute inset-0 rounded-full bg-danger/50" animate={{ scale: [1, 2, 1], opacity: [0.8, 0, 0.8] }} transition={{ duration: 1.2, repeat: Infinity }} />}
+        <span className={cn("relative size-3 rounded-full", live ? "bg-danger" : "bg-warning")} />
+      </span>
+      <span className="font-mono text-sm font-semibold tabular-nums" aria-live="polite">
+        {clock(sec)}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{live ? "Recording…" : "Paused"}</span>
+      {live ? (
+        <Button type="button" variant="outline" size="sm" className="h-9 rounded-full" onClick={pause} aria-label="Pause recording">
+          <Pause className="size-4" aria-hidden /> Pause
+        </Button>
+      ) : (
+        <Button type="button" variant="outline" size="sm" className="h-9 rounded-full" onClick={resume} aria-label="Resume recording">
+          <Mic className="size-4" aria-hidden /> Resume
+        </Button>
+      )}
+      <Button type="button" variant="brand" size="sm" className="h-9 rounded-full" onClick={() => finish(false)} aria-label="Stop and send the voice note">
+        <Square className="size-3.5 fill-current" aria-hidden /> Send
+      </Button>
     </div>
   );
 }
 
-/** One saved voice note: the player loads its private link only when asked to play. */
-function VoiceNoteRow({ source, v, onDelete }: { source: FileSource; v: VoiceNote; onDelete?: () => void }) {
+/** A saved voice note: the player loads its private link only when asked to play. */
+export function VoicePlayer({ file, durationSec, source, tone = "default" }: { file: FileRef; durationSec?: number; source: FileSource; tone?: "default" | "mine" }) {
   const toast = useToast();
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -203,7 +196,7 @@ function VoiceNoteRow({ source, v, onDelete }: { source: FileSource; v: VoiceNot
     }
     setLoading(true);
     try {
-      setSrc((await fileUrl(v.file.fileId, source)).url);
+      setSrc((await fileUrl(file.fileId, source)).url);
     } catch (e) {
       toast(errorMessage(e), "error");
     } finally {
@@ -212,130 +205,39 @@ function VoiceNoteRow({ source, v, onDelete }: { source: FileSource; v: VoiceNot
   };
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-4 py-3">
+    <div className="flex min-w-[220px] items-center gap-2.5">
       <button
         type="button"
         onClick={toggle}
         aria-label={playing ? "Pause voice note" : "Play voice note"}
-        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-white transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-full text-white transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+          tone === "mine" ? "bg-success" : "bg-brand",
+        )}
       >
         {loading ? <Loader2 className="size-4 animate-spin" aria-hidden /> : playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4 translate-x-px fill-current" aria-hidden />}
       </button>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">
-          Voice note{v.durationSec ? ` · ${clock(v.durationSec)}` : ""}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {v.uploadedBy?.name ?? "-"} · {formatDateTime(v.createdAt)}
-        </p>
-        {src && (
-          <audio ref={audio} src={src} autoPlay controls onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} className={cn("mt-2 h-9 w-full max-w-md")} />
+        {src ? (
+          <audio ref={audio} src={src} autoPlay controls onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} className="h-8 w-full" />
+        ) : (
+          <span className="flex h-8 items-center gap-0.5" aria-hidden>
+            {Array.from({ length: 22 }).map((_, i) => (
+              <span key={i} className="w-1 rounded-full bg-current opacity-40" style={{ height: `${25 + ((i * 41) % 70)}%` }} />
+            ))}
+          </span>
         )}
       </div>
-      <div className="flex gap-1">
-        <Button variant="ghost" size="sm" onClick={() => downloadFile(v.file.fileId, source, v.file.name).catch((e) => toast(errorMessage(e), "error"))} aria-label="Download voice note">
-          <Download className="size-4" aria-hidden />
-        </Button>
-        {onDelete && (
-          <Button variant="ghost" size="sm" onClick={onDelete} aria-label="Delete voice note">
-            <Trash2 className="size-4 text-danger" aria-hidden />
-          </Button>
-        )}
-      </div>
-    </li>
-  );
-}
-
-/** Voice notes for Client Servicing: record or upload (BD), play and download (everyone with access). */
-export function VoiceNotes({ orderId, notes, canAdd, canDelete }: { orderId: string; notes: VoiceNote[]; canAdd: boolean; canDelete: boolean }) {
-  const toast = useToast();
-  const add = useAddVoiceNote(orderId);
-  const remove = useRemoveVoiceNote(orderId);
-  const [removeId, setRemoveId] = useState<string | null>(null);
-  const picker = useRef<HTMLInputElement>(null);
-
-  const upload = async (file: File, sec: number | null) => {
-    if (sec !== null && sec > VOICE_MAX_SEC + 2) {
-      toast(`${file.name} is ${clock(sec)} long. A voice note can be at most 5 minutes.`, "error");
-      return false;
-    }
-    const fd = new FormData();
-    fd.append("files", file);
-    if (sec !== null) fd.append("durationSec", String(Math.round(sec)));
-    try {
-      await add.mutateAsync(fd);
-      toast("Voice note saved");
-      return true;
-    } catch (e) {
-      toast(errorMessage(e), "error");
-      return false;
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      {canAdd && (
-        <>
-          <Recorder disabled={add.isPending} saving={add.isPending} onSave={(f, sec) => upload(f, sec)} />
-          <div className="flex items-center gap-2">
-            <input
-              ref={picker}
-              type="file"
-              accept={AUDIO_ACCEPT}
-              className="sr-only"
-              aria-label="Upload an audio file"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) await upload(f, await audioDuration(f));
-              }}
-            />
-            <Button variant="ghost" size="sm" onClick={() => picker.current?.click()} disabled={add.isPending}>
-              <Upload className="size-4" aria-hidden /> Upload audio file
-            </Button>
-            <span className="text-xs text-muted-foreground">MP3, M4A, WebM, Ogg or WAV</span>
-          </div>
-        </>
-      )}
-      {notes.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground">No voice notes yet.</p>
-      ) : (
-        <ul className="divide-y divide-border rounded-lg border border-border">
-          {notes.map((v) => (
-            <VoiceNoteRow key={v._id} source={{ orderId }} v={v} onDelete={canDelete ? () => setRemoveId(v._id) : undefined} />
-          ))}
-        </ul>
-      )}
-      <ConfirmDialog
-        open={removeId !== null}
-        onOpenChange={(o) => !o && setRemoveId(null)}
-        title="Delete this voice note?"
-        description="The recording is removed from this order and erased from storage."
-        confirmLabel="Delete"
-        destructive
-        loading={remove.isPending}
-        onConfirm={async () => {
-          try {
-            await remove.mutateAsync(removeId!);
-            toast("Voice note deleted");
-            setRemoveId(null);
-          } catch (e) {
-            toast(errorMessage(e), "error");
-          }
-        }}
-      />
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{durationSec ? clock(durationSec) : "Voice"}</span>
+      <button
+        type="button"
+        onClick={() => downloadFile(file.fileId, source, file.name).catch((e) => toast(errorMessage(e), "error"))}
+        aria-label="Download voice note"
+        title="Download"
+        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-brand"
+      >
+        <Download className="size-3.5" aria-hidden />
+      </button>
     </div>
-  );
-}
-
-/** Read-only voice notes (e.g. the BD handover on an operations project). */
-export function VoiceNoteList({ notes, source }: { notes: VoiceNote[]; source: FileSource }) {
-  if (!notes.length) return <p className="rounded-lg border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground">No voice notes.</p>;
-  return (
-    <ul className="divide-y divide-border rounded-lg border border-border">
-      {notes.map((v) => (
-        <VoiceNoteRow key={v._id} source={source} v={v} />
-      ))}
-    </ul>
   );
 }

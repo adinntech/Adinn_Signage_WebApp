@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useFieldArray, useForm, useWatch, type FieldPath, type UseFormRegisterReturn, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { Building2, FileBadge, ListPlus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, Eye, FileBadge, Info, ListPlus, Loader2, Paperclip, Plus, Repeat, Trash2, X } from "lucide-react";
 import { z } from "zod";
-import { AttachmentChip } from "@/components/sales/order-comments";
+import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
@@ -14,19 +15,26 @@ import { FileUploader } from "@/components/ui/file-uploader";
 import { Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
+import { useDebounced } from "@/hooks/use-debounced";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import {
+  gstinCheckKey,
+  useClient,
+  useSaveClient,
   useFinalizeClientDraft,
   useGstCertificates,
+  useGstinCheck,
   useRegisterCompany,
   type Client,
   type ClientContact,
   type ClientDraftInput,
   type ClientFile,
   type CompanyInput,
+  type GstinCheck,
 } from "@/lib/api/clients";
 import { formData } from "@/lib/api/files";
+import { formatBytes } from "@/lib/format";
 
 /** Same normalisation as the backend (common/validators/contact.ts): +91 / leading 0 / spaces are accepted. */
 export const normalizeMobile = (raw: string) => {
@@ -44,9 +52,9 @@ const GST_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp";
 export const companySchema = z.object({
   name: z.string().trim().min(2, "Enter the company name").max(120),
   clientName: z.string().trim().max(120),
-  email: z.string().trim().min(1, "Enter the company email").refine(isEmail, "Enter a valid email address"),
+  email: z.string().trim().refine((v) => !v || isEmail(v), "Enter a valid email address"),
   phone: z.string().trim().min(1, "Enter the phone number").regex(/^\d{10}$/, "Phone number must be exactly 10 digits"),
-  gstin: z.string().trim().toUpperCase().min(1, "Enter the GST number").refine((v) => GSTIN.test(v), "Invalid GST number: 15 characters, e.g. 27ABCDE1234F1Z5"),
+  gstin: z.string().trim().toUpperCase().refine((v) => !v || GSTIN.test(v), "Invalid GST number: 15 characters, e.g. 27ABCDE1234F1Z5"),
   customFields: z
     .array(z.object({ label: z.string().trim().min(1, "Enter the field label").max(60), value: z.string().trim().min(1, "Enter the value").max(500) }))
     .max(30)
@@ -99,7 +107,7 @@ export const contactToApi = (k: ReturnType<typeof contactToForm>): ClientContact
 export const companyToApi = (v: CompanyValues): CompanyInput => ({
   name: v.name,
   clientName: opt(v.clientName),
-  email: v.email.toLowerCase(),
+  email: opt(v.email.toLowerCase()),
   phone: v.phone,
   gstin: opt(v.gstin),
   customFields: v.customFields.map((f) => ({ label: f.label.trim(), value: f.value.trim() })),
@@ -127,6 +135,49 @@ export function useCreateClient() {
   return { create, busy: register.isPending || finalize.isPending || upload.isPending };
 }
 
+/**
+ * Edit Client (page and the Order / Lead edit drawer): loads the client once into the form, saves the company details
+ * onto the same record, then uploads GST files picked on the form. `submit` resolves true when everything was saved.
+ */
+export function useClientEdit(id: string) {
+  const toast = useToast();
+  const q = useClient(id);
+  const save = useSaveClient();
+  const { upload } = useGstCertificates();
+  const form = useCompanyForm(EMPTY_COMPANY, id);
+  const [pending, setPending] = useState<File[]>([]);
+  // Load the saved values once: removing a GST file refreshes the client, and must not wipe what is being typed.
+  const [loaded, setLoaded] = useState<string | null>(null);
+  if (q.data && loaded !== q.data._id) {
+    setLoaded(q.data._id);
+    form.reset(companyToForm(q.data));
+  }
+  const submit = (onDone: () => void) =>
+    form.handleSubmit(async (v) => {
+      try {
+        await save.mutateAsync({ id, body: companyToApi(v) });
+      } catch (err) {
+        if (!applyServerErrors(form, err)) form.setError("root", { message: errorMessage(err) });
+        toast(errorMessage(err), "error");
+        return;
+      }
+      // Saved values are the clean state now (no "unsaved changes" prompt).
+      form.reset(v);
+      if (pending.length) {
+        try {
+          await upload.mutateAsync({ id, body: formData(pending) });
+          setPending([]);
+        } catch (err) {
+          toast(`Details saved, but the GST certificate could not be uploaded: ${errorMessage(err)}`, "error");
+          return;
+        }
+      }
+      toast("Client details updated");
+      onDone();
+    });
+  return { q, form, pending, setPending, submit, busy: save.isPending || upload.isPending };
+}
+
 /** Form values as typed (no checks) -> "Save Draft" body. */
 export const companyToDraft = (v: CompanyValues): ClientDraftInput => ({
   name: v.name.trim(),
@@ -137,8 +188,30 @@ export const companyToDraft = (v: CompanyValues): ClientDraftInput => ({
   customFields: v.customFields.map((f) => ({ label: f.label.trim(), value: f.value.trim() })),
 });
 
-export function useCompanyForm(defaults: CompanyValues) {
-  return useForm<CompanyValues>({ resolver: zodResolver(companySchema), defaultValues: defaults, mode: "onTouched" });
+/** Message for a GSTIN someone else already has (null = free, or not checked yet). */
+export function gstDuplicateMessage(c: GstinCheck | undefined) {
+  if (c?.local) return `Already registered to ${c.local.name}${c.local.clientNo ? ` (${c.local.clientNo})` : ""}`;
+  if (c?.zoho) return `Zoho customer "${c.zoho.name}" has this GSTIN. Choose it under Existing Client.`;
+  return null;
+}
+
+/**
+ * `exceptId`: the client being edited / draft being resumed. Save is blocked while the live check (cached by
+ * GstDuplicateNotice) says the GSTIN belongs to another client or a Zoho customer; the backend checks again on save.
+ */
+export function useCompanyForm(defaults: CompanyValues, exceptId?: string) {
+  const qc = useQueryClient();
+  const resolver = useMemo(
+    () =>
+      zodResolver(
+        companySchema.superRefine((v, ctx) => {
+          const msg = v.gstin && gstDuplicateMessage(qc.getQueryData<GstinCheck>(gstinCheckKey(v.gstin, exceptId)));
+          if (msg) ctx.addIssue({ code: "custom", path: ["gstin"], message: msg });
+        }),
+      ),
+    [qc, exceptId],
+  );
+  return useForm<CompanyValues>({ resolver, defaultValues: defaults, mode: "onTouched" });
 }
 
 /** Puts backend validation / conflict errors on the right fields; returns false if nothing could be mapped. */
@@ -187,7 +260,18 @@ export interface GstFilesState {
 }
 
 /** A. Company Information, B. GST Certificate, C. Custom Fields. The page renders its own action bar. */
-export function CompanyFormFields({ form, idPrefix = "co", gst }: { form: UseFormReturn<CompanyValues>; idPrefix?: string; gst: GstFilesState }) {
+export function CompanyFormFields({
+  form,
+  idPrefix = "co",
+  gst,
+  onUseZohoClient,
+}: {
+  form: UseFormReturn<CompanyValues>;
+  idPrefix?: string;
+  gst: GstFilesState;
+  /** Order / Lead Add New Client: a GSTIN that belongs to a Zoho customer offers "Switch to Existing Client". */
+  onUseZohoClient?: (z: ZohoGstMatch) => void;
+}) {
   const { register, formState } = form;
   useUnsavedWarning((formState.isDirty || gst.pending.length > 0) && !formState.isSubmitSuccessful);
   const e = (p: string) => errAt(form, p)?.message;
@@ -209,14 +293,15 @@ export function CompanyFormFields({ form, idPrefix = "co", gst }: { form: UseFor
           <Field label="Company Name" htmlFor={id("name")} required error={e("name")} className="xl:col-span-2">
             <Input id={id("name")} placeholder="e.g. Acme Retail Pvt. Ltd." {...NO_AUTOFILL} aria-invalid={!!e("name")} {...register("name")} />
           </Field>
-          <Field label="Company Email Address" htmlFor={id("email")} required error={e("email")}>
+          <Field label="Company Email Address" htmlFor={id("email")} error={e("email")}>
             <Input id={id("email")} type="email" placeholder="e.g. info@company.com" {...NO_AUTOFILL} aria-invalid={!!e("email")} {...register("email")} />
           </Field>
           <Field label="Phone Number" htmlFor={id("phone")} required error={e("phone")}>
             <Input id={id("phone")} type="tel" inputMode="numeric" maxLength={10} placeholder="Enter 10-digit phone number" {...NO_AUTOFILL} aria-invalid={!!e("phone")} {...filtered(register("phone"), digitsOnly(10))} />
           </Field>
-          <Field label="GST Number" htmlFor={id("gstin")} required error={e("gstin")}>
+          <Field label="GST Number" htmlFor={id("gstin")} error={e("gstin")}>
             <Input id={id("gstin")} className="uppercase" maxLength={15} placeholder="27ABCDE1234F1Z5" {...NO_AUTOFILL} aria-invalid={!!e("gstin")} {...register("gstin")} />
+            <GstDuplicateNotice form={form} exceptId={gst.clientId} onUseZohoClient={onUseZohoClient} />
           </Field>
         </div>
       </Card>
@@ -229,10 +314,81 @@ export function CompanyFormFields({ form, idPrefix = "co", gst }: { form: UseFor
   );
 }
 
+/**
+ * Live duplicate check under the GST Number: runs once a full, valid GSTIN is typed or pasted (debounced). The result
+ * is cached, and the form's resolver reads that cache to block Save.
+ */
+export type ZohoGstMatch = NonNullable<GstinCheck["zoho"]>;
+
+function GstDuplicateNotice({ form, exceptId, onUseZohoClient }: { form: UseFormReturn<CompanyValues>; exceptId?: string; onUseZohoClient?: (z: ZohoGstMatch) => void }) {
+  const typed = (useWatch({ control: form.control, name: "gstin" }) ?? "").trim().toUpperCase();
+  const gstin = useDebounced(typed, 400);
+  const check = useGstinCheck(gstin, exceptId);
+  const fieldError = errAt(form, "gstin")?.message;
+  if (!gstin || gstin !== typed || !check.isFetched && !check.isFetching) return null;
+  if (check.isFetching)
+    return (
+      <p role="status" className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Checking for duplicates…
+      </p>
+    );
+  if (check.isError) return <p className="mt-1.5 text-xs text-muted-foreground">Could not check this GSTIN now. It is checked again when you save.</p>;
+  const c = check.data;
+  const msg = gstDuplicateMessage(c);
+  // Order / Lead "Add New Client": the company is a Zoho customer, so offer to pick it under Existing Client instead.
+  if (c?.zoho && onUseZohoClient)
+    return (
+      <div role="alert" className="mt-1.5 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2 text-xs">
+        <p className="flex items-start gap-1.5 font-medium text-warning">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> Existing Zoho customer: {c.zoho.name}
+        </p>
+        <p className="mt-0.5 pl-5 text-muted-foreground">{[c.zoho.clientName, c.zoho.email, c.zoho.phone, c.zoho.city, c.zoho.state].filter(Boolean).join(" · ")}</p>
+        <button type="button" onClick={() => onUseZohoClient(c.zoho!)} className="mt-1.5 ml-5 inline-flex items-center gap-1 font-semibold text-brand hover:underline">
+          <Repeat className="size-3.5" aria-hidden /> Switch to Existing Client
+        </button>
+      </div>
+    );
+  if (msg)
+    return msg === fieldError ? null : (
+      <p role="alert" className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning-soft px-2.5 py-1.5 text-xs font-medium text-warning">
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {msg}
+      </p>
+    );
+  return c?.zohoChecked === false ? (
+    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Info className="size-3.5" aria-hidden /> Not in Client Management. Zoho could not confirm this GSTIN.
+    </p>
+  ) : (
+    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-success">
+      <CheckCircle2 className="size-3.5" aria-hidden /> No other client has this GSTIN.
+    </p>
+  );
+}
+
+/** A saved GST certificate: View (preview window), and Remove when allowed. */
+export function SavedFileChip({ file, onView, onRemove }: { file: ClientFile; onView: () => void; onRemove?: () => void }) {
+  return (
+    <span className="inline-flex max-w-full items-center rounded-lg border border-border bg-background text-xs font-medium hover:border-brand/50">
+      <button type="button" onClick={onView} className="inline-flex min-w-0 items-center gap-1.5 px-2.5 py-1 hover:text-brand" title="View">
+        <Paperclip className="size-3.5 shrink-0" aria-hidden />
+        <span className="truncate">{file.name}</span>
+        {file.size ? <span className="shrink-0 whitespace-nowrap text-muted-foreground">{formatBytes(file.size)}</span> : null}
+        <Eye className="size-3.5 shrink-0 text-brand" aria-label={`View ${file.name ?? "file"}`} />
+      </button>
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="mr-1 rounded p-0.5 text-muted-foreground hover:bg-danger/10 hover:text-danger" aria-label={`Delete ${file.name ?? "attachment"}`} title="Delete file">
+          <X className="size-3.5" aria-hidden />
+        </button>
+      )}
+    </span>
+  );
+}
+
 function GstCertificateCard({ idPrefix, gst }: { idPrefix: string; gst: GstFilesState }) {
   const toast = useToast();
   const { remove } = useGstCertificates();
   const [removing, setRemoving] = useState<ClientFile | null>(null);
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const room = Math.max(0, GST_MAX_FILES - gst.saved.length);
 
   const confirmRemove = async () => {
@@ -258,7 +414,7 @@ function GstCertificateCard({ idPrefix, gst }: { idPrefix: string; gst: GstFiles
       {gst.saved.length > 0 && gst.clientId && (
         <div className="mb-3 flex flex-wrap gap-2" aria-label="Saved GST certificate files">
           {gst.saved.map((f) => (
-            <AttachmentChip key={f.fileId} file={f} source={{ clientId: gst.clientId! }} onRemove={() => setRemoving(f)} />
+            <SavedFileChip key={f.fileId} file={f} onView={() => setPreview({ saved: f, source: { clientId: gst.clientId! } })} onRemove={() => setRemoving(f)} />
           ))}
         </div>
       )}
@@ -269,6 +425,7 @@ function GstCertificateCard({ idPrefix, gst }: { idPrefix: string; gst: GstFiles
         accept={GST_ACCEPT}
         multiple
         disabled={gst.pending.length >= room}
+        onPreview={(f) => setPreview({ local: f })}
         hint={gst.pending.length < room ? `PDF, JPG, PNG or WEBP · up to ${room - gst.pending.length} more file${room - gst.pending.length === 1 ? "" : "s"}` : `${GST_MAX_FILES} files attached (the maximum)`}
       />
       {gst.pending.length > 0 && <p className="mt-2 text-xs text-muted-foreground">New files are uploaded when you save the client.</p>}
@@ -282,6 +439,7 @@ function GstCertificateCard({ idPrefix, gst }: { idPrefix: string; gst: GstFiles
         loading={remove.isPending}
         onConfirm={confirmRemove}
       />
+      <FileRefPreview target={preview} onClose={() => setPreview(null)} />
     </Card>
   );
 }
@@ -302,7 +460,8 @@ function CustomFieldsCard({ form, idPrefix }: { form: UseFormReturn<CompanyValue
         action={<span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">{fields.length} of 30</span>}
       />
       {fields.length === 0 && <p className="mb-3 rounded-lg bg-muted/60 px-4 py-3 text-sm text-muted-foreground">No custom fields yet. Use Add Custom Field for details like PAN number, branch or billing code.</p>}
-      <div className="space-y-2.5">
+      {/* Only the rows scroll: the card keeps a fixed maximum height, its header and Add button stay in place. */}
+      <div className="-mr-1 max-h-[340px] space-y-2.5 overflow-y-auto overscroll-contain pr-1" data-testid="custom-fields-rows">
         <AnimatePresence initial={false}>
           {fields.map((f, i) => (
             <motion.div

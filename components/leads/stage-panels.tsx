@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, CircleAlert, Clock3, ExternalLink, LockKeyhole, MessagesSquare, Pencil, Save, Send, Sparkles, Repeat, Trash2 } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2, CircleAlert, Clock3, ExternalLink, LockKeyhole, MessagesSquare, Pencil, Save, Send, Sparkles, Repeat, Trash2 } from "lucide-react";
 import { CompanyDetailsCard, ContactsCard } from "@/components/clients/client-info";
 import { ClientTypeBadge } from "@/components/clients/client-type-badge";
+import { OrderClientForm } from "@/components/orders/create-order-dialog";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { AttachmentChip } from "@/components/sales/order-comments";
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
@@ -14,14 +15,17 @@ import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
+import { Modal } from "@/components/ui/modal";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
+import type { ClientType } from "@/lib/api/clients";
 import { formData } from "@/lib/api/files";
 import {
   useAddRequirementNote,
+  useChangeLeadClient,
   useDeleteRequirementNote,
   useLeadInitialNotes,
   useRequirementNotes,
@@ -30,9 +34,9 @@ import {
   type RequirementNote,
 } from "@/lib/api/leads";
 import { useAuth } from "@/lib/auth";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { RouteNotice, StepFooter } from "./assign-panels";
+import { RouteNotice } from "./assign-panels";
 import { OnboardingPanel } from "./onboarding-panel";
 import { STAGE_META } from "./stage-meta";
 
@@ -60,8 +64,8 @@ function FlagExplain({ type }: { type: "NEW" | "EXISTING" }) {
         <ClientTypeBadge type={type} full />
         <p className="mt-1 text-muted-foreground">
           {type === "NEW"
-            ? "Picked from Client Management. The client cannot be changed once the order is created."
-            : "Picked from the Zoho customer list. The client cannot be changed once the order is created."}
+            ? "Picked from Client Management. Use Change Client above until a Project Assign route starts."
+            : "Picked from the Zoho customer list. Use Change Client above until a Project Assign route starts."}
         </p>
       </div>
     </div>
@@ -71,6 +75,65 @@ function FlagExplain({ type }: { type: "NEW" | "EXISTING" }) {
 /* -------------------------------- 1. Create Project -------------------------------- */
 
 /** Stage 1 of a started lead: its order and client, and the initial notes (editable while the lead is open). */
+/**
+ * Create Project > Change Client: switch the lead to another client (New or Existing) with a confirm. Allowed until a
+ * Project Assign route is taken; the same order is kept and the switch is logged with the previous client.
+ */
+function ChangeClientCard({ detail, canWrite }: { detail: LeadDetail; canWrite: boolean }) {
+  const toast = useToast();
+  const change = useChangeLeadClient(detail.order._id);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<{ body: { clientType: ClientType; clientId?: string; zohoId?: string }; label: string } | null>(null);
+  const gate = detail.clientChange ?? { allowed: false, reason: null };
+  const current = detail.order.clientType === "NEW" ? "New Client" : "Existing Client";
+
+  const confirm = async () => {
+    if (!pending) return;
+    try {
+      await change.mutateAsync(pending.body);
+      toast(`Client changed to ${pending.label} (${pending.body.clientType === "NEW" ? "New" : "Existing"} Client).`);
+      setPending(null);
+      setOpen(false);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    }
+  };
+
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-foreground">
+          {current}: {detail.order.client.name}
+        </p>
+        <p className="text-xs text-muted-foreground">{gate.allowed ? "Picked the wrong client or type? Change it before a Project Assign route starts." : (gate.reason ?? "The client is fixed for this lead.")}</p>
+      </div>
+      {canWrite && gate.allowed && (
+        <Button variant="brand-outline" size="sm" onClick={() => setOpen(true)}>
+          <ArrowLeftRight className="size-4" aria-hidden /> Change Client
+        </Button>
+      )}
+      <Modal open={open} onOpenChange={setOpen} variant="drawer" className="max-w-3xl" title="Change Client" description={`${detail.order.orderNo} · choose New or Existing client, then the company`}>
+        <OrderClientForm
+          onCancel={() => setOpen(false)}
+          onCreated={() => setOpen(false)}
+          submitLabel="Change Client"
+          footNote="The same order and lead are kept; the previous client stays in the lead history."
+          onSubmitClient={async (body, label) => setPending({ body, label })}
+        />
+      </Modal>
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(o) => !o && setPending(null)}
+        title="Change the lead's client?"
+        description={`${detail.order.client.name} (${current}) will be replaced by ${pending?.label ?? ""} (${pending?.body.clientType === "NEW" ? "New" : "Existing"} Client) on ${detail.order.orderNo}. The change is recorded in the lead history.`}
+        confirmLabel="Change Client"
+        loading={change.isPending}
+        onConfirm={confirm}
+      />
+    </Card>
+  );
+}
+
 export function NewLeadDone({ detail, canWrite }: { detail: LeadDetail; canWrite: boolean }) {
   const toast = useToast();
   const save = useLeadInitialNotes(detail.order._id);
@@ -79,6 +142,7 @@ export function NewLeadDone({ detail, canWrite }: { detail: LeadDetail; canWrite
   const dirty = notes.trim() !== (detail.lead.initialNotes ?? "");
   return (
     <div className="space-y-4">
+      <ChangeClientCard detail={detail} canWrite={canWrite} />
       <FlagExplain type={detail.order.clientType} />
       <CompanyDetailsCard client={detail.order.client} extras={detail.order.clientType === "NEW"} />
       <ContactsCard contacts={detail.order.client.contacts ?? []} />
@@ -135,7 +199,7 @@ function NoteItem({ n, orderId, canDelete, onDelete }: { n: RequirementNote; ord
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">{n.createdBy?.name}</span>
           {n.role && <RoleBadge role={n.role} />}
-          <span className="text-xs text-muted-foreground">{formatDateTime(n.createdAt)}</span>
+          <span className="text-xs text-muted-foreground">{formatDateTimeIST(n.createdAt)}</span>
           {canDelete && (
             <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground hover:text-danger" aria-label="Delete note" onClick={onDelete}>
               <Trash2 className="size-4" aria-hidden />
@@ -298,13 +362,13 @@ export function StageInfo({ stage, detail }: { stage: LeadStage; detail: LeadDet
  * documents) or "assign" (summary + the Client Servicing person). `onDone` moves on once the details are complete;
  * `onAssigned` runs once the order is handed over (the lead is then completed).
  */
-export function HandoverPanel({ detail, step, onDone, onAssigned }: { detail: LeadDetail; step: "details" | "assign"; onDone: () => void; onAssigned?: () => void }) {
+/** Client Servicing route: Handover Type & Details, ending with the Client Servicing person (assigning completes the lead). */
+export function HandoverPanel({ detail, onAssigned }: { detail: LeadDetail; onAssigned?: () => void }) {
   const open = !detail.handover.assignee && detail.lead.status === "OPEN";
   return (
     <div className="space-y-4">
-      {step === "details" && open && !detail.route && <RouteNotice branch="HANDOVER" />}
-      <HandoverTab order={detail.order} onAssigned={onAssigned} section={step} />
-      {step === "details" && open && <StepFooter orderId={detail.order._id} next="Assign Client Servicing Person" onContinue={onDone} />}
+      {open && !detail.route && <RouteNotice branch="HANDOVER" />}
+      <HandoverTab order={detail.order} onAssigned={onAssigned} />
       <Link href={`/orders/${detail.order._id}`} className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-brand">
         <ExternalLink className="size-3.5" aria-hidden /> Open the order in Order Management
       </Link>

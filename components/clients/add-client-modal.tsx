@@ -7,10 +7,20 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import type { Client } from "@/lib/api/clients";
-import { applyServerErrors, CompanyFormFields, EMPTY_COMPANY, useCompanyForm, useCreateClient } from "./company-form";
+import { applyServerErrors, CompanyFormFields, EMPTY_COMPANY, useCompanyForm, useCreateClient, type ZohoGstMatch } from "./company-form";
 
 /** Body of the drawer; mounted only while open, so every opening starts with an empty form. */
-function AddClientForm({ initialName, onCancel, onSaved }: { initialName?: string; onCancel: () => void; onSaved: (c: Client) => void }) {
+function AddClientForm({
+  initialName,
+  onCancel,
+  onSaved,
+  onUseZohoClient,
+}: {
+  initialName?: string;
+  onCancel: () => void;
+  onSaved: (c: Client) => void;
+  onUseZohoClient?: (z: ZohoGstMatch) => void;
+}) {
   const toast = useToast();
   const form = useCompanyForm({ ...EMPTY_COMPANY, name: initialName ?? "" });
   const { create, busy } = useCreateClient();
@@ -30,7 +40,7 @@ function AddClientForm({ initialName, onCancel, onSaved }: { initialName?: strin
 
   return (
     <form noValidate onSubmit={submit} className="space-y-5">
-      <CompanyFormFields form={form} idPrefix="inline" gst={{ saved: [], pending, onPendingChange: setPending }} />
+      <CompanyFormFields form={form} idPrefix="inline" gst={{ saved: [], pending, onPendingChange: setPending }} onUseZohoClient={onUseZohoClient} />
       <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
         <span className="text-xs text-muted-foreground">
           Fields marked <span className="text-danger">*</span> are required. The client is saved to Client Management.
@@ -49,10 +59,23 @@ function AddClientForm({ initialName, onCancel, onSaved }: { initialName?: strin
 }
 
 /** "+ Add Company" from Order Management / New Lead: the Add Client form in a drawer; the saved client is handed back. */
-export function AddClientModal({ open, onOpenChange, initialName, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; initialName?: string; onSaved: (c: Client) => void }) {
+export function AddClientModal({
+  open,
+  onOpenChange,
+  initialName,
+  onSaved,
+  onUseZohoClient,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  initialName?: string;
+  onSaved: (c: Client) => void;
+  /** The GSTIN typed belongs to a Zoho customer: pick it under Existing Client instead. */
+  onUseZohoClient?: (z: ZohoGstMatch) => void;
+}) {
   return (
     <Modal open={open} onOpenChange={onOpenChange} variant="drawer" className="max-w-5xl" title="Add New Client" description="Saved to Client Management, then selected for this order.">
-      <AddClientForm initialName={initialName} onCancel={() => onOpenChange(false)} onSaved={onSaved} />
+      <AddClientForm initialName={initialName} onCancel={() => onOpenChange(false)} onSaved={onSaved} onUseZohoClient={onUseZohoClient} />
     </Modal>
   );
 }

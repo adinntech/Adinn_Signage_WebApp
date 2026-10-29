@@ -13,7 +13,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { downloadFile } from "@/lib/api/files";
 import { rateText, useQuotation, type RateUnit, type Revision } from "@/lib/api/ratecards";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Line = Revision["items"][number];
@@ -140,7 +140,7 @@ function CompareCard({ orderId, revisions }: { orderId: string; revisions: Revis
         </table>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        {from.label} saved {formatDateTime(from.createdAt)} by {from.editedBy?.name ?? "-"} · {to.label} saved {formatDateTime(to.createdAt)} by {to.editedBy?.name ?? "-"}
+        {from.label} saved {formatDateTimeIST(from.createdAt)} by {from.editedBy?.name ?? "-"} · {to.label} saved {formatDateTimeIST(to.createdAt)} by {to.editedBy?.name ?? "-"}
       </p>
     </Card>
   );

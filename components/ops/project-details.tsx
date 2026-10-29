@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, ArrowRight, BarChart3, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileText, Files, History, Mail, MapPin, MessageSquareText, Paperclip,
+  ArrowLeft, ArrowRight, BarChart3, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileText, Files, Handshake, History, Mail, MapPin, MessageSquareText, Paperclip,
   Phone, PlusCircle, Route, Store, UsersRound, type LucideIcon,
 } from "lucide-react";
 import { Tabs } from "@/components/ui/tabs";
@@ -17,11 +17,13 @@ import { Stepper } from "@/components/workflow/stepper";
 import { errorMessage } from "@/lib/api";
 import { useAdvanceStage, useApprovalSummary, useProjectFiles, useSurveyAreas } from "@/lib/api/pipeline";
 import { useProject } from "@/lib/api/projects";
+import { useProjectHandover } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { OPS_NEXT, OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel, totalExpected } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 import { AsoSurvey } from "./aso-survey";
+import { BdHandover } from "./bd-handover";
 import { BoardOptions } from "./board-options";
 import { MeasurementStage } from "./measurement-stage";
 import { ActivityTimeline, ProjectNotes } from "./project-activity";
@@ -80,6 +82,8 @@ export function ProjectDetails() {
   const areas = useSurveyAreas(id, aso);
   const approvals = useApprovalSummary(id, !!loaded && !aso);
   const bdFiles = useProjectFiles(id, "BD_CLIENT_DETAILS");
+  // Projects assigned from Lead Management > Assign to Recce Team carry the BD handover (null for the others).
+  const handover = useProjectHandover(id);
   const proofFiles = useProjectFiles(id, "OPS_SURVEY_PROOF");
   const [asoPart, setAsoPart] = useState<"areas" | "shops" | "boards">("areas");
   // Notification links such as ?tab=documents jump to that section.
@@ -209,6 +213,12 @@ export function ProjectDetails() {
           <Ban className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p><strong>{lost ? "Marked as LOSS." : "Cancelled by BD."}</strong> {p.statusReason ?? "No reason recorded."} This project is read-only.</p>
         </div>
+      )}
+
+      {handover.data && (
+        <Section id="handover" icon={Handshake} title="BD Handover" hint={`From Lead Management · order ${handover.data.orderNo}: codes, Client ID, client, contacts, communication and the shop list`}>
+          <BdHandover projectId={p._id} h={handover.data} />
+        </Section>
       )}
 
       {aso ? (

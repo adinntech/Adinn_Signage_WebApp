@@ -18,7 +18,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useDebounced } from "@/hooks/use-debounced";
 import { LEAD_FLOW, useLeads, useLeadSummary, type LeadStage } from "@/lib/api/leads";
 import { useAuth } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Lead Management list: every lead with its current mind map stage. Opening one shows its mind map. */
@@ -178,7 +178,7 @@ export function LeadsView() {
                       </td>
                       <td className="px-4 py-3">{l.owner?.name ?? <span className="text-muted-foreground">Unassigned</span>}</td>
                       <td className="px-4 py-3">{l.csAssignee?.name ?? <span className="text-muted-foreground">Not assigned</span>}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(l.lead.stageChangedAt)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{formatDateTimeIST(l.lead.stageChangedAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
                           <Button variant="ghost" size="sm" asChild>

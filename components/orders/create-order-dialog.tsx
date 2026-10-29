@@ -2,20 +2,19 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeftRight, ArrowRight, Building2, CloudDownload, FilePlus2, Info, ListPlus, Repeat, Sparkles } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, FilePlus2, Info, Repeat, Sparkles } from "lucide-react";
 import { AddClientModal } from "@/components/clients/add-client-modal";
-import { AttachmentChip } from "@/components/sales/order-comments";
+import { ClientEditDrawer, CrmClientCard, ZohoClientCard } from "@/components/clients/client-picker";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
-import { DetailItem } from "@/components/ui/page-header";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
-import { errorMessage } from "@/lib/api";
-import { useClient, useClients, type ClientFile, type ClientType, type CustomField } from "@/lib/api/clients";
-import { newRequestKey, useCreateOrder, useZohoClients, type Order } from "@/lib/api/sales";
+import { ApiError, errorMessage } from "@/lib/api";
+import { useClient, useClients, type ClientType } from "@/lib/api/clients";
+import { newRequestKey, useCreateOrder, useZohoClient, useZohoClients, type Order } from "@/lib/api/sales";
 import { cn } from "@/lib/utils";
 
 const FLAGS: { value: ClientType; label: string; hint: string; icon: typeof Sparkles }[] = [
@@ -23,24 +22,13 @@ const FLAGS: { value: ClientType; label: string; hint: string; icon: typeof Spar
   { value: "EXISTING", label: "Existing Client", hint: "Pick from the Zoho customer list", icon: Repeat },
 ];
 
-/** What the preview card shows, from Client Management or from Zoho. */
-interface Preview {
-  _id?: string;
-  name: string;
-  clientName?: string;
-  email?: string;
-  phone?: string;
-  gstin?: string;
-  clientNo?: string | null;
-  gstCertificates?: ClientFile[];
-  customFields?: CustomField[];
-}
-
 /**
  * Flag first (New / Existing), then the client (Client Management or Zoho, with "+ Add New Client" for a company that
  * is not registered yet), then Create: the order and its lead (at Project Assign) are created together.
  * Mount it only while it is shown, so each opening starts empty with a fresh request key.
  * With `fixedFlag` (Create Project, where the flag was chosen on the mind map) the flag cards are hidden.
+ * A New Client whose GSTIN belongs to a Zoho customer is sent to Existing Client with that customer picked
+ * (`onFlagChange` when the flag is fixed by the parent, which remounts this form with `initialPick`).
  */
 export function OrderClientForm({
   onCancel,
@@ -49,6 +37,10 @@ export function OrderClientForm({
   submitLabel = "Create Order",
   fixedFlag,
   onChangeFlag,
+  onFlagChange,
+  initialPick,
+  onSubmitClient,
+  footNote = "The order opens its lead at Project Assign.",
 }: {
   onCancel: () => void;
   onCreated: (o: Order) => void;
@@ -58,21 +50,31 @@ export function OrderClientForm({
   fixedFlag?: ClientType;
   /** Back to the New / Existing choice (with `fixedFlag`). */
   onChangeFlag?: () => void;
+  /** With `fixedFlag`: switch the flag and pick this client (duplicate GST -> Existing Client). */
+  onFlagChange?: (f: ClientType, pick?: SearchOption) => void;
+  initialPick?: SearchOption;
+  /** Instead of creating an order, hand the picked client back (Lead > Change Client). */
+  onSubmitClient?: (body: { clientType: ClientType; clientId?: string; zohoId?: string }, label: string) => Promise<void>;
+  footNote?: string;
 }) {
   const toast = useToast();
   const [ownFlag, setFlag] = useState<ClientType | null>(null);
   const flag = fixedFlag ?? ownFlag;
   const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<SearchOption | null>(null);
+  const [picked, setPicked] = useState<SearchOption | null>(initialPick ?? null);
   const [notes, setNotes] = useState("");
   const [adding, setAdding] = useState(false);
   const [addName, setAddName] = useState("");
   const [error, setError] = useState<string>();
+  /** The order was refused because this Zoho customer has the client's GSTIN. */
+  const [zohoClash, setZohoClash] = useState<SearchOption | null>(null);
+  const [editing, setEditing] = useState(false);
   const [requestKey] = useState(newRequestKey);
   const dq = useDebounced(query);
   const crm = useClients({ q: dq, status: "ACTIVE", source: "CRM", limit: 20, sort: "name" }, flag === "NEW");
   const zoho = useZohoClients(dq, flag === "EXISTING");
   const details = useClient(flag === "NEW" ? picked?.value : undefined);
+  const zohoDetail = useZohoClient(flag === "EXISTING" ? picked?.value : undefined);
   const create = useCreateOrder();
 
   const zohoRows = zoho.data?.items ?? [];
@@ -83,7 +85,18 @@ export function OrderClientForm({
 
   const zohoPick = flag === "EXISTING" ? zohoRows.find((z) => z.zohoId === picked?.value) : undefined;
   const crmPick = flag === "NEW" && details.data?._id === picked?.value ? details.data : undefined;
-  const preview: Preview | undefined = zohoPick ?? crmPick;
+  // The full read carries the contact persons; the search row shows meanwhile.
+  const zohoView = zohoDetail.data ?? zohoPick;
+
+  const switchToZoho = (pick: SearchOption) => {
+    setAdding(false);
+    setZohoClash(null);
+    setError(undefined);
+    if (fixedFlag) return onFlagChange?.("EXISTING", pick);
+    setFlag("EXISTING");
+    setPicked(pick);
+    setQuery("");
+  };
 
   const chooseFlag = (f: ClientType) => {
     if (f === flag) return;
@@ -91,6 +104,7 @@ export function OrderClientForm({
     setPicked(null);
     setQuery("");
     setError(undefined);
+    setZohoClash(null);
   };
 
   const submit = async () => {
@@ -98,11 +112,14 @@ export function OrderClientForm({
     if (!picked) return setError("Select the client company");
     try {
       const body = flag === "NEW" ? { clientId: picked.value } : { zohoId: picked.value };
+      if (onSubmitClient) return await onSubmitClient({ ...body, clientType: flag }, picked.label);
       const r = await create.mutateAsync({ ...body, clientType: flag, requestKey, initialNotes: notes.trim() || undefined });
       toast(`Order ${r.order.orderNo} created for ${r.client.name}. The lead is at Project Assign.`);
       onCreated(r.order);
     } catch (e) {
       setError(errorMessage(e));
+      const d = e instanceof ApiError && e.code === "ZOHO_DUPLICATE_GST" ? (e.details as { zohoId?: string; name?: string }[] | undefined)?.[0] : undefined;
+      setZohoClash(d?.zohoId ? { value: d.zohoId, label: d.name ?? "Zoho customer" } : null);
     }
   };
 
@@ -183,16 +200,18 @@ export function OrderClientForm({
                     setPicked(o);
                     setQuery("");
                     setError(undefined);
+                    setZohoClash(null);
                   }}
                   onClear={() => setPicked(null)}
                   loading={flag === "NEW" ? crm.isFetching : zoho.isFetching}
                   invalid={!picked && !!error}
-                  placeholder={flag === "NEW" ? "Search company name or Client ID..." : "Search Zoho customer, contact or GST number..."}
-                  emptyText={flag === "NEW" ? "No client in Client Management matches. Use + Add New Client." : zoho.isError ? errorMessage(zoho.error) : "No Zoho customer matches."}
+                  placeholder={flag === "NEW" ? "Search company name or Client ID..." : "Search Zoho customer name, Client ID or GST number..."}
+                  emptyText={flag === "NEW" ? "No client in Client Management matches. Use Add New Client above." : zoho.isError ? errorMessage(zoho.error) : "No Zoho customer matches."}
+                  actionPlacement="top"
                   action={
                     flag === "NEW"
                       ? {
-                          label: "+ Add New Client",
+                          label: "Add New Client",
                           onSelect: () => {
                             setAddName(query.trim());
                             setAdding(true);
@@ -211,49 +230,12 @@ export function OrderClientForm({
 
               {picked && (
                 <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-border bg-muted/40 p-4">
-                  <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {flag === "NEW" ? <Building2 className="size-3.5" aria-hidden /> : <CloudDownload className="size-3.5" aria-hidden />}
-                    {flag === "NEW" ? "Client details" : zohoPick?.clientId ? `Zoho customer · in CRM as ${zohoPick.clientNo}` : "Zoho customer · added to the CRM with this order"}
-                  </p>
-                  {preview ? (
-                    <>
-                      <dl className="grid gap-4 sm:grid-cols-2">
-                        <DetailItem label="Company Name">{preview.name}</DetailItem>
-                        <DetailItem label="Client Name">{preview.clientName}</DetailItem>
-                        <DetailItem label="Company Email">{preview.email}</DetailItem>
-                        <DetailItem label="Phone Number">{preview.phone}</DetailItem>
-                        <DetailItem label="GST Number">{preview.gstin}</DetailItem>
-                        {flag === "NEW" && <DetailItem label="Client ID">{preview.clientNo}</DetailItem>}
-                        {/* GST certificate and custom fields belong to Client Management clients only (not Zoho). */}
-                        {flag === "NEW" && (
-                          <DetailItem label="GST Certificate" className="sm:col-span-2">
-                            {preview.gstCertificates?.length ? (
-                              <span className="flex flex-wrap gap-1.5">
-                                {preview.gstCertificates.map((f) => (
-                                  <AttachmentChip key={f.fileId} file={f} source={{ clientId: preview._id! }} />
-                                ))}
-                              </span>
-                            ) : null}
-                          </DetailItem>
-                        )}
-                      </dl>
-                      {flag === "NEW" && !!preview.customFields?.length && (
-                        <div className="mt-4 border-t border-border pt-3">
-                          <p className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            <ListPlus className="size-3.5" aria-hidden /> Custom Fields
-                          </p>
-                          <dl className="grid gap-4 sm:grid-cols-2">
-                            {preview.customFields.map((f) => (
-                              <DetailItem key={f.label} label={f.label}>
-                                {f.value}
-                              </DetailItem>
-                            ))}
-                          </dl>
-                        </div>
-                      )}
-                    </>
+                  {flag === "NEW" ? (
+                    crmPick ? <CrmClientCard client={crmPick} onEdit={() => setEditing(true)} /> : <p className="text-sm text-muted-foreground">Loading client details...</p>
+                  ) : zohoView ? (
+                    <ZohoClientCard zoho={zohoView} loadingContacts={zohoDetail.isPending} />
                   ) : (
-                    <p className="text-sm text-muted-foreground">Loading client details...</p>
+                    <p className="text-sm text-muted-foreground">{zohoDetail.isError ? errorMessage(zohoDetail.error) : "Loading Zoho customer..."}</p>
                   )}
                 </motion.div>
               )}
@@ -268,14 +250,19 @@ export function OrderClientForm({
         </AnimatePresence>
 
         {error && flag && picked && (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+          <div role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
-          </p>
+            {zohoClash && (
+              <Button type="button" variant="outline" size="sm" className="mt-2 flex" onClick={() => switchToZoho(zohoClash)}>
+                <Repeat className="size-3.5" aria-hidden /> Switch to Existing Client · {zohoClash.label}
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-        <p className="text-xs text-muted-foreground">The order opens its lead at Project Assign.</p>
+        <p className="text-xs text-muted-foreground">{footNote}</p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={onCancel} disabled={create.isPending}>
             Cancel
@@ -291,6 +278,7 @@ export function OrderClientForm({
         open={adding}
         onOpenChange={setAdding}
         initialName={addName}
+        onUseZohoClient={(z) => switchToZoho({ value: z.zohoId, label: z.name })}
         onSaved={(c) => {
           setAdding(false);
           setFlag("NEW");
@@ -298,6 +286,7 @@ export function OrderClientForm({
           setError(undefined);
         }}
       />
+      <ClientEditDrawer clientId={crmPick?._id} open={editing} onOpenChange={setEditing} />
     </div>
   );
 }

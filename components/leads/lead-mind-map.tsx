@@ -2,10 +2,10 @@
 
 import { useEffect } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Flag, History, LockKeyhole, Play, UserRoundCheck } from "lucide-react";
+import { Check, Clock3, Flag, History, LockKeyhole, Play, UserRoundCheck } from "lucide-react";
 import type { ClientType } from "@/lib/api/clients";
 import type { LeadStage, LeadStageState } from "@/lib/api/leads";
-import { formatDate } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { branchSteps, canOpen, routeOfAssign, TYPE_LABEL, type AssignState, type Branch, type ChainStep, type HandoverType, type StepState } from "./assign-steps";
 import { ASSIGN_META, CLIENT_META, STAGE_META, type BranchCard } from "./stage-meta";
@@ -122,7 +122,7 @@ function StageNode({ s, badge, celebrate, closed, onOpen, delay }: { s: LeadStag
   const reduce = useReducedMotion();
   const current = s.status === "CURRENT";
   const done = s.status === "DONE";
-  const statusText = done ? `Done${s.completedAt ? ` · ${formatDate(s.completedAt)}` : ""}` : current ? (closed ? "Lead closed here" : "In progress") : s.available ? "Pending" : "Next update";
+  const statusText = done ? `Done${s.completedAt ? ` · ${formatDateTimeIST(s.completedAt)}` : ""}` : current ? (closed ? "Lead closed here" : "In progress") : s.available ? "Pending" : "Next update";
   return (
     <motion.button
       type="button"
@@ -270,7 +270,7 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
   const locked = !assigned && (!a.unlocked || !!other);
   const active = !assigned && !locked;
   const status = assigned
-    ? `${mine.assignee!.name}${mine.assignedAt ? ` · ${formatDate(mine.assignedAt)}` : ""}`
+    ? `${mine.assignee!.name}${mine.assignedAt ? ` · ${formatDateTimeIST(mine.assignedAt)}` : ""}`
     : other
       ? a.completed
         ? `Not used · assigned to ${other}`
@@ -282,7 +282,7 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
         : route === k
           ? "In progress: follow the steps below"
           : k === "HANDOVER"
-            ? "Starts when you save the handover details"
+            ? "Starts when you assign the Client Servicing person"
             : "Starts when you send the project code email";
   return (
     <motion.div
@@ -423,6 +423,11 @@ function StepNode({ s, n, color: branch, onOpen, onBlocked, delay }: { s: ChainS
           {s.info && (
             <span className="mt-1 block truncate text-[11px] font-medium" style={{ color: done ? SUCCESS : now ? color : "#64748b" }}>
               {s.info}
+            </span>
+          )}
+          {s.at && (
+            <span className="mt-0.5 flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
+              <Clock3 className="size-3 shrink-0" aria-hidden /> {s.atLabel ?? (done ? "Done" : "Updated")} {formatDateTimeIST(s.at)}
             </span>
           )}
           {s.types !== undefined && <TypeBranches chosen={s.types} color={tone} />}
@@ -610,7 +615,7 @@ function EndNode({ a, celebrate }: { a: AssignState; celebrate: boolean }) {
       >
         {celebrate && done && !reduce && <Burst color={SUCCESS} />}
         <Flag className="size-4" aria-hidden />
-        {done ? `Lead Completed${a.completedAt ? ` · ${formatDate(a.completedAt)}` : ""}` : "Lead Completed"}
+        {done ? `Lead Completed${a.completedAt ? ` · ${formatDateTimeIST(a.completedAt)}` : ""}` : "Lead Completed"}
       </motion.div>
     </div>
   );

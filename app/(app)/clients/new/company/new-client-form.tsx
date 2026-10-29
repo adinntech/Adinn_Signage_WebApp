@@ -35,7 +35,7 @@ export function NewClientForm() {
   const router = useRouter();
   const toast = useToast();
   const draftId = useSearchParams().get("draft") ?? undefined;
-  const form = useCompanyForm(EMPTY_COMPANY);
+  const form = useCompanyForm(EMPTY_COMPANY, draftId);
   const { create, busy: saving } = useCreateClient();
   const saveDraft = useSaveClientDraft();
   const { upload } = useGstCertificates();

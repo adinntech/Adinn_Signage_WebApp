@@ -1,6 +1,5 @@
 import { ClipboardList, Hash, Mail, UserRoundCheck, type LucideIcon } from "lucide-react";
 import type { LeadShops } from "@/lib/api/leads";
-import { formatDate } from "@/lib/format";
 import { ASSIGN_META, EMAIL_COLOR } from "./stage-meta";
 
 /** The two Project Assign branches (HANDOVER = Client Servicing, RECCE = Recce team). */
@@ -18,6 +17,8 @@ export interface AssignState {
   cs: {
     assignee: { name: string } | null;
     assignedAt: string | null;
+    /** Last save of any handover detail. */
+    updatedAt?: string | null;
     type?: HandoverType | null;
     /** Toggle: full handover (true, default) or client details and contacts only. */
     full?: boolean;
@@ -31,6 +32,8 @@ export interface AssignState {
     assignedAt: string | null;
     projectCode?: string | null;
     estimationCode?: string | null;
+    codesSavedAt?: string | null;
+    clientId?: string | null;
     emails?: { count: number; lastSentAt: string | null; lastStatus: string | null; done?: boolean };
     handoverReady?: boolean;
     missing?: string | null;
@@ -55,6 +58,9 @@ export interface ChainStep {
   /** Why it cannot be opened yet (null when it can). */
   blocked: string | null;
   info?: string | null;
+  /** When the step was done / last saved (IST date + time on the node); `atLabel` overrides "Done" / "Updated". */
+  at?: string | null;
+  atLabel?: string;
   /** Handover Type: the three types, the chosen one highlighted. */
   types?: HandoverType | null;
   /** Email History hanging off the request email step: opens once an email is recorded. */
@@ -91,57 +97,80 @@ function gateOf(a: AssignState, k: Branch) {
   };
 }
 
-const shopsInfo = (s: LeadShops | null | undefined) => (s ? `${s.declared ?? s.valid} shops · ${s.verified ? "verified" : "not verified"}` : null);
+const shopsInfo = (s: LeadShops | null | undefined) => (s?.total ? `${s.total} shop${s.total === 1 ? "" : "s"}` : null);
 const typeInfo = (a: AssignState) => (a.cs.type ? [TYPE_LABEL[a.cs.type], a.cs.type !== "ASO" ? shopsInfo(a.cs.shops) : null].filter(Boolean).join(" · ") : null);
-const who = (p: { assignee: { name: string } | null; assignedAt: string | null }) => (p.assignee ? `${p.assignee.name}${p.assignedAt ? ` · ${formatDate(p.assignedAt)}` : ""}` : null);
+const who = (p: { assignee: { name: string } | null }) => p.assignee?.name ?? null;
 
+/**
+ * Client Servicing route: one step. Handover Type & Details ends with the Client Servicing person, and assigning them
+ * completes the lead. (Older links to ?step=assign open this step.)
+ */
 function csSteps(a: AssignState): ChainStep[] {
   const cs = a.cs;
   const full = cs.full !== false;
-  const labels = ["Handover Type & Details", "Assign Client Servicing Person"];
-  const s = sequence([!!cs.ready, !!cs.assignee], labels, gateOf(a, "HANDOVER"));
+  const labels = ["Handover Type & Details"];
+  const s = sequence([!!cs.assignee], labels, gateOf(a, "HANDOVER"));
+  const details = full ? typeInfo(a) : "Client details only";
   return [
     {
       step: "details",
       label: labels[0]!,
-      desc: full ? "Toggle, client & contacts, type, shop list, notes, documents" : "Toggle OFF: client details and contact persons only",
+      desc: full ? "Type, client & contacts, shop list, communication, Client Servicing person" : "Toggle OFF: client details, contact persons and the Client Servicing person",
       icon: ClipboardList,
       ...s[0]!,
-      info: full ? (typeInfo(a) ?? (s[0]!.state === "CURRENT" ? cs.missing : null)) : "Client details only",
+      info: cs.assignee ? [who(cs), details].filter(Boolean).join(" · ") : (details ?? (s[0]!.state === "CURRENT" ? cs.missing : null)),
+      at: cs.assignedAt ?? cs.updatedAt,
+      atLabel: cs.assignedAt ? "Assigned" : "Updated",
       types: full ? (cs.type ?? null) : undefined,
     },
-    { step: "assign", label: labels[1]!, desc: "Client Servicing person and a note", icon: UserRoundCheck, ...s[1]!, info: who(cs) },
   ];
 }
 
+/**
+ * Recce route: Handover Type & Details first (shared with Client Servicing), then the project code request email (it
+ * carries the handover), the codes (+ Client ID for a New client), and the Recce / Operations person.
+ */
 function recceSteps(a: AssignState): ChainStep[] {
   const r = a.recce;
   const sent = r.emails?.count ?? 0;
-  const labels = ["Project Code Request Email", "Project Code & Estimation Code", "Handover Type & Details", "Assign to Recce / Operations"];
-  const s = sequence([!!r.emails?.done, !!r.projectCode, !!r.handoverReady, !!r.assignee], labels, gateOf(a, "RECCE"));
+  const labels = ["Handover Type & Details", "Project Code Request Email", "Project Code & Estimation Code", "Assign to Recce / Operations"];
+  const s = sequence([!!r.handoverReady || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
   const last = r.emails?.lastStatus === "SKIPPED" ? "not sent (mail off)" : r.emails?.lastStatus === "FAILED" ? "failed" : "sent";
   return [
     {
-      step: "email",
-      label: labels[0]!,
-      desc: "To, CC, subject, message and attachments",
-      icon: Mail,
-      color: EMAIL_COLOR,
-      ...s[0]!,
-      info: sent ? `${sent} email${sent === 1 ? "" : "s"} · last ${last}` : null,
-      history: { info: sent ? `${sent} · last ${formatDate(r.emails!.lastSentAt)}` : "Opens after the first email", enabled: sent > 0 && s[0]!.state !== "DISABLED" },
-    },
-    { step: "codes", label: labels[1]!, desc: "8-digit project code and EST- code", icon: Hash, ...s[1]!, info: r.projectCode ? `${r.projectCode} · ${r.estimationCode ?? ""}` : null },
-    {
       step: "handover",
-      label: labels[2]!,
-      desc: "Same three types, always the full handover",
+      label: labels[0]!,
+      desc: "Type, client & contacts, shop list, communication",
       icon: ClipboardList,
-      ...s[2]!,
-      info: typeInfo(a) ?? (s[2]!.state === "CURRENT" ? r.missing : null),
+      ...s[0]!,
+      info: typeInfo(a) ?? (s[0]!.state === "CURRENT" ? r.missing : null),
+      at: s[0]!.state === "DISABLED" ? null : a.cs.updatedAt,
+      atLabel: "Updated",
       types: a.cs.type ?? null,
     },
-    { step: "assign", label: labels[3]!, desc: "Person, dates, location and notes", icon: UserRoundCheck, ...s[3]!, info: who(r) },
+    {
+      step: "email",
+      label: labels[1]!,
+      desc: "Client, contacts, shop Excel and documents go automatically",
+      icon: Mail,
+      color: EMAIL_COLOR,
+      ...s[1]!,
+      info: sent ? `${sent} email${sent === 1 ? "" : "s"} · last ${last}` : null,
+      at: r.emails?.lastSentAt ?? null,
+      atLabel: "Last",
+      history: { info: sent ? `${sent} recorded` : "Opens after the first email", enabled: sent > 0 && s[1]!.state !== "DISABLED" },
+    },
+    {
+      step: "codes",
+      label: labels[2]!,
+      desc: "Project code, EST- code and the Client ID (new clients)",
+      icon: Hash,
+      ...s[2]!,
+      info: r.projectCode ? [r.projectCode, r.estimationCode, r.clientId ? `Client ID ${r.clientId}` : null].filter(Boolean).join(" · ") : null,
+      at: r.codesSavedAt,
+      atLabel: "Saved",
+    },
+    { step: "assign", label: labels[3]!, desc: "Person, dates, location and notes", icon: UserRoundCheck, ...s[3]!, info: who(r), at: r.assignedAt, atLabel: "Assigned" },
   ];
 }
 
@@ -157,7 +186,7 @@ export const canOpen = (s: ChainStep) => s.state === "DONE" || s.state === "CURR
 export function resolveStep(a: AssignState, k: Branch, asked: string | null): { step: ChainStep; history: boolean; blocked: string | null } {
   const steps = branchSteps(a, k);
   if (asked === "history" && k === "RECCE") {
-    const email = steps[0]!;
+    const email = steps.find((s) => s.step === "email")!;
     return { step: email, history: true, blocked: email.history?.enabled ? null : email.blocked ?? "Email History opens after the first project code request email" };
   }
   const found = asked ? steps.find((s) => s.step === asked) : undefined;

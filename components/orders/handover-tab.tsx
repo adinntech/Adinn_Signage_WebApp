@@ -3,39 +3,25 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ListChecks,
   ListPlus,
-  Mic,
   Pencil,
-  NotebookPen,
-  Save,
   AlertTriangle,
   BadgeCheck,
   Building2,
-  Camera,
   CheckCircle2,
   CircleAlert,
-  Copy,
-  Download,
-  Eye,
   FileSpreadsheet,
-  FileText,
   Handshake,
   Info,
   Loader2,
-  Paperclip,
   PhoneCall,
   RefreshCw,
   Ruler,
   Send,
-  ShieldCheck,
   Star,
   Store,
-  Trash2,
-  Upload,
   UserPlus,
   Users,
-  XCircle,
 } from "lucide-react";
 import { ContactDialog } from "@/components/clients/contact-dialog";
 import { AttachmentChip } from "@/components/sales/order-comments";
@@ -44,76 +30,50 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
-import { FileUploader } from "@/components/ui/file-uploader";
-import { Input } from "@/components/ui/input";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
-import { Pagination } from "@/components/ui/pagination";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
+import { ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { downloadFile, formData, openFile } from "@/lib/api/files";
 import {
   HANDOVER_TYPES,
-  downloadShopTemplate,
-  useAddHandoverDocs,
   useAssignClientServicing,
   useClientServicingUsers,
   useHandover,
-  useHandoverShops,
-  useRemoveHandoverDoc,
-  useRemoveShopList,
-  useSetHandoverNotes,
   useSetHandoverScope,
   useSetHandoverType,
-  useSetShopTotal,
-  useShopFiles,
-  useUploadShopList,
-  useVerifyShops,
-  type HandoverShop,
   type HandoverState,
   type HandoverType,
   type Order,
-  type ShopState,
 } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
-import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { VoiceNotes } from "./voice-notes";
-
-const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
+import { HandoverChat } from "@/components/handover/handover-chat";
+import { ShopTable } from "@/components/handover/shop-table";
 
 const TYPE_ICON: Record<HandoverType, typeof Store> = { ASO: PhoneCall, SHOP_DETAILS: FileSpreadsheet, SHOP_MEASUREMENT: Ruler };
 
 /**
- * Assign to Client Servicing toggle. On (default): the full handover. Off: only the client details and contact persons
- * go to Client Servicing (what was entered for the full handover is kept, just not sent or required).
+ * "Send handover details" toggle, on the right of the Handover Type header (Client Servicing route only). On
+ * (default): the full handover. Off: only the client details and contact persons go to Client Servicing (what was
+ * entered for the full handover is kept, just not sent or required).
  */
-function ScopeSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
+function ScopeToggle({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
   const toast = useToast();
   const set = useSetHandoverScope(orderId);
   const flip = () =>
     set.mutateAsync(!data.full).then(
-      (r) => toast(r.full ? "Full handover: type, notes, documents and shop list" : "Client details and contact persons only"),
+      (r) => toast(r.full ? "Full handover: type, shop list, communication and documents" : "Client details and contact persons only"),
       (e) => toast(errorMessage(e), "error"),
     );
   return (
-    <Card className="flex flex-wrap items-center gap-4 p-5 sm:p-6">
-      <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl transition-colors", data.full ? "bg-approval text-white" : "bg-muted text-muted-foreground")}>
-        <ListChecks className="size-5" aria-hidden />
+    <span className="flex items-center gap-2.5">
+      <span id="ho-scope-label" className="text-right text-xs font-semibold text-primary sm:text-sm">
+        Send handover details
       </span>
-      <div className="min-w-0 flex-1">
-        <p id="ho-scope-label" className="text-sm font-semibold text-primary">
-          Send handover details
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {data.full
-            ? "On: handover type, notes, voice notes, documents and the shop list go to Client Servicing."
-            : "Off: only the client details and contact persons go to Client Servicing."}
-        </p>
-      </div>
       <button
         type="button"
         role="switch"
@@ -130,68 +90,23 @@ function ScopeSection({ orderId, data, editable }: { orderId: string; data: Hand
           {set.isPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden />}
         </motion.span>
       </button>
-      <span className={cn("w-8 text-sm font-semibold", data.full ? "text-approval" : "text-muted-foreground")}>{data.full ? "On" : "Off"}</span>
-    </Card>
-  );
-}
-
-/** Additional notes and voice notes for Client Servicing. */
-function NotesSection({ orderId, data, editable, canAddVoice }: { orderId: string; data: HandoverState; editable: boolean; canAddVoice: boolean }) {
-  const toast = useToast();
-  const save = useSetHandoverNotes(orderId);
-  const [text, setText] = useState(data.notes);
-  // Saved text changed on the server (save, reload): start from it again.
-  const [seen, setSeen] = useState(data.notes);
-  if (seen !== data.notes) {
-    setSeen(data.notes);
-    setText(data.notes);
-  }
-  const dirty = text.trim() !== data.notes.trim();
-  return (
-    <Card className="p-5 sm:p-6">
-      <SectionTitle icon={NotebookPen} title="Additional Notes & Voice Notes" description={editable ? "Anything Client Servicing should know: in writing, or as a voice note." : "What the BD noted for Client Servicing."} />
-      <div className="grid gap-5 xl:grid-cols-2">
-        <div className="space-y-2">
-          <Field label="Additional Notes" htmlFor="ho-add-notes">
-            {editable ? (
-              <Textarea id="ho-add-notes" className="min-h-36" maxLength={4000} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Client prefers calls after 11 am. Branding refresh for 40 outlets; old boards to be removed." />
-            ) : (
-              <p className="min-h-16 whitespace-pre-line rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">{data.notes || <span className="text-muted-foreground">No notes.</span>}</p>
-            )}
-          </Field>
-          {editable && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">{text.length}/4000</span>
-              <Button
-                variant="brand-outline"
-                size="sm"
-                disabled={!dirty}
-                loading={save.isPending}
-                onClick={() => save.mutateAsync(text.trim()).then(() => toast("Notes saved"), (e) => toast(errorMessage(e), "error"))}
-              >
-                <Save className="size-4" aria-hidden /> Save Notes
-              </Button>
-            </div>
-          )}
-        </div>
-        <div>
-          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <Mic className="size-4 text-brand" aria-hidden /> Voice Notes
-          </p>
-          <VoiceNotes orderId={orderId} notes={data.voiceNotes} canAdd={canAddVoice} canDelete={editable} />
-        </div>
-      </div>
-    </Card>
+      <span className={cn("w-7 text-sm font-semibold", data.full ? "text-approval" : "text-muted-foreground")}>{data.full ? "On" : "Off"}</span>
+    </span>
   );
 }
 
 /** ASO / Shop Details Only / Shop + Measurement: decides what the BD shares and what is checked before handover. */
-function TypeSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
+function TypeSection({ orderId, data, editable, toggle }: { orderId: string; data: HandoverState; editable: boolean; toggle?: React.ReactNode }) {
   const toast = useToast();
   const set = useSetHandoverType(orderId);
   return (
     <Card className="p-5 sm:p-6">
-      <SectionTitle icon={Handshake} title="Handover Type" description={editable ? "Choose what you hand over to Client Servicing." : "What the BD handed over."} />
+      <SectionTitle icon={Handshake} title="Handover Type" description={editable ? "Choose what you hand over." : "What the BD handed over."} action={toggle} />
+      {!data.full ? (
+        <p className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-sm text-muted-foreground">
+          <Info className="size-4 shrink-0" aria-hidden /> Handover details are off: only the client details and contact persons go to Client Servicing.
+        </p>
+      ) : (
       <div role="radiogroup" aria-label="Handover type" className="grid gap-3 md:grid-cols-3">
         {(Object.keys(HANDOVER_TYPES) as HandoverType[]).map((k) => {
           const on = data.type === k;
@@ -224,7 +139,8 @@ function TypeSection({ orderId, data, editable }: { orderId: string; data: Hando
           );
         })}
       </div>
-      {editable && data.shopList && data.type && <p className="mt-3 text-xs text-muted-foreground">To change the type, remove the uploaded shop list first (it is checked by the type).</p>}
+      )}
+      {data.full && editable && data.shopList && data.type && <p className="mt-3 text-xs text-muted-foreground">To change the type, remove the uploaded shop list first (it is checked by the type).</p>}
     </Card>
   );
 }
@@ -262,6 +178,11 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         <DetailItem label="Client ID">
           <span className="font-mono text-brand">{c.clientNo ?? c.code}</span>
         </DetailItem>
+        {c.zohoCustomerNo && (
+          <DetailItem label="Zoho Client ID">
+            <span className="font-mono">{c.zohoCustomerNo}</span>
+          </DetailItem>
+        )}
         <DetailItem label="Company Email">{c.email}</DetailItem>
         <DetailItem label="Phone Number">{c.phone}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
@@ -353,450 +274,6 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
   );
 }
 
-const STATE_FILTERS: { key: ShopState | ""; label: string }[] = [
-  { key: "", label: "All" },
-  { key: "VALID", label: "Valid" },
-  { key: "WARNING", label: "Warnings" },
-  { key: "ERROR", label: "Errors" },
-];
-const sizeOf = (s: { width?: number; height?: number; unit?: string; quantity?: number }) =>
-  s.width && s.height ? `${s.width} × ${s.height} ${s.unit ?? "ft"}${s.quantity && s.quantity > 1 ? ` × ${s.quantity}` : ""}` : "-";
-
-/** Total Shops (auto-filled with the valid rows of the Excel, the BD may correct it) vs the valid rows; Verify locks in that they match. */
-function VerifyPanel({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
-  const toast = useToast();
-  const setTotal = useSetShopTotal(orderId);
-  const verify = useVerifyShops(orderId);
-  const [total, setTotalText] = useState(data.declaredShopTotal ? String(data.declaredShopTotal) : "");
-  const excel = data.shopList ? data.shopList.valid : null;
-  const declared = data.declaredShopTotal;
-  const match = declared !== null && excel !== null && declared === excel;
-  const dirty = total !== (declared ? String(declared) : "");
-
-  const save = () => {
-    const n = Number(total);
-    if (!Number.isInteger(n) || n < 1) return toast("Enter the total number of shops", "error");
-    setTotal.mutateAsync(n).then(() => toast("Total Shops saved"), (e) => toast(errorMessage(e), "error"));
-  };
-
-  return (
-    <div className={cn("rounded-xl border-2 p-4", data.verified ? "border-success/40 bg-success-soft/40" : match ? "border-brand/30 bg-brand-soft/30" : "border-warning/40 bg-warning-soft/40")}>
-      <div className="flex flex-wrap items-end gap-4">
-        <Field label="Total Shops" htmlFor="ho-total" hint="Auto-filled: valid rows" className="w-44">
-          <Input
-            id="ho-total"
-            inputMode="numeric"
-            maxLength={6}
-            placeholder="e.g. 50"
-            disabled={!editable}
-            value={total}
-            onChange={(e) => setTotalText(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => e.key === "Enter" && dirty && save()}
-          />
-        </Field>
-        {editable && dirty && (
-          <Button variant="brand-outline" onClick={save} loading={setTotal.isPending}>
-            Save Total
-          </Button>
-        )}
-        <div className="flex items-center gap-3 text-sm">
-          <span className="rounded-lg bg-surface px-3 py-2 shadow-soft">
-            Total Shops <b className="tabular-nums">{declared ?? "-"}</b>
-          </span>
-          <span className={cn("font-bold", match ? "text-success" : "text-warning")}>{match ? "=" : "≠"}</span>
-          <span className="rounded-lg bg-surface px-3 py-2 shadow-soft">
-            Valid in Excel <b className="tabular-nums">{excel ?? "-"}</b>
-          </span>
-        </div>
-        <div className="ml-auto">
-          {data.verified ? (
-            <Badge tone="success">
-              <ShieldCheck className="size-3.5" aria-hidden /> Verified {formatDate(data.verified.at)}
-              {data.verified.by ? ` by ${data.verified.by}` : ""}
-            </Badge>
-          ) : (
-            editable && (
-              <Button
-                variant="brand"
-                disabled={!match || dirty}
-                loading={verify.isPending}
-                title={!match ? "Total Shops and the valid rows in the Excel must match" : undefined}
-                onClick={() => verify.mutateAsync(undefined).then(() => toast("Shop list verified"), (e) => toast(errorMessage(e), "error"))}
-              >
-                <ShieldCheck className="size-4" aria-hidden /> Verify Shop List
-              </Button>
-            )
-          )}
-        </div>
-      </div>
-      {!match && declared !== null && excel !== null && (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
-          <CircleAlert className="size-3.5" aria-hidden /> The Excel has {excel} valid shop{excel === 1 ? "" : "s"} but Total Shops is {declared}. Correct the count or fix the rows and replace the file.
-        </p>
-      )}
-      {excel === 0 && (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
-          <CircleAlert className="size-3.5" aria-hidden /> No valid rows in the Excel. Fix the rows marked below and upload the file again.
-        </p>
-      )}
-      {data.shopList && data.shopList.total > (excel ?? 0) ? (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Info className="size-3.5" aria-hidden /> Rows with warnings, errors or duplicates ({data.shopList.total - (excel ?? 0)}) are not counted in Total Shops. They stay in the list (marked below) for Client Servicing.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/** Shop + Measurement: the client's photos / documents for one shop. */
-function RowFiles({ orderId, shop, editable }: { orderId: string; shop: HandoverShop; editable: boolean }) {
-  const toast = useToast();
-  const { add, remove } = useShopFiles(orderId);
-  const busy = add.isPending && add.variables?.row === shop.rowNumber;
-  return (
-    <div className="flex min-w-48 flex-wrap items-center gap-1.5">
-      {(shop.attachments ?? []).map((a) => (
-        <AttachmentChip
-          key={a.fileId}
-          file={a}
-          source={{ orderId }}
-          onRemove={editable ? () => remove.mutateAsync({ row: shop.rowNumber, fileId: a.fileId }).then(() => toast("File removed"), (e) => toast(errorMessage(e), "error")) : undefined}
-        />
-      ))}
-      {editable && (
-        // relative: keeps the visually hidden input inside this label (see FileUploader).
-        <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-lg border border-dashed border-brand/40 px-2 py-1 text-xs font-medium text-brand hover:bg-brand-soft">
-          {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Camera className="size-3.5" aria-hidden />} Add
-          <input
-            type="file"
-            multiple
-            accept=".jpg,.jpeg,.png,.webp,.pdf,.docx"
-            className="sr-only"
-            aria-label={`Add photos or documents for row ${shop.rowNumber}`}
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              e.target.value = "";
-              if (!files.length) return;
-              add.mutateAsync({ row: shop.rowNumber, body: formData(files) }).then(() => toast(`${files.length} file${files.length === 1 ? "" : "s"} added to row ${shop.rowNumber}`), (err) => toast(errorMessage(err), "error"));
-            }}
-          />
-        </label>
-      )}
-      {!editable && !(shop.attachments ?? []).length && <span className="text-xs text-muted-foreground">-</span>}
-    </div>
-  );
-}
-
-/** Shop list: template, upload (parsed with the project site import rules), Total Shops verification, summary and the rows. */
-function ShopSection({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
-  const measurement = data.type === "SHOP_MEASUREMENT";
-  const toast = useToast();
-  const [file, setFile] = useState<File[]>([]);
-  const [state, setState] = useState<ShopState | "">("");
-  const [page, setPage] = useState(1);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const upload = useUploadShopList(orderId);
-  const remove = useRemoveShopList(orderId);
-  const list = data.shopList;
-  const rows = useHandoverShops(orderId, { page, limit: 25, state }, !!list);
-
-  const doUpload = async () => {
-    if (!file[0]) return;
-    try {
-      const r = await upload.mutateAsync(formData(file));
-      setFile([]);
-      setPage(1);
-      setState("");
-      toast(`Shop list uploaded: ${r.shopList?.valid ?? 0} valid of ${r.shopList?.total ?? 0} rows. Total Shops is filled in; verify it.`);
-    } catch (e) {
-      toast(errorMessage(e), "error");
-    }
-  };
-
-  const uploader = editable && (
-    <div className="space-y-3">
-      <FileUploader
-        id="ho-shop-file"
-        files={file}
-        onChange={setFile}
-        accept=".xlsx,.csv"
-        hint={`Excel (.xlsx) or CSV, matched like the project site import.${measurement ? " Size (W x H) is required for every shop." : " No Size needed."}${list && data.shopFiles ? " Replacing removes the shop photos already added." : ""}`}
-        compact={!!list}
-      />
-      <div className="flex flex-wrap gap-2">
-        <Button variant="brand" onClick={doUpload} disabled={!file[0]} loading={upload.isPending}>
-          <Upload className="size-4" aria-hidden /> {list ? "Replace Shop List" : "Upload Shop List"}
-        </Button>
-        <Button variant="outline" onClick={() => downloadShopTemplate(measurement ? "SHOP_MEASUREMENT" : "SHOP_DETAILS").catch((e) => toast(errorMessage(e), "error"))}>
-          <Download className="size-4" aria-hidden /> {measurement ? "Template (with Size)" : "Template (without Size)"}
-        </Button>
-      </div>
-    </div>
-  );
-
-  return (
-    <Card className="p-5 sm:p-6">
-      <SectionTitle
-        icon={Store}
-        title={measurement ? "Shop Details + Measurement" : "Shop Details"}
-        description={
-          measurement
-            ? "Shop list with Size (W x H). Total Shops fills in from the valid rows; verify it, then add the client's photos and documents to each shop."
-            : "Shop list without sizes. Total Shops fills in from the valid rows; verify it."
-        }
-        action={
-          list && (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => downloadFile(list.fileId, { orderId }, list.fileName).catch((e) => toast(errorMessage(e), "error"))}>
-                <FileSpreadsheet className="size-4" aria-hidden /> {list.fileName}
-              </Button>
-              {editable && (
-                <Button variant="outline" size="sm" className="border-danger/30 text-danger hover:bg-danger-soft" onClick={() => setConfirmRemove(true)}>
-                  <Trash2 className="size-4" aria-hidden /> Remove
-                </Button>
-              )}
-            </div>
-          )
-        }
-      />
-      {!list ? (
-        editable ? (
-          uploader
-        ) : (
-          <EmptyState icon={Store} title="No shop list" description="The BD did not share a shop list for this order." />
-        )
-      ) : (
-        <div className="space-y-4">
-          <VerifyPanel key={`${list.fileId}-${data.declaredShopTotal}`} orderId={orderId} data={data} editable={editable} />
-          <div className={cn("grid gap-3 sm:grid-cols-3", measurement ? "xl:grid-cols-6" : "xl:grid-cols-5")}>
-            {[
-              { label: "Rows in Excel", value: list.total, icon: Store, tone: "bg-brand-soft text-brand" },
-              { label: "Valid", value: list.valid, icon: CheckCircle2, tone: "bg-success-soft text-success" },
-              { label: "With Warnings", value: list.warning, icon: AlertTriangle, tone: "bg-warning-soft text-warning" },
-              { label: "With Errors", value: list.error, icon: XCircle, tone: "bg-danger-soft text-danger" },
-              { label: "Duplicates", value: list.duplicates ?? 0, icon: Copy, tone: "bg-warning-soft text-warning" },
-              ...(measurement ? [{ label: "Shops with Photos", value: data.shopsWithFiles, icon: Camera, tone: "bg-[#fff7ed] text-approval" }] : []),
-            ].map((k) => (
-              <div key={k.label} className="flex items-center gap-3 rounded-xl border border-border bg-background p-3">
-                <span className={cn("flex size-9 items-center justify-center rounded-lg", k.tone)}>
-                  <k.icon className="size-4" aria-hidden />
-                </span>
-                <div>
-                  <p className="text-lg font-bold leading-none text-primary tabular-nums">{k.value}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{k.label}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          {list.error > 0 && (
-            <p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              {list.error} row{list.error === 1 ? " has" : "s have"} errors (for example an invalid mobile number). {editable ? "Fix the file and replace it, or hand over as is." : "Clarify them with the BD."}
-            </p>
-          )}
-
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter shops">
-            {STATE_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                aria-pressed={state === f.key}
-                onClick={() => {
-                  setState(f.key);
-                  setPage(1);
-                }}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                  state === f.key ? "border-brand bg-brand text-white" : "border-border bg-surface text-muted-foreground hover:bg-muted",
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="overflow-hidden rounded-lg border border-border">
-            {rows.isPending ? (
-              <RowsSkeleton rows={4} />
-            ) : rows.isError ? (
-              <ErrorState error={rows.error} onRetry={() => rows.refetch()} />
-            ) : (
-              <div className="max-h-[480px] overflow-auto">
-                <table className="w-full min-w-[960px] text-left text-sm">
-                  <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2.5">Row</th>
-                      <th className="px-3 py-2.5">Shop / Dealer</th>
-                      <th className="px-3 py-2.5">Location</th>
-                      <th className="px-3 py-2.5">Mobile</th>
-                      {measurement && <th className="px-3 py-2.5">Size</th>}
-                      <th className="px-3 py-2.5">Status</th>
-                      {measurement && <th className="px-3 py-2.5">Photos &amp; Documents</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {rows.data?.data.length === 0 && (
-                      <tr>
-                        <td colSpan={measurement ? 7 : 5} className="px-3 py-6 text-center text-muted-foreground">
-                          No shops in this filter.
-                        </td>
-                      </tr>
-                    )}
-                    {rows.data?.data.map((s) => (
-                      <tr key={s.rowNumber} className="align-top">
-                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{s.rowNumber}</td>
-                        <td className="px-3 py-2.5">
-                          <span className="block font-medium">{s.shopName ?? s.dealerName ?? "-"}</span>
-                          {s.shopName && s.dealerName && <span className="block text-xs text-muted-foreground">{s.dealerName}</span>}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span className="block">{[s.location, s.district].filter(Boolean).join(", ") || "-"}</span>
-                          {(s.address1 || s.address2) && <span className="block text-xs text-muted-foreground">{[s.address1, s.address2].filter(Boolean).join(", ")}</span>}
-                        </td>
-                        <td className="px-3 py-2.5 tabular-nums">{s.mobile ?? "-"}</td>
-                        {measurement && <td className="px-3 py-2.5 tabular-nums">{sizeOf(s)}</td>}
-                        <td className="px-3 py-2.5">
-                          <Badge tone={s.state === "VALID" ? "success" : s.state === "WARNING" ? "warning" : "danger"}>{s.state === "VALID" ? "Valid" : s.state === "WARNING" ? "Warning" : "Error"}</Badge>
-                          {s.issues.length > 0 && (
-                            <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                              {s.issues.map((m) => (
-                                <li key={m}>{m}</li>
-                              ))}
-                            </ul>
-                          )}
-                        </td>
-                        {measurement && (
-                          <td className="px-3 py-2.5">
-                            <RowFiles orderId={orderId} shop={s} editable={editable} />
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {rows.data && rows.data.meta.totalPages > 1 && <Pagination meta={rows.data.meta} onPage={setPage} />}
-          </div>
-          {uploader}
-        </div>
-      )}
-      <ConfirmDialog
-        open={confirmRemove}
-        onOpenChange={setConfirmRemove}
-        title="Remove the shop list?"
-        description="The uploaded file and its shop rows are removed from this order. You can upload a new list later."
-        confirmLabel="Remove"
-        destructive
-        loading={remove.isPending}
-        onConfirm={async () => {
-          try {
-            await remove.mutateAsync(undefined);
-            toast("Shop list removed");
-            setConfirmRemove(false);
-          } catch (e) {
-            toast(errorMessage(e), "error");
-          }
-        }}
-      />
-    </Card>
-  );
-}
-
-/** Client documents. BD can add them before and after handover; deleting is possible only before handover. */
-function DocumentsSection({ orderId, data, canAdd, canDelete }: { orderId: string; data: HandoverState; canAdd: boolean; canDelete: boolean }) {
-  const toast = useToast();
-  const [files, setFiles] = useState<File[]>([]);
-  const [removeId, setRemoveId] = useState<string | null>(null);
-  const add = useAddHandoverDocs(orderId);
-  const remove = useRemoveHandoverDoc(orderId);
-  const docs = data.documents.filter((d) => d.kind === "DOCUMENT");
-  const run = (p: Promise<unknown>) => p.catch((e) => toast(errorMessage(e), "error"));
-
-  return (
-    <Card className="p-5 sm:p-6">
-      <SectionTitle
-        icon={Paperclip}
-        title="Documents"
-        description={data.assignee ? "Shared with Client Servicing. New documents can still be added." : "Optional: PO, briefs, artwork, shop photos, anything Client Servicing needs."}
-      />
-      {docs.length === 0 ? (
-        <p className="mb-4 rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No documents yet.</p>
-      ) : (
-        <ul className="mb-4 divide-y divide-border rounded-lg border border-border">
-          {docs.map((d) => (
-            <li key={d._id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-              <span className="flex size-9 items-center justify-center rounded-lg bg-brand-soft text-brand">
-                <FileText className="size-4" aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{d.file.name ?? "Document"}</p>
-                <p className="text-xs text-muted-foreground">
-                  {d.file.size ? `${formatBytes(d.file.size)} · ` : ""}
-                  {d.uploadedBy?.name ?? "-"} · {formatDateTime(d.createdAt)}
-                  {d.afterHandover && <span className="ml-1.5 rounded-full bg-warning-soft px-1.5 py-0.5 text-[11px] font-semibold text-warning">Added after handover</span>}
-                </p>
-              </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="sm" onClick={() => run(openFile(d.file.fileId, { orderId }))} aria-label={`View ${d.file.name}`}>
-                  <Eye className="size-4" aria-hidden /> View
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => run(downloadFile(d.file.fileId, { orderId }, d.file.name))} aria-label={`Download ${d.file.name}`}>
-                  <Download className="size-4" aria-hidden />
-                </Button>
-                {canDelete && (
-                  <Button variant="ghost" size="sm" onClick={() => setRemoveId(d._id)} aria-label={`Delete ${d.file.name}`}>
-                    <Trash2 className="size-4 text-danger" aria-hidden />
-                  </Button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {canAdd && (
-        <div className="space-y-3">
-          <FileUploader id="ho-docs" files={files} onChange={setFiles} accept={DOC_ACCEPT} multiple hint="Up to 10 files at a time: PDF, images, Word, PowerPoint, Excel (old and new formats)." compact />
-          <Button
-            variant="brand-outline"
-            disabled={!files.length}
-            loading={add.isPending}
-            onClick={async () => {
-              try {
-                await add.mutateAsync(formData(files));
-                toast(`${files.length} document${files.length === 1 ? "" : "s"} added`);
-                setFiles([]);
-              } catch (e) {
-                toast(errorMessage(e), "error");
-              }
-            }}
-          >
-            <Upload className="size-4" aria-hidden /> Upload {files.length > 1 ? `${files.length} Documents` : "Document"}
-          </Button>
-        </div>
-      )}
-      <ConfirmDialog
-        open={removeId !== null}
-        onOpenChange={(o) => !o && setRemoveId(null)}
-        title="Delete this document?"
-        description="The file is removed from this order and erased from storage."
-        confirmLabel="Delete"
-        destructive
-        loading={remove.isPending}
-        onConfirm={async () => {
-          try {
-            await remove.mutateAsync(removeId!);
-            toast("Document deleted");
-            setRemoveId(null);
-          } catch (e) {
-            toast(errorMessage(e), "error");
-          }
-        }}
-      />
-    </Card>
-  );
-}
-
 /** Pick the Client Servicing person and hand the order over (once; it cannot be reassigned). */
 function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; data: HandoverState; order: Order; onAssigned?: () => void }) {
   const toast = useToast();
@@ -811,14 +288,13 @@ function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; 
   const options: SearchOption[] = (users.data ?? [])
     .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
     .map((u) => ({ value: u._id, label: u.name, sublabel: [u.email, u.phone].filter(Boolean).join(" · ") }));
-  const docs = data.documents.filter((d) => d.kind === "DOCUMENT").length;
-  const voices = data.voiceNotes.length;
+  const messages = data.messages.length;
   const contacts = `${order.client.contacts.length} contact person${order.client.contacts.length === 1 ? "" : "s"}`;
   const ready = data.missing.length === 0;
 
   return (
     <Card className="border-brand/30 p-5 sm:p-6">
-      <SectionTitle icon={Handshake} title="Assign to Client Servicing" description="After handover, Client Servicing handles this client. It cannot be reassigned." />
+      <SectionTitle icon={Handshake} title="Assign Client Servicing Person" description="Completing the handover assigns this person and completes the lead. It cannot be reassigned." />
       {!ready && (
         <ul className="mb-4 space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm">
           {data.missing.map((m) => (
@@ -857,7 +333,7 @@ function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; 
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Info className="size-3.5" aria-hidden /> {data.type ? HANDOVER_TYPES[data.type].label : "No type chosen"}: the client, {contacts}
             {data.type !== "ASO" && `, ${data.shopList ? `${data.shopList.total} shops` : "no shop list"}`}
-            {data.type === "SHOP_MEASUREMENT" && `, ${data.shopFiles} shop photo${data.shopFiles === 1 ? "" : "s"}/document${data.shopFiles === 1 ? "" : "s"}`}, {voices} voice note{voices === 1 ? "" : "s"} and {docs} document{docs === 1 ? "" : "s"}.
+            {data.type === "SHOP_MEASUREMENT" && `, ${data.shopFiles} shop image${data.shopFiles === 1 ? "" : "s"}`} and {messages} message{messages === 1 ? "" : "s"}.
           </p>
         ) : (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -865,7 +341,7 @@ function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; 
           </p>
         )}
         <Button variant="brand" disabled={!ready} onClick={() => (cs ? setConfirm(true) : setError("Choose the Client Servicing person"))}>
-          <Send className="size-4" aria-hidden /> Assign to Client Servicing
+          <Send className="size-4" aria-hidden /> Save &amp; Complete Handover
         </Button>
       </div>
       <ConfirmDialog
@@ -891,47 +367,6 @@ function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; 
           cannot change the person or the shop list.
         </p>
       </ConfirmDialog>
-    </Card>
-  );
-}
-
-/** Read-only summary of what goes to Client Servicing, above the assignment (Lead Management "Assign" step). */
-function HandoverSummary({ order, data }: { order: Order; data: HandoverState }) {
-  const c = order.client;
-  const docs = data.documents.filter((d) => d.kind === "DOCUMENT").length;
-  const list = data.shopList;
-  const crm = order.clientType !== "EXISTING";
-  return (
-    <Card className="p-5 sm:p-6">
-      <SectionTitle icon={ListChecks} title="Handover Summary" description="What Client Servicing receives. Change it in Handover Type & Details." />
-      <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <DetailItem label="Client">
-          {c.name}
-          {c.clientNo && <span className="ml-1 font-mono text-xs text-brand">{c.clientNo}</span>}
-        </DetailItem>
-        <DetailItem label="Contact Persons">
-          {c.contacts.length}
-          {c.contacts.find((k) => k.isPrimary) && <span className="text-muted-foreground"> · primary {c.contacts.find((k) => k.isPrimary)!.name}</span>}
-        </DetailItem>
-        <DetailItem label="Handover">{data.full ? "Full handover (toggle ON)" : "Client details only (toggle OFF)"}</DetailItem>
-        {data.full && <DetailItem label="Handover Type">{data.type ? HANDOVER_TYPES[data.type].label : null}</DetailItem>}
-        {data.full && data.type && data.type !== "ASO" && (
-          <DetailItem label="Shops">
-            {list ? `${data.declaredShopTotal ?? list.valid} shops · ${data.verified ? "verified" : "not verified"}` : "No shop list"}
-            {data.type === "SHOP_MEASUREMENT" && list ? <span className="text-muted-foreground"> · {data.shopFiles} photos / documents</span> : null}
-          </DetailItem>
-        )}
-        {data.full && (
-          <DetailItem label="Notes, Voice Notes & Documents">
-            {data.notes ? "Notes added" : "No notes"} · {data.voiceNotes.length} voice note{data.voiceNotes.length === 1 ? "" : "s"} · {docs} document{docs === 1 ? "" : "s"}
-          </DetailItem>
-        )}
-        {crm && (
-          <DetailItem label="GST Certificate & Custom Fields">
-            {(c.gstCertificates?.length ?? 0) ? "GST certificate attached" : "No GST certificate"} · {c.customFields?.length ?? 0} custom field{(c.customFields?.length ?? 0) === 1 ? "" : "s"}
-          </DetailItem>
-        )}
-      </dl>
     </Card>
   );
 }
@@ -976,28 +411,24 @@ function StatusBanner({ data }: { data: HandoverState }) {
 }
 
 /**
- * BD -> Client Servicing handover for one order. BD: check client & contacts, optional shop list and documents, then
- * assign. Client Servicing: the same details read-only.
+ * Handover Type & Details for one order, shared by Order Management, the Client Servicing route and the Recce route.
+ * Order: 1. Handover Type (with the "Send handover details" toggle), 2. Client & Contact Persons, 3. Shop list (shop
+ * types), 4. Communication & attachments, 5. Assign Client Servicing Person + Save & Complete Handover (completes the
+ * lead). Client Servicing sees the same details read-only.
  *
- * `mode="recce"` (Assign to Recce Team): the same handover details, always in full (no toggle), without the Client
- * Servicing assignment; `locked` once the Recce team has the project.
+ * `mode="recce"` (Recce route): the same details, always in full (no toggle), without the Client Servicing assignment;
+ * `locked` once the Recce team has the project.
  */
 export function HandoverTab({
   order,
   onAssigned,
   mode = "cs",
   locked = false,
-  section,
 }: {
   order: Order;
   onAssigned?: () => void;
   mode?: "cs" | "recce";
   locked?: boolean;
-  /**
-   * Lead Management mind map steps open one part only: "details" (everything but the assignment) or "assign" (a
-   * summary and the Client Servicing assignment). Without it (Order Management) the whole tab shows.
-   */
-  section?: "details" | "assign";
 }) {
   const { can } = useAuth();
   const q = useHandover(order._id);
@@ -1016,40 +447,37 @@ export function HandoverTab({
   const data = recce ? { ...q.data, full: true } : q.data;
   const open = !data.assignee && !locked; // before handover the BD can still change everything
 
-  if (section === "assign")
-    return (
-      <div className="space-y-4">
-        {data.assignee && <StatusBanner data={data} />}
-        <HandoverSummary order={order} data={data} />
-        {canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
-      </div>
-    );
+  const toggle = recce ? undefined : canWrite && open ? (
+    <ScopeToggle orderId={order._id} data={data} editable />
+  ) : (
+    <Badge tone={data.full ? "info" : "neutral"}>{data.full ? "Handover details sent" : "Client details only"}</Badge>
+  );
 
   return (
     <div className="space-y-4">
-      {!recce && section !== "details" && <StatusBanner data={data} />}
-      {!recce && canWrite && open && <ScopeSection orderId={order._id} data={data} editable />}
+      {!recce && <StatusBanner data={data} />}
+      <TypeSection orderId={order._id} data={data} editable={canWrite && open} toggle={toggle} />
       <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
       <AnimatePresence initial={false}>
         {data.full && (
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
-            <TypeSection orderId={order._id} data={data} editable={canWrite && open} />
-            {data.type === "ASO" && data.shopList && open && (
+            {data.type === "ASO" && !!data.shopList?.total && open && (
               <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-                <AlertTriangle className="size-4" aria-hidden /> A shop list was uploaded earlier. ASO hands over without one: remove it below, or choose a shop type.
+                <AlertTriangle className="size-4" aria-hidden /> Shops were added earlier. ASO hands over without a shop list: clear it below, or choose a shop type.
               </p>
             )}
-            {/* Shop types always show the list; otherwise it is shown only when one exists (older orders, or one to remove for ASO). */}
-            {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || data.shopList) && <ShopSection orderId={order._id} data={data} editable={canWrite && open} />}
-            <NotesSection orderId={order._id} data={data} editable={canWrite && open} canAddVoice={canWrite} />
-            <DocumentsSection orderId={order._id} data={data} canAdd={canWrite} canDelete={canWrite && open} />
+            {/* Shop types always show the table; ASO only when rows are left over (to clear them). */}
+            {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || !!data.shopList?.total) && (
+              <ShopTable orderId={order._id} type={data.type ?? "SHOP_DETAILS"} summary={data.shopList} editable={canWrite && open} canAddImages={canWrite} />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
-      {!recce && canWrite && open && section !== "details" && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
+      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={canWrite} canDelete={canWrite && open} />
+      {!recce && canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
       {!open && canWrite && !recce && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <RefreshCw className="size-3.5" aria-hidden /> Documents and voice notes can still be added; Client Servicing is notified of each one.
+          <RefreshCw className="size-3.5" aria-hidden /> Messages, files, voice notes and shop images can still be added; Client Servicing is notified.
         </p>
       )}
     </div>
