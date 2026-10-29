@@ -246,14 +246,25 @@ Assignment needs an empty gap list.
 
 ### Shop table
 
+**The table is the uploaded Excel (imported columns, 2026-10-29):**
+- `order.shopColumns` `[{ id: "c1"…, header, field }]` keeps the sheet's columns in order:
+  - the **original header text**, blank and repeated headers included, under unique internal ids;
+  - `field` is the shop field the column feeds internally, or `null`. It never renames, merges or hides a column.
+- Each row keeps its raw values in `cells` (column id → text exactly as Excel displays it). The normalised shop fields are stored separately on the row for the checks and downstream use (project sites, request email, duplicates).
+- The table shows one column per uploaded column, with the original header, followed by a separate **App** group: Size (Shop + Measurement, when the sheet has no size column), Images, Status, Modified, Actions. It scrolls horizontally; long cells wrap.
+- **Add Row / Edit** use the same columns (one field per column). Shop + Measurement without a size column adds the app's Width / Height / Unit section, kept apart from the sheet cells.
+- `GET …/handover/shops` returns the columns in `meta.columns`; `GET …/handover` returns `columns`.
+- **Older tables** (no `shopColumns`) keep the previous fixed layout. Their first new upload builds the columns and fills their cells from their fields.
+- Clear All also clears the columns.
+
 **Rows (`handoverShopsArray`):**
 - Each row has a stable `rowId`; older rows get one on first read (`ensureRowIds`).
-- Each row also stores `rowNumber`, the shop fields, `extra` (unrecognised Excel columns, header → text), `state` (`VALID` / `WARNING` / `ERROR`), `issues`, `updatedAt`, `updatedBy`, and `attachments` (images).
+- Each row also stores `rowNumber`, `cells`, the shop fields, `extra` (older tables only), `state` (`VALID` / `WARNING` / `ERROR`), `issues`, `updatedAt`, `updatedBy`, and `attachments` (images).
 - Fields: `shopName dealerName location district address1-3 pincode mobile mobileAlt gstin contactPerson width height unit boardType quantity remarks clientSiteCode`.
-- **Cleaning:** rows are cleaned with the project-site import rules (`sites/site.fields.normalise`, scenario `MEASUREMENT_REQUIRED`).
+- **Cleaning:** the fields are cleaned with the project-site import rules (`sites/site.fields.normalise`, scenario `MEASUREMENT_REQUIRED`). The cells are never changed.
   - Size is optional for both shop types.
   - Shop Details Only stores no size.
-  - Shop name or dealer name is required.
+  - Shop name or dealer name: required when the sheet has such a column. When it has none, the row is only flagged (warning), not rejected.
   - A bad mobile or GST is an error; missing address / district / mobile are warnings.
 
 **Counts:**
@@ -262,23 +273,14 @@ Assignment needs an empty gap list.
 - The old Total Shops verification was removed.
 
 **Excel upload (append):**
-- `POST …/handover/shops` takes `.xlsx`, `.xls` or `.csv` and **adds** rows. The template is optional.
+- `POST …/handover/shops` takes `.xlsx`, `.xls` or `.csv` with **any** columns and **adds** rows. The template is optional, and a missing template column never rejects the file.
 - **`.xls` support** needs the optional SheetJS package (`xlsx`) on the backend. Without it, a `.xls` upload gets a 400 asking for `.xlsx`.
 - **Reading the file** (`sites/excel.service.readGrids` + `handover.service.resolveImport`):
-  - The columns can be in any order, with any header names (site-import synonyms; `site.fields.autoMap`).
-  - The header row is detected within the first 15 rows, so title rows above it are fine.
-  - A sheet without a shop list (e.g. instructions) is skipped.
-  - Unrecognised columns are kept per row as **extra** columns.
-  - Shop Details Only keeps a size column as an extra column.
-- **Mapping step:**
-  - If the workbook is ambiguous, the upload returns 422 `SHOP_MAPPING_REQUIRED` with a compact preview instead of guessing. This happens when several sheets hold a shop list, or when no header row with a shop / dealer column is found.
-  - The preview has the sheets, the first rows, the headers, the suggested mapping, the allowed fields and the problems.
-  - The UI then asks for the sheet, the header row and the column mapping.
-  - Changing the sheet or header row re-previews with `preview=1`; nothing is imported.
-  - The import resends the file with `sheet`, `headerRow` and `mapping` (JSON header → field / `extra` / `ignore`).
-- **Values are kept as text:**
-  - Pincodes and codes stay text; a digit-formatted number keeps its leading zeros (e.g. `000` → `007`).
-  - Phones are normalised to 10 digits, as before.
+  - Cells are read as Excel displays them: number formats (leading zeros, decimals, thousands, %, quoted text), date formats, and formula results. Text cells (phone prefixes, GST, codes) stay as typed.
+  - Fully blank rows are skipped. Blank cells and blank columns are kept.
+  - The header row is the first row, or the best recognisable row within the first 15 (title rows above it are fine).
+  - Several sheets: the only sheet with rows below a header is used; otherwise the BD picks the sheet (422 `SHOP_MAPPING_REQUIRED` with a preview; the UI's **Choose the sheet** step). There, "Also used as" optionally sets which column feeds which shop field; `preview=1` re-reads another sheet or header row without importing.
+- **Column matching on a later upload:** columns are matched by header text, in order for repeated headers; new headers are appended as new columns.
 - **Problem rows:**
   - Rows with problems are imported and flagged, never dropped.
   - The response lists them (`imported.flagged`: Excel row, table row, issues) and the UI shows them above the table.
@@ -286,22 +288,23 @@ Assignment needs an empty gap list.
   - A damaged or unsupported file, an empty workbook, or a header with no rows returns a 400 / 422 with a message, never a 500.
   - Fixed 2026-10-29: the first upload on a new or cleared table used to fail with a 500 (`$set` of `shopList.x` while `shopList` was `null`).
 - **Re-imports:**
-  - A row carrying a **Row ID** (from Download Excel) updates that row instead, and keeps its images and extra columns.
+  - A file carrying a **Row ID** column (from Download Excel) updates those rows instead, keeping their images.
+  - In such a file only, these app columns are ignored: Images, Status, Issues, Modified At, Modified By, and Size / Unit (when the sheet had no size column).
   - A duplicate of an existing shop is added with a "Same shop as row N" warning.
-  - Export-only columns are ignored on upload: Row ID, Images, Status, Issues, Modified At, Modified By.
   - The upload is refused when the file has no new or changed rows.
 
 **Row actions:**
-- Add / Edit / Delete row (drawer form, including the extra columns).
+- Add / Edit / Delete row (drawer form with the imported columns).
 - Clear All, with confirmation (`DELETE …/handover/shops`).
-- **History:** Row History and table History show the user, the IST time, the action and the row identity (`label`, e.g. "Row 12 · ABC Traders", kept for deleted rows). Changed fields show old → new values, extra columns included.
+- **History:** Row History and table History show the user, the IST time, the action and the row identity (`label`, e.g. "Row 12 · ABC Traders" or the first filled cell, kept for deleted rows).
+  - Changed cells show old → new values by **column header** (`cells: [{ column, before, after }]`); app measurement changes show in `before` / `after`.
   - Stored in `handoverShopLogs`: `ADD EDIT DELETE IMPORT CLEAR IMAGE_ADD IMAGE_REMOVE`.
   - Only saved changes are logged.
   - Imports over 500 rows log one summary entry.
 
 **Downloads:**
 - **Template** (`GET /sales/shop-list-template?type=SHOP_DETAILS|SHOP_MEASUREMENT`); Shop Details has no Size column.
-- **Download Excel** (`GET …/handover/shops/export`) is the current table with Row ID, plus the extra columns. Shop + Measurement adds Size, Unit and Images. Includes Status, Issues and Modified At.
+- **Download Excel** (`GET …/handover/shops/export`) is the current table: Row ID, then the uploaded columns with their original headers (as text), then the app columns (Size / Unit when the sheet has no size column, Images for Shop + Measurement, Status, Issues, Modified At). Older tables keep the fixed export.
 
 **Images:**
 - Shop + Measurement only, up to **10 per row**, JPG / PNG / WEBP.

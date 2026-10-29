@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, Columns3, Download, FileSpreadsheet, History, ImagePlus, Loader2, Pencil, Plus, Store, Trash2, Upload, X, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, Columns3, Download, FileSpreadsheet, History, ImagePlus, Loader2, Pencil, Plus, Ruler, Store, Trash2, Upload, X, XCircle } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { SectionTitle } from "@/components/ui/page-header";
+import { Textarea } from "@/components/ui/textarea";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
@@ -36,6 +37,7 @@ import {
   type HandoverShop,
   type HandoverType,
   type ShopImportPreview,
+  type ShopColumn,
   type ShopImportResult,
   type ShopListSummary,
   type ShopLog,
@@ -45,7 +47,7 @@ import {
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Field = Exclude<keyof ShopRowInput, "extra">;
+type Field = Exclude<keyof ShopRowInput, "extra" | "cells">;
 const LABELS: Record<Field, string> = {
   shopName: "Shop Name",
   dealerName: "Dealer / Customer Name",
@@ -82,7 +84,7 @@ const sizeOf = (r: Pick<HandoverShop, "width" | "height" | "unit">) => (r.width 
 type FormValues = Partial<Record<Field, string>>;
 const toForm = (r?: HandoverShop): FormValues => Object.fromEntries([...BASE_FIELDS, ...SIZE_FIELDS].map((f) => [f, text(r?.[f])])) as FormValues;
 /** Mapping step targets: the shop fields, a combined Size column, or keep as an extra column / skip. */
-const TARGET_LABELS: Record<string, string> = { ...LABELS, size: "Size (W × H)", extra: "Keep as extra column", ignore: "Skip this column" };
+const TARGET_LABELS: Record<string, string> = { ...LABELS, size: "Size (W × H)", extra: "—" };
 
 /** Add / edit one shop row. The server checks it with the site import rules and returns its state and issues. */
 function RowDialog({ orderId, measurement, row, open, onClose }: { orderId: string; measurement: boolean; row: HandoverShop | null; open: boolean; onClose: () => void }) {
@@ -166,6 +168,94 @@ function RowDialog({ orderId, measurement, row, open, onClose }: { orderId: stri
           </Button>
           <Button type="submit" variant="brand" loading={busy}>
             {row ? "Update Shop" : "Add Shop"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Header of an imported column as shown: the original text, or its position when the sheet left it blank. */
+const columnTitle = (c: ShopColumn, i: number) => c.header.trim() || `(no header) column ${i + 1}`;
+const SIZE_TARGETS = ["width", "height", "size", "unit"];
+
+/**
+ * Add / edit one row of an imported-columns table: one field per sheet column, with its original header, in sheet
+ * order. Shop + Measurement without a size column in the sheet adds the app's own measurement fields, kept apart.
+ */
+function ColumnRowDialog({ orderId, columns, measurement, row, onClose }: { orderId: string; columns: ShopColumn[]; measurement: boolean; row: HandoverShop | null; onClose: () => void }) {
+  const toast = useToast();
+  const add = useAddShopRow(orderId);
+  const update = useUpdateShopRow(orderId);
+  const [cells, setCells] = useState<Record<string, string>>(() => ({ ...(row?.cells ?? {}) }));
+  const appSize = measurement && !columns.some((c) => c.field && SIZE_TARGETS.includes(c.field));
+  const [size, setSize] = useState({ width: text(row?.width), height: text(row?.height), unit: text(row?.unit) });
+  const busy = add.isPending || update.isPending;
+
+  const save = async () => {
+    const filled = Object.fromEntries(columns.map((c) => [c.id, cells[c.id] ?? ""]).filter(([, v]) => v.trim() !== ""));
+    if (!Object.keys(filled).length && !(appSize && (size.width || size.height))) return toast("Fill at least one cell", "error");
+    const body: ShopRowInput = { cells: filled, ...(appSize ? { width: size.width.trim(), height: size.height.trim(), unit: size.unit.trim() } : {}) };
+    try {
+      const r = row ? await update.mutateAsync({ rowId: row.rowId, body }) : await add.mutateAsync(body);
+      toast(r.state === "ERROR" ? `Saved with errors: ${r.issues.join("; ")}` : row ? "Row updated" : "Row added", r.state === "ERROR" ? "error" : "success");
+      onClose();
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    }
+  };
+
+  return (
+    <Modal open onOpenChange={(o) => !o && onClose()} variant="drawer" className="max-w-3xl" title={row ? `Edit Row ${row.rowNumber}` : "Add Row"} description="The columns of the uploaded Excel. Every saved change is kept in the row history.">
+      <form
+        noValidate
+        autoComplete="off"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+        className="space-y-4"
+      >
+        {row && row.issues.length > 0 && (
+          <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-xs text-warning">
+            {row.issues.map((i) => (
+              <li key={i}>{i}</li>
+            ))}
+          </ul>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {columns.map((c, i) => {
+            const v = cells[c.id] ?? "";
+            const long = v.length > 60;
+            return (
+              <Field key={c.id} label={columnTitle(c, i)} htmlFor={`cell-${c.id}`} className={long ? "sm:col-span-2" : undefined}>
+                {long ? (
+                  <Textarea id={`cell-${c.id}`} value={v} maxLength={2000} rows={3} onChange={(e) => setCells({ ...cells, [c.id]: e.target.value })} />
+                ) : (
+                  <Input id={`cell-${c.id}`} value={v} maxLength={2000} onChange={(e) => setCells({ ...cells, [c.id]: e.target.value })} />
+                )}
+              </Field>
+            );
+          })}
+        </div>
+        {appSize && (
+          <fieldset className="grid gap-3 rounded-lg border border-brand/30 bg-brand-soft/30 p-3 sm:grid-cols-3">
+            <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-brand">
+              <Ruler className="size-3.5" aria-hidden /> Measurement (app)
+            </legend>
+            {(["width", "height", "unit"] as const).map((f) => (
+              <Field key={f} label={LABELS[f]} htmlFor={`m-${f}`}>
+                <Input id={`m-${f}`} value={size[f]} inputMode={f === "unit" ? undefined : "decimal"} placeholder={f === "unit" ? "ft, in, m, cm or mm" : undefined} onChange={(e) => setSize({ ...size, [f]: e.target.value })} />
+              </Field>
+            ))}
+          </fieldset>
+        )}
+        <div className="sticky bottom-0 -mx-1 flex justify-end gap-2 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="brand" loading={busy}>
+            {row ? "Update Row" : "Add Row"}
           </Button>
         </div>
       </form>
@@ -276,7 +366,11 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
           {q.data.map((l) => {
             const before = flat(l.before);
             const after = flat(l.after);
-            const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+            // Imported-column cells (by header) first, then app fields (measurement, or older rows' fields).
+            const entries = [
+              ...(l.cells ?? []).map((c) => ({ name: c.column || "(no header)", before: c.before, after: c.after })),
+              ...[...new Set([...Object.keys(before), ...Object.keys(after)])].map((k) => ({ name: fieldName(k), before: l.before ? text(before[k]) : undefined, after: l.after ? text(after[k]) : undefined })),
+            ];
             return (
               <li key={l._id} className="rounded-lg border border-border px-3 py-2 text-sm">
                 <p className="flex flex-wrap items-center justify-between gap-2">
@@ -289,18 +383,18 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
                   </span>
                 </p>
                 {l.note && <p className="text-xs text-muted-foreground">{l.note}</p>}
-                {keys.length > 0 && (
+                {entries.length > 0 && (
                   <dl className="mt-1.5 grid gap-1 text-xs">
-                    {keys.map((k) => (
-                      <div key={k} className="grid grid-cols-[120px_1fr] gap-2">
-                        <dt className="text-muted-foreground">{fieldName(k)}</dt>
-                        <dd>
+                    {entries.map((e, i) => (
+                      <div key={`${e.name}-${i}`} className="grid grid-cols-[140px_1fr] gap-2">
+                        <dt className="break-words text-muted-foreground">{e.name}</dt>
+                        <dd className="break-words">
                           {l.action === "EDIT" ? (
                             <>
-                              <span className="text-danger line-through">{text(before[k]) || "—"}</span> → <span className="font-medium text-success">{text(after[k]) || "—"}</span>
+                              <span className="text-danger line-through">{e.before || "—"}</span> → <span className="font-medium text-success">{e.after || "—"}</span>
                             </>
                           ) : (
-                            text(l.after ? after[k] : before[k])
+                            (e.after ?? e.before) || "—"
                           )}
                         </dd>
                       </div>
@@ -351,13 +445,12 @@ function MappingDialog({
   };
   const used = Object.values(mapping).filter((t) => t !== "extra" && t !== "ignore");
   const dup = used.find((t, i) => used.indexOf(t) !== i);
-  const named = used.includes("shopName") || used.includes("dealerName");
   const headerIdx = p.rows.findIndex((r) => r.rowNumber === p.headerRow);
   const sample = p.rows.slice(headerIdx + 1, headerIdx + 4);
-  const targets = ["extra", "ignore", ...p.fields];
+  const targets = ["extra", ...p.fields];
 
   return (
-    <Modal open onOpenChange={(o) => !o && onClose()} variant="drawer" className="max-w-3xl" title="Match the Excel columns" description={`${file.name} · nothing is imported until you confirm.`}>
+    <Modal open onOpenChange={(o) => !o && onClose()} variant="drawer" className="max-w-3xl" title="Choose the sheet" description={`${file.name} · every column is imported as it is; nothing is imported until you confirm.`}>
       <div className="space-y-4">
         {p.problems.length > 0 && (
           <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm text-warning">
@@ -392,16 +485,16 @@ function MappingDialog({
               <tr>
                 <th className="px-3 py-2">Excel column</th>
                 <th className="px-3 py-2">Sample values</th>
-                <th className="w-56 px-3 py-2">Import as</th>
+                <th className="w-56 px-3 py-2">Also used as (optional)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {p.headers.map((h, i) => (
                 <tr key={h}>
-                  <td className="px-3 py-2 font-medium">{h}</td>
+                  <td className="px-3 py-2 font-medium">{p.rows[headerIdx]?.cells[i] || <span className="italic text-muted-foreground">(no header) column {i + 1}</span>}</td>
                   <td className="max-w-[220px] truncate px-3 py-2 text-xs text-muted-foreground">{sample.map((r) => r.cells[i]).filter(Boolean).join(" · ") || "-"}</td>
                   <td className="px-3 py-1.5">
-                    <Select aria-label={`Import ${h} as`} className="h-9" value={mapping[h] ?? "extra"} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
+                    <Select aria-label={`Also use ${h} as`} className="h-9" value={mapping[h] ?? "extra"} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
                       {targets.map((t) => (
                         <option key={t} value={t}>
                           {TARGET_LABELS[t] ?? t}
@@ -415,17 +508,17 @@ function MappingDialog({
           </table>
         </div>
         <p className="text-xs text-muted-foreground">
-          Shop Name or Dealer Name is needed; other fields are optional{measurement ? " (Size too)" : ""}. Extra columns stay on each row and can be edited later.
+          All columns are kept with their own headers. &ldquo;Also used as&rdquo; only tells the app which column holds the shop name, mobile, GST{measurement ? ", size" : ""} and so on for its checks.
         </p>
         <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
           <span className="text-xs text-danger" role="status">
-            {dup ? `"${TARGET_LABELS[dup] ?? dup}" is chosen twice.` : !named ? "Choose the Shop Name or Dealer Name column." : ""}
+            {dup ? `"${TARGET_LABELS[dup] ?? dup}" is chosen twice.` : ""}
           </span>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={importing}>
               Cancel
             </Button>
-            <Button type="button" variant="brand" loading={importing} disabled={loading || !!dup || !named || !p.headerRow} onClick={() => onImport({ sheet: p.sheet, headerRow: p.headerRow!, mapping })}>
+            <Button type="button" variant="brand" loading={importing} disabled={loading || !!dup || !p.headerRow} onClick={() => onImport({ sheet: p.sheet, headerRow: p.headerRow!, mapping })}>
               <Upload className="size-4" aria-hidden /> Import Rows
             </Button>
           </div>
@@ -476,6 +569,7 @@ export function ShopTable({
   editable,
   canAddImages,
   projectId,
+  columns: columnsProp,
 }: {
   orderId: string;
   type: HandoverType;
@@ -485,6 +579,8 @@ export function ShopTable({
   /** Images can still be added after handover. */
   canAddImages: boolean;
   projectId?: string;
+  /** Imported columns from the handover (the rows' list carries them too; used while the table has no rows). */
+  columns?: ShopColumn[] | null;
 }) {
   const toast = useToast();
   const measurement = type === "SHOP_MEASUREMENT";
@@ -505,6 +601,11 @@ export function ShopTable({
   const source: FileSource = projectId ? { projectId } : { orderId };
   const total = summary?.total ?? 0;
   const hasExtra = !!rows.data?.data.some((r) => Object.keys(r.extra ?? {}).length);
+  // The table as uploaded: its own columns (null for tables from before imported columns).
+  const listed = (rows.data?.meta as { columns?: ShopColumn[] | null } | undefined)?.columns;
+  const cols = (listed !== undefined ? listed : columnsProp) ?? null;
+  // Shop + Measurement: the app's Size column, unless the sheet has its own size column.
+  const showSize = measurement && !(cols ?? []).some((c) => c.field && SIZE_TARGETS.includes(c.field));
 
   const [mappingStep, setMappingStep] = useState<ShopImportPreview | null>(null);
   const [lastImport, setLastImport] = useState<ShopImportResult | null>(null);
@@ -650,42 +751,75 @@ export function ShopTable({
       ) : (
         <>
           <div className="max-h-[560px] overflow-auto border-t border-border">
-            <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <tr>
+            <table className="w-max min-w-full text-left text-sm" style={cols ? undefined : { minWidth: 1100 }}>
+              <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold text-muted-foreground">
+                {cols && (
+                  <tr className="border-b border-border text-[11px] uppercase tracking-wide">
+                    <th className="px-3 py-1.5" />
+                    <th colSpan={cols.length} className="px-3 py-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <FileSpreadsheet className="size-3.5" aria-hidden /> Uploaded Excel columns ({cols.length})
+                      </span>
+                    </th>
+                    <th colSpan={(showSize ? 1 : 0) + (measurement ? 1 : 0) + 3} className="border-l-2 border-brand/30 bg-brand-soft/60 px-3 py-1.5 text-brand">
+                      App
+                    </th>
+                  </tr>
+                )}
+                <tr className={cols ? undefined : "uppercase tracking-wide"}>
                   <th className="px-3 py-2.5">#</th>
-                  <th className="px-3 py-2.5">Shop / Dealer</th>
-                  <th className="px-3 py-2.5">Location</th>
-                  <th className="px-3 py-2.5">Address</th>
-                  <th className="px-3 py-2.5">Mobile / GST</th>
-                  {measurement && <th className="px-3 py-2.5">Size</th>}
-                  {hasExtra && <th className="px-3 py-2.5">Other Columns</th>}
-                  {measurement && <th className="px-3 py-2.5">Images</th>}
-                  <th className="px-3 py-2.5">Status</th>
-                  <th className="px-3 py-2.5">Modified</th>
-                  <th className="px-3 py-2.5 text-right">Actions</th>
+                  {cols ? (
+                    cols.map((c, i) => (
+                      <th key={c.id} scope="col" className="min-w-[140px] max-w-[280px] whitespace-pre-wrap break-words px-3 py-2.5 text-foreground" title={c.header || undefined}>
+                        {c.header.trim() ? c.header : <span className="font-normal italic text-muted-foreground">{columnTitle(c, i)}</span>}
+                      </th>
+                    ))
+                  ) : (
+                    <>
+                      <th className="px-3 py-2.5">Shop / Dealer</th>
+                      <th className="px-3 py-2.5">Location</th>
+                      <th className="px-3 py-2.5">Address</th>
+                      <th className="px-3 py-2.5">Mobile / GST</th>
+                    </>
+                  )}
+                  {showSize && <th className={cn("px-3 py-2.5", cols && "border-l-2 border-brand/30 bg-brand-soft/40")}>Size</th>}
+                  {!cols && hasExtra && <th className="px-3 py-2.5">Other Columns</th>}
+                  {measurement && <th className={cn("px-3 py-2.5", cols && !showSize && "border-l-2 border-brand/30", cols && "bg-brand-soft/40")}>Images</th>}
+                  <th className={cn("px-3 py-2.5", cols && !showSize && !measurement && "border-l-2 border-brand/30", cols && "bg-brand-soft/40")}>Status</th>
+                  <th className={cn("px-3 py-2.5", cols && "bg-brand-soft/40")}>Modified</th>
+                  <th className={cn("px-3 py-2.5 text-right", cols && "bg-brand-soft/40")}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.data.data.map((r) => (
                   <tr key={r.rowId} className={cn("align-top hover:bg-muted/40", r.state === "ERROR" && "bg-danger-soft/30")}>
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{r.rowNumber}</td>
-                    <td className="px-3 py-2.5">
-                      <p className="font-medium">{r.shopName ?? r.dealerName ?? "-"}</p>
-                      {r.shopName && r.dealerName && <p className="text-xs text-muted-foreground">{r.dealerName}</p>}
-                      {r.contactPerson && <p className="text-xs text-muted-foreground">Contact: {r.contactPerson}</p>}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {[r.location, r.district].filter(Boolean).join(", ") || "-"}
-                      {r.pincode && <p className="text-xs text-muted-foreground">{r.pincode}</p>}
-                    </td>
-                    <td className="max-w-[240px] px-3 py-2.5 text-xs">{[r.address1, r.address2, r.address3].filter(Boolean).join(", ") || "-"}</td>
-                    <td className="px-3 py-2.5 text-xs tabular-nums">
-                      {r.mobile ?? "-"}
-                      {r.gstin && <p className="text-muted-foreground">{r.gstin}</p>}
-                    </td>
-                    {measurement && <td className="px-3 py-2.5 tabular-nums">{sizeOf(r) ?? <span className="text-muted-foreground">-</span>}</td>}
-                    {hasExtra && (
+                    {cols ? (
+                      cols.map((c) => (
+                        <td key={c.id} className="min-w-[140px] max-w-[280px] whitespace-pre-wrap break-words px-3 py-2.5">
+                          {r.cells?.[c.id] ?? ""}
+                        </td>
+                      ))
+                    ) : (
+                      <>
+                        <td className="px-3 py-2.5">
+                          <p className="font-medium">{r.shopName ?? r.dealerName ?? "-"}</p>
+                          {r.shopName && r.dealerName && <p className="text-xs text-muted-foreground">{r.dealerName}</p>}
+                          {r.contactPerson && <p className="text-xs text-muted-foreground">Contact: {r.contactPerson}</p>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {[r.location, r.district].filter(Boolean).join(", ") || "-"}
+                          {r.pincode && <p className="text-xs text-muted-foreground">{r.pincode}</p>}
+                        </td>
+                        <td className="max-w-[240px] px-3 py-2.5 text-xs">{[r.address1, r.address2, r.address3].filter(Boolean).join(", ") || "-"}</td>
+                        <td className="px-3 py-2.5 text-xs tabular-nums">
+                          {r.mobile ?? "-"}
+                          {r.gstin && <p className="text-muted-foreground">{r.gstin}</p>}
+                        </td>
+                      </>
+                    )}
+                    {showSize && <td className={cn("whitespace-nowrap px-3 py-2.5 tabular-nums", cols && "border-l-2 border-brand/30")}>{sizeOf(r) ?? <span className="text-muted-foreground">-</span>}</td>}
+                    {!cols && hasExtra && (
                       <td className="max-w-[220px] px-3 py-2.5 text-xs">
                         {Object.entries(r.extra ?? {}).map(([k, v]) => (
                           <p key={k} className="truncate" title={`${k}: ${v}`}>
@@ -696,17 +830,17 @@ export function ShopTable({
                       </td>
                     )}
                     {measurement && (
-                      <td className="px-3 py-2.5">
+                      <td className={cn("px-3 py-2.5", cols && !showSize && "border-l-2 border-brand/30")}>
                         <Button variant="outline" size="sm" onClick={() => setImages(r)} aria-label={`Images of row ${r.rowNumber}`}>
                           {(r.attachments?.length ?? 0) > 0 ? <Camera className="size-4" aria-hidden /> : <ImagePlus className="size-4" aria-hidden />} {r.attachments?.length ?? 0}/{MAX_ROW_IMAGES}
                         </Button>
                       </td>
                     )}
-                    <td className="px-3 py-2.5">
+                    <td className={cn("px-3 py-2.5", cols && !showSize && !measurement && "border-l-2 border-brand/30")}>
                       <Badge tone={r.state === "VALID" ? "success" : r.state === "WARNING" ? "warning" : "danger"}>{r.state === "VALID" ? "Valid" : r.state === "WARNING" ? "Check" : "Error"}</Badge>
-                      {r.issues.length > 0 && <p className="mt-1 max-w-[200px] text-xs text-muted-foreground">{r.issues.join("; ")}</p>}
+                      {r.issues.length > 0 && <p className="mt-1 w-[200px] text-xs text-muted-foreground">{r.issues.join("; ")}</p>}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">
                       {r.updatedAt ? formatDateTimeIST(r.updatedAt) : "-"}
                       {r.updatedByName && <p>{r.updatedByName}</p>}
                     </td>
@@ -749,7 +883,12 @@ export function ShopTable({
           onClose={() => setMappingStep(null)}
         />
       )}
-      {editing && <RowDialog key={editing === "new" ? "new" : editing.rowId} orderId={orderId} measurement={measurement} row={editing === "new" ? null : editing} open onClose={() => setEditing(null)} />}
+      {editing &&
+        (cols ? (
+          <ColumnRowDialog key={editing === "new" ? "new" : editing.rowId} orderId={orderId} columns={cols} measurement={measurement} row={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
+        ) : (
+          <RowDialog key={editing === "new" ? "new" : editing.rowId} orderId={orderId} measurement={measurement} row={editing === "new" ? null : editing} open onClose={() => setEditing(null)} />
+        ))}
       {images && <ImagesDialog orderId={orderId} source={source} row={images} editable={editable} canAdd={canAddImages} onClose={() => setImages(null)} />}
       {history && <HistoryDialog orderId={orderId} row={history === "all" ? null : history} onClose={() => setHistory(null)} />}
       <ConfirmDialog

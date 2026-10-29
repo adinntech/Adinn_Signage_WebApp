@@ -71,7 +71,7 @@ The shop row schema comment says the rows "become project sites when Client Serv
 - KPI cards: **Total Shops** (row count), Valid, To Check, With Errors.
 - State filter; rows with issues; **Modified** (IST + user).
 - **History** per row and for the whole table (actor, time, action, row identity, old → new values, deleted rows included).
-- **Other Columns:** extra columns from the client's Excel, shown per row.
+- **Columns:** the uploaded Excel's own columns with their original headers and values (horizontal scroll), then the app columns (Size, Images, Status, Modified). Older tables keep the fixed layout.
 - Shop + Measurement: **Size** column and **Images** (n/10). Thumbnails and preview only; no upload or remove.
 - No Add / Edit / Delete / Upload / Clear.
 

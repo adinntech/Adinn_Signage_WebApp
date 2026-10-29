@@ -661,7 +661,7 @@ export function HandoverTab({
             )}
             {/* Shop types always show the table; ASO only when rows are left over (to clear them). */}
             {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT" || !!data.shopList?.total) && (
-              <ShopTable orderId={order._id} type={data.type ?? "SHOP_DETAILS"} summary={data.shopList} editable={canWrite && open} canAddImages={canWrite} />
+              <ShopTable orderId={order._id} type={data.type ?? "SHOP_DETAILS"} summary={data.shopList} columns={data.columns} editable={canWrite && open} canAddImages={canWrite} />
             )}
           </motion.div>
         )}

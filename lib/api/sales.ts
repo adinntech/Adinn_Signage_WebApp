@@ -411,6 +411,8 @@ export interface HandoverState {
   soContacts: SoContact[];
   /** Last save of any handover detail. */
   updatedAt: string | null;
+  /** Imported columns of the shop table, in sheet order (null for tables from before them). */
+  columns?: ShopColumn[] | null;
   /** Still needed before the order can be handed over (from the server). */
   missing: string[];
 }
@@ -420,6 +422,12 @@ export interface SoContact {
   phone: string;
   email?: string;
   isPrimary: boolean;
+}
+/** One column of the uploaded Excel: internal id, original header (may be blank / repeated), the shop field it feeds internally. */
+export interface ShopColumn {
+  id: string;
+  header: string;
+  field: string | null;
 }
 export type ShopState = "VALID" | "WARNING" | "ERROR";
 export interface HandoverShop {
@@ -446,6 +454,8 @@ export interface HandoverShop {
   clientSiteCode?: string | null;
   /** Columns of the uploaded Excel that are not shop fields (header -> value). */
   extra?: Record<string, string> | null;
+  /** Imported-columns tables: column id -> cell text as in Excel. */
+  cells?: Record<string, string> | null;
   state: ShopState;
   issues: string[];
   /** Shop + Measurement: up to 10 images of this shop. */
@@ -454,12 +464,14 @@ export interface HandoverShop {
   updatedByName?: string | null;
 }
 /** Text values of a shop row as typed in the table (the server checks and cleans them). */
-export type ShopRowInput = Partial<Record<"shopName" | "dealerName" | "location" | "district" | "address1" | "address2" | "address3" | "pincode" | "mobile" | "mobileAlt" | "gstin" | "contactPerson" | "width" | "height" | "unit" | "boardType" | "quantity" | "remarks" | "clientSiteCode", string>> & { extra?: Record<string, string> };
+export type ShopRowInput = Partial<Record<"shopName" | "dealerName" | "location" | "district" | "address1" | "address2" | "address3" | "pincode" | "mobile" | "mobileAlt" | "gstin" | "contactPerson" | "width" | "height" | "unit" | "boardType" | "quantity" | "remarks" | "clientSiteCode", string>> & { extra?: Record<string, string>; cells?: Record<string, string> };
 export interface ShopLog {
   _id: string;
   rowId?: string | null;
   /** Row identity at the time ("Row 12 · ABC Traders"), also for deleted rows. */
   label?: string | null;
+  /** Imported-columns tables: changed cells by column header (one side for add / delete). */
+  cells?: { column: string; before?: string; after?: string }[];
   action: "ADD" | "EDIT" | "DELETE" | "IMPORT" | "CLEAR" | "IMAGE_ADD" | "IMAGE_REMOVE";
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
