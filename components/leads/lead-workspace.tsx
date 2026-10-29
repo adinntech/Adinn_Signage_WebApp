@@ -581,7 +581,8 @@ export function NewLeadWorkspace() {
             onCancel={() => setDrawer(false)}
             onCreated={(o) => {
               setDrawer(false);
-              router.replace(`/leads/${o._id}?fresh=1`);
+              // Straight on to Project Assign: the lead opens with its drawer, so the BD picks a route without extra clicks.
+              router.replace(`/leads/${o._id}?fresh=1&stage=PROJECT_ASSIGN`);
             }}
           />
         ) : (
@@ -591,6 +592,13 @@ export function NewLeadWorkspace() {
     </div>
   );
 }
+
+/** When the lead's client was last saved: the order's creation (Create Project done), or a later Change Client. */
+const clientSavedAt = (d: LeadDetail) =>
+  [d.stages.find((s) => s.key === "NEW_LEAD")?.completedAt, ...d.history.filter((h) => h.action === "CLIENT_CHANGE").map((h) => h.at)]
+    .filter((x): x is string => !!x)
+    .sort()
+    .at(-1) ?? null;
 
 /** One lead: the mind map, the side panel and a drawer for the stage being worked on (kept in the URL as ?stage=). */
 export function LeadWorkspace() {
@@ -622,15 +630,15 @@ export function LeadWorkspace() {
   const blocked = (why: string) => toast(why, "info");
   const fresh = params.get("fresh") === "1";
 
-  // Arriving from Create Project: play the stage 1 completion once, then drop the flag from the URL.
+  // Arriving from Create Project: play the stage 1 completion once, then drop the flag (keeping the open drawer).
   const [freshSeen, setFreshSeen] = useState(false);
   if (fresh && !freshSeen) {
     setFreshSeen(true);
     setCelebrate("NEW_LEAD");
   }
   useEffect(() => {
-    if (fresh) router.replace(`/leads/${id}`, { scroll: false });
-  }, [fresh, id, router]);
+    if (fresh) router.replace(`/leads/${id}${asked ? `?stage=${asked}` : ""}`, { scroll: false });
+  }, [fresh, id, router, asked]);
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => setCelebrate(null), CELEBRATE_MS);
@@ -752,7 +760,7 @@ export function LeadWorkspace() {
             <LeadMindMap
               stages={d.stages}
               assign={assignOf(d)}
-              client={{ flag: d.order.clientType, done: true, name: d.order.client.name }}
+              client={{ flag: d.order.clientType, done: true, name: d.order.client.name, at: clientSavedAt(d) }}
               closed={d.lead.status === "CLOSED"}
               celebrate={celebrate}
               badges={{

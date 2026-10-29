@@ -221,7 +221,8 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
   const options: SearchOption[] = (users.data ?? [])
     .filter((u) => !q || u.name.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q))
     .map((u) => ({ value: u._id, label: u.name, sublabel: [u.role === "RECCE_COORDINATOR" ? "Recce Coordinator" : "Operations", u.email, u.phone].filter(Boolean).join(" · ") }));
-  const ready = r.missing.length === 0 && r.projectContacts > 0;
+  // Contact persons are optional; those with a mobile and an email go on the project.
+  const ready = r.missing.length === 0;
 
   const check = () => {
     const e: Record<string, string> = {};
@@ -236,18 +237,13 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
 
   return (
     <div className="space-y-4">
-      {(r.missing.length > 0 || r.projectContacts === 0) && (
+      {r.missing.length > 0 && (
         <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm">
           {r.missing.map((m) => (
             <li key={m} className="flex items-center gap-2">
               <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden /> {m}
             </li>
           ))}
-          {r.projectContacts === 0 && (
-            <li className="flex items-center gap-2">
-              <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden /> Add a contact person with both a mobile number and an email (step 1): the Recce team calls them
-            </li>
-          )}
         </ul>
       )}
       <div className="grid gap-4 md:grid-cols-2">

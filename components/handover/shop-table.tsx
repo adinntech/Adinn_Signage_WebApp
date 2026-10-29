@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, Download, FileSpreadsheet, History, ImagePlus, Loader2, Pencil, Plus, Store, Trash2, Upload, X, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, Columns3, Download, FileSpreadsheet, History, ImagePlus, Loader2, Pencil, Plus, Store, Trash2, Upload, X, XCircle } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,12 @@ import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { Select } from "@/components/ui/select";
 import { SectionTitle } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
-import { errorMessage } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
 import { fileUrl, formData, type FileRef, type FileSource } from "@/lib/api/files";
 import { downloadProjectShopExcel, useProjectHandoverShops } from "@/lib/api/recce";
 import {
@@ -34,6 +35,8 @@ import {
   useUploadShopList,
   type HandoverShop,
   type HandoverType,
+  type ShopImportPreview,
+  type ShopImportResult,
   type ShopListSummary,
   type ShopLog,
   type ShopRowInput,
@@ -42,7 +45,7 @@ import {
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Field = keyof ShopRowInput;
+type Field = Exclude<keyof ShopRowInput, "extra">;
 const LABELS: Record<Field, string> = {
   shopName: "Shop Name",
   dealerName: "Dealer / Customer Name",
@@ -76,21 +79,29 @@ const ACTION_LABEL: Record<ShopLog["action"], string> = { ADD: "Added", EDIT: "E
 
 const text = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const sizeOf = (r: Pick<HandoverShop, "width" | "height" | "unit">) => (r.width && r.height ? `${r.width} × ${r.height} ${r.unit ?? "ft"}` : null);
-const toForm = (r?: HandoverShop): ShopRowInput => Object.fromEntries([...BASE_FIELDS, ...SIZE_FIELDS].map((f) => [f, text(r?.[f])])) as ShopRowInput;
+type FormValues = Partial<Record<Field, string>>;
+const toForm = (r?: HandoverShop): FormValues => Object.fromEntries([...BASE_FIELDS, ...SIZE_FIELDS].map((f) => [f, text(r?.[f])])) as FormValues;
+/** Mapping step targets: the shop fields, a combined Size column, or keep as an extra column / skip. */
+const TARGET_LABELS: Record<string, string> = { ...LABELS, size: "Size (W × H)", extra: "Keep as extra column", ignore: "Skip this column" };
 
 /** Add / edit one shop row. The server checks it with the site import rules and returns its state and issues. */
 function RowDialog({ orderId, measurement, row, open, onClose }: { orderId: string; measurement: boolean; row: HandoverShop | null; open: boolean; onClose: () => void }) {
   const toast = useToast();
   const add = useAddShopRow(orderId);
   const update = useUpdateShopRow(orderId);
-  const [values, setValues] = useState<ShopRowInput>(() => toForm(row ?? undefined));
+  const [values, setValues] = useState<FormValues>(() => toForm(row ?? undefined));
+  // Extra (unmapped Excel) columns of the row, editable as name + value pairs.
+  const [extra, setExtra] = useState<{ key: string; value: string }[]>(() => Object.entries(row?.extra ?? {}).map(([key, value]) => ({ key, value })));
   const fields = measurement ? [...BASE_FIELDS.slice(0, 12), ...SIZE_FIELDS, ...BASE_FIELDS.slice(12)] : BASE_FIELDS;
   const busy = add.isPending || update.isPending;
 
   const save = async () => {
     if (!values.shopName?.trim() && !values.dealerName?.trim()) return toast("Enter the shop name or the dealer name", "error");
-    const body = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, (v ?? "").trim()])) as ShopRowInput;
+    const keys = extra.map((x) => x.key.trim()).filter(Boolean);
+    if (new Set(keys.map((k) => k.toLowerCase())).size !== keys.length) return toast("Two extra columns have the same name", "error");
+    const body: ShopRowInput = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, (v ?? "").trim()]));
     if (!measurement) for (const f of SIZE_FIELDS) delete body[f];
+    body.extra = Object.fromEntries(extra.filter((x) => x.key.trim() && x.value.trim()).map((x) => [x.key.trim(), x.value.trim()]));
     try {
       const r = row ? await update.mutateAsync({ rowId: row.rowId, body }) : await add.mutateAsync(body);
       toast(r.state === "ERROR" ? `Saved with errors: ${r.issues.join("; ")}` : row ? "Shop updated" : "Shop added", r.state === "ERROR" ? "error" : "success");
@@ -131,6 +142,24 @@ function RowDialog({ orderId, measurement, row, open, onClose }: { orderId: stri
             </Field>
           ))}
         </div>
+        <fieldset className="space-y-2 rounded-lg border border-border p-3">
+          <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Columns3 className="size-3.5" aria-hidden /> Extra columns
+          </legend>
+          {extra.length === 0 && <p className="text-xs text-muted-foreground">Other columns from the client&apos;s Excel appear here. Add one if needed.</p>}
+          {extra.map((x, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1.4fr_auto] items-center gap-2">
+              <Input aria-label={`Extra column ${i + 1} name`} placeholder="Column name" value={x.key} maxLength={120} onChange={(e) => setExtra(extra.map((y, j) => (j === i ? { ...y, key: e.target.value } : y)))} />
+              <Input aria-label={`${x.key || `Extra column ${i + 1}`} value`} placeholder="Value" value={x.value} maxLength={500} onChange={(e) => setExtra(extra.map((y, j) => (j === i ? { ...y, value: e.target.value } : y)))} />
+              <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${x.key || "extra column"}`} onClick={() => setExtra(extra.filter((_, j) => j !== i))}>
+                <X className="size-4" aria-hidden />
+              </Button>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={() => setExtra([...extra, { key: "", value: "" }])} disabled={extra.length >= 40}>
+            <Plus className="size-4" aria-hidden /> Add Column
+          </Button>
+        </fieldset>
         <div className="sticky bottom-0 -mx-1 flex justify-end gap-2 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
@@ -228,7 +257,12 @@ function ImagesDialog({ orderId, source, row, editable, canAdd, onClose }: { ord
 /** Row (or table) history: who changed what, with the old and new values. */
 function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: HandoverShop | null; onClose: () => void }) {
   const q = useShopHistory(orderId, row?.rowId);
-  const fieldName = (k: string) => LABELS[k as Field] ?? k;
+  const fieldName = (k: string) => (k.startsWith("extra:") ? `${k.slice(6)} (extra)` : (LABELS[k as Field] ?? k));
+  // Extra columns are stored nested ({ extra: { Beat: "North" } }); shown as their own lines.
+  const flat = (v?: Record<string, unknown>) => {
+    const { extra, ...rest } = v ?? {};
+    return { ...rest, ...Object.fromEntries(Object.entries((extra as Record<string, unknown>) ?? {}).map(([k, x]) => [`extra:${k}`, x])) } as Record<string, unknown>;
+  };
   return (
     <Modal open onOpenChange={(o) => !o && onClose()} title={row ? `Row History · ${row.shopName ?? row.dealerName ?? `Row ${row.rowNumber}`}` : "Shop List History"} description="Newest first" className="max-w-2xl">
       {q.isPending ? (
@@ -240,11 +274,16 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
       ) : (
         <ol className="space-y-3">
           {q.data.map((l) => {
-            const keys = [...new Set([...Object.keys(l.before ?? {}), ...Object.keys(l.after ?? {})])];
+            const before = flat(l.before);
+            const after = flat(l.after);
+            const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
             return (
               <li key={l._id} className="rounded-lg border border-border px-3 py-2 text-sm">
                 <p className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold text-foreground">{ACTION_LABEL[l.action]}</span>
+                  <span className="font-semibold text-foreground">
+                    {ACTION_LABEL[l.action]}
+                    {!row && l.label && <span className="ml-1.5 font-normal text-muted-foreground">· {l.label}</span>}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {l.by?.name ?? "-"} · {formatDateTimeIST(l.at)}
                   </span>
@@ -258,10 +297,10 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
                         <dd>
                           {l.action === "EDIT" ? (
                             <>
-                              <span className="text-danger line-through">{text(l.before?.[k]) || "—"}</span> → <span className="font-medium text-success">{text(l.after?.[k]) || "—"}</span>
+                              <span className="text-danger line-through">{text(before[k]) || "—"}</span> → <span className="font-medium text-success">{text(after[k]) || "—"}</span>
                             </>
                           ) : (
-                            text((l.after ?? l.before)?.[k])
+                            text(l.after ? after[k] : before[k])
                           )}
                         </dd>
                       </div>
@@ -274,6 +313,153 @@ function HistoryDialog({ orderId, row, onClose }: { orderId: string; row: Handov
         </ol>
       )}
     </Modal>
+  );
+}
+
+/**
+ * Shown when the server could not read the workbook without guessing (several sheets, no recognisable header, no shop
+ * or dealer column): pick the sheet and header row, match each column to a shop field (or keep / skip it), then import.
+ * Changing the sheet or header row asks the server for a fresh preview; nothing is imported until "Import".
+ */
+function MappingDialog({
+  file,
+  initial,
+  measurement,
+  onPreview,
+  onImport,
+  importing,
+  onClose,
+}: {
+  file: File;
+  initial: ShopImportPreview;
+  measurement: boolean;
+  onPreview: (o: { sheet: string; headerRow?: number }) => Promise<ShopImportPreview | null>;
+  onImport: (o: { sheet: string; headerRow: number; mapping: Record<string, string> }) => void;
+  importing: boolean;
+  onClose: () => void;
+}) {
+  const [p, setP] = useState(initial);
+  const [mapping, setMapping] = useState(initial.mapping);
+  const [loading, setLoading] = useState(false);
+  const reload = async (o: { sheet: string; headerRow?: number }) => {
+    setLoading(true);
+    const next = await onPreview(o).finally(() => setLoading(false));
+    if (next) {
+      setP(next);
+      setMapping(next.mapping);
+    }
+  };
+  const used = Object.values(mapping).filter((t) => t !== "extra" && t !== "ignore");
+  const dup = used.find((t, i) => used.indexOf(t) !== i);
+  const named = used.includes("shopName") || used.includes("dealerName");
+  const headerIdx = p.rows.findIndex((r) => r.rowNumber === p.headerRow);
+  const sample = p.rows.slice(headerIdx + 1, headerIdx + 4);
+  const targets = ["extra", "ignore", ...p.fields];
+
+  return (
+    <Modal open onOpenChange={(o) => !o && onClose()} variant="drawer" className="max-w-3xl" title="Match the Excel columns" description={`${file.name} · nothing is imported until you confirm.`}>
+      <div className="space-y-4">
+        {p.problems.length > 0 && (
+          <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm text-warning">
+            {p.problems.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Sheet" htmlFor="map-sheet">
+            <Select id="map-sheet" value={p.sheet} disabled={loading || p.sheets.length < 2} onChange={(e) => void reload({ sheet: e.target.value })}>
+              {p.sheets.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.name} ({s.rows} rows)
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Header row" htmlFor="map-header" hint="The row with the column names.">
+            <Select id="map-header" value={p.headerRow ?? ""} disabled={loading} onChange={(e) => void reload({ sheet: p.sheet, headerRow: Number(e.target.value) })}>
+              {p.rows.map((r) => (
+                <option key={r.rowNumber} value={r.rowNumber}>
+                  Row {r.rowNumber}: {r.cells.filter(Boolean).slice(0, 4).join(" | ").slice(0, 60) || "(blank)"}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className={cn("max-h-[50dvh] overflow-auto rounded-lg border border-border", loading && "opacity-60")}>
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Excel column</th>
+                <th className="px-3 py-2">Sample values</th>
+                <th className="w-56 px-3 py-2">Import as</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {p.headers.map((h, i) => (
+                <tr key={h}>
+                  <td className="px-3 py-2 font-medium">{h}</td>
+                  <td className="max-w-[220px] truncate px-3 py-2 text-xs text-muted-foreground">{sample.map((r) => r.cells[i]).filter(Boolean).join(" · ") || "-"}</td>
+                  <td className="px-3 py-1.5">
+                    <Select aria-label={`Import ${h} as`} className="h-9" value={mapping[h] ?? "extra"} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
+                      {targets.map((t) => (
+                        <option key={t} value={t}>
+                          {TARGET_LABELS[t] ?? t}
+                        </option>
+                      ))}
+                    </Select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Shop Name or Dealer Name is needed; other fields are optional{measurement ? " (Size too)" : ""}. Extra columns stay on each row and can be edited later.
+        </p>
+        <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
+          <span className="text-xs text-danger" role="status">
+            {dup ? `"${TARGET_LABELS[dup] ?? dup}" is chosen twice.` : !named ? "Choose the Shop Name or Dealer Name column." : ""}
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={importing}>
+              Cancel
+            </Button>
+            <Button type="button" variant="brand" loading={importing} disabled={loading || !!dup || !named || !p.headerRow} onClick={() => onImport({ sheet: p.sheet, headerRow: p.headerRow!, mapping })}>
+              <Upload className="size-4" aria-hidden /> Import Rows
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** Rows of the last upload that came in with problems (kept in the table, flagged), by Excel row. */
+function FlaggedRows({ result, onClose }: { result: ShopImportResult; onClose: () => void }) {
+  if (!result.flaggedCount) return null;
+  return (
+    <div className="rounded-lg border border-warning/30 bg-warning-soft/50 px-3 py-2 text-sm">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-medium text-warning">
+          {result.flaggedCount} imported row{result.flaggedCount === 1 ? "" : "s"} need a look. They are in the table: edit or delete them.
+        </p>
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Dismiss upload issues">
+          <X className="size-4" aria-hidden />
+        </Button>
+      </div>
+      <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto text-xs text-muted-foreground">
+        {(result.flagged ?? []).map((f) => (
+          <li key={`${f.line}-${f.row}`}>
+            <span className={cn("font-semibold", f.state === "ERROR" ? "text-danger" : "text-warning")}>
+              Excel row {f.line} → table row {f.row}:
+            </span>{" "}
+            {f.issues.join("; ")}
+          </li>
+        ))}
+        {(result.flaggedCount ?? 0) > (result.flagged?.length ?? 0) && <li>…and {(result.flaggedCount ?? 0) - (result.flagged?.length ?? 0)} more (filter by status below).</li>}
+      </ul>
+    </div>
   );
 }
 
@@ -318,17 +504,39 @@ export function ShopTable({
   const rows = projectId ? projectRows : orderRows;
   const source: FileSource = projectId ? { projectId } : { orderId };
   const total = summary?.total ?? 0;
+  const hasExtra = !!rows.data?.data.some((r) => Object.keys(r.extra ?? {}).length);
 
-  const doUpload = async () => {
+  const [mappingStep, setMappingStep] = useState<ShopImportPreview | null>(null);
+  const [lastImport, setLastImport] = useState<ShopImportResult | null>(null);
+  const previewOf = (e: unknown) => (e instanceof ApiError && e.code === "SHOP_MAPPING_REQUIRED" ? ((e.details as { preview?: ShopImportPreview } | undefined)?.preview ?? null) : null);
+
+  /** Upload (optionally with the mapping step's choices); an ambiguous workbook opens the mapping step instead. */
+  const doUpload = async (opts: { sheet?: string; headerRow?: number; mapping?: Record<string, string> } = {}) => {
     if (!file[0]) return;
     try {
-      const r = await upload.mutateAsync(formData(file));
+      const r = await upload.mutateAsync(formData(file, { sheet: opts.sheet, headerRow: opts.headerRow ? String(opts.headerRow) : undefined, mapping: opts.mapping ? JSON.stringify(opts.mapping) : undefined }));
       setFile([]);
+      setMappingStep(null);
       setPage(1);
       setState("");
-      toast(`Shop list uploaded: ${r.imported?.added ?? 0} added, ${r.imported?.updated ?? 0} updated. Total Shops: ${r.shopList?.total ?? 0}.`);
+      setLastImport(r.imported ?? null);
+      const flagged = r.imported?.flaggedCount ?? 0;
+      toast(`Shop list uploaded: ${r.imported?.added ?? 0} added, ${r.imported?.updated ?? 0} updated${flagged ? `, ${flagged} to check` : ""}. Total Shops: ${r.shopList?.total ?? 0}.`, flagged ? "error" : "success");
     } catch (e) {
-      toast(errorMessage(e), "error");
+      const preview = previewOf(e);
+      if (preview) setMappingStep(preview);
+      else toast(errorMessage(e), "error");
+    }
+  };
+  /** Mapping step: a fresh preview for another sheet / header row (imports nothing). */
+  const previewFor = async (o: { sheet: string; headerRow?: number }) => {
+    try {
+      await upload.mutateAsync(formData(file, { sheet: o.sheet, headerRow: o.headerRow ? String(o.headerRow) : undefined, preview: "1" }));
+      return null;
+    } catch (e) {
+      const preview = previewOf(e);
+      if (!preview) toast(errorMessage(e), "error");
+      return preview;
     }
   };
   const fail = (e: unknown) => toast(errorMessage(e), "error");
@@ -385,9 +593,16 @@ export function ShopTable({
         </div>
         {editable && (
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-            <FileUploader id="ho-shop-file" files={file} onChange={setFile} accept=".xlsx,.csv" compact hint="Excel (.xlsx) or CSV. Rows are added to the table; rows with a Row ID (from Download Excel) are updated." />
+            <FileUploader
+              id="ho-shop-file"
+              files={file}
+              onChange={setFile}
+              accept=".xlsx,.xls,.csv"
+              compact
+              hint="Excel (.xlsx / .xls) or CSV in any column order; the template is optional. Rows are added; rows with a Row ID (from Download Excel) are updated."
+            />
             <div className="flex flex-wrap gap-2">
-              <Button variant="brand" onClick={doUpload} disabled={!file[0]} loading={upload.isPending}>
+              <Button variant="brand" onClick={() => void doUpload()} disabled={!file[0]} loading={upload.isPending && !mappingStep}>
                 <Upload className="size-4" aria-hidden /> Upload & Add Rows
               </Button>
               <Button variant="brand-outline" onClick={() => setEditing("new")}>
@@ -401,6 +616,7 @@ export function ShopTable({
             </div>
           </div>
         )}
+        {editable && lastImport && <FlaggedRows result={lastImport} onClose={() => setLastImport(null)} />}
         {total > 0 && (
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter shops">
             {STATE_FILTERS.map((f) => (
@@ -443,6 +659,7 @@ export function ShopTable({
                   <th className="px-3 py-2.5">Address</th>
                   <th className="px-3 py-2.5">Mobile / GST</th>
                   {measurement && <th className="px-3 py-2.5">Size</th>}
+                  {hasExtra && <th className="px-3 py-2.5">Other Columns</th>}
                   {measurement && <th className="px-3 py-2.5">Images</th>}
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">Modified</th>
@@ -468,6 +685,16 @@ export function ShopTable({
                       {r.gstin && <p className="text-muted-foreground">{r.gstin}</p>}
                     </td>
                     {measurement && <td className="px-3 py-2.5 tabular-nums">{sizeOf(r) ?? <span className="text-muted-foreground">-</span>}</td>}
+                    {hasExtra && (
+                      <td className="max-w-[220px] px-3 py-2.5 text-xs">
+                        {Object.entries(r.extra ?? {}).map(([k, v]) => (
+                          <p key={k} className="truncate" title={`${k}: ${v}`}>
+                            <span className="text-muted-foreground">{k}:</span> {v}
+                          </p>
+                        ))}
+                        {!Object.keys(r.extra ?? {}).length && <span className="text-muted-foreground">-</span>}
+                      </td>
+                    )}
                     {measurement && (
                       <td className="px-3 py-2.5">
                         <Button variant="outline" size="sm" onClick={() => setImages(r)} aria-label={`Images of row ${r.rowNumber}`}>
@@ -511,6 +738,17 @@ export function ShopTable({
         </>
       )}
 
+      {mappingStep && file[0] && (
+        <MappingDialog
+          file={file[0]}
+          initial={mappingStep}
+          measurement={measurement}
+          onPreview={previewFor}
+          onImport={(o) => void doUpload(o)}
+          importing={upload.isPending}
+          onClose={() => setMappingStep(null)}
+        />
+      )}
       {editing && <RowDialog key={editing === "new" ? "new" : editing.rowId} orderId={orderId} measurement={measurement} row={editing === "new" ? null : editing} open onClose={() => setEditing(null)} />}
       {images && <ImagesDialog orderId={orderId} source={source} row={images} editable={editable} canAdd={canAddImages} onClose={() => setImages(null)} />}
       {history && <HistoryDialog orderId={orderId} row={history === "all" ? null : history} onClose={() => setHistory(null)} />}

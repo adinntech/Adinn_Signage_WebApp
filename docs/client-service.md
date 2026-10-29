@@ -1,0 +1,178 @@
+# Client Servicing Process Reference
+
+## Read first
+
+- **Repositories:** Backend `F:\signage\Adinn_Signage_Backend` (Express 5, Mongoose, Zod; API base `/api/v1`). Frontend `F:\signage\Adinn_Signage_WebApp` (Next.js App Router, TanStack Query).
+- **What Client Servicing (role `CLIENT_SERVICING`) does today:**
+  - opens the orders a BD handed to them (**My Orders**);
+  - reviews the handover read-only: client, contacts, type, shop table, images, Excel downloads;
+  - **replies in the handover chat**.
+- **What CS does not do in the current code:**
+  - Project codes, client-code / project-code requests, Recce coordination and project stages are **not** part of the CS role. They belong to BD (the Recce route) and Operations.
+- The handover structure, shop table rules and chat mechanics are documented once in `docs/bd-business.md` §6. This file covers the CS view and permissions.
+
+**Scope and evidence reviewed:**
+- Backend: `roles/roles.ts`, `sales/sales.routes.ts`, `sales.controller.ts`, `handover.service.ts`, `order.service.ts`, `lead.service.ts`, `projects/bdHandover.service.ts`, `project.routes.ts`.
+- Frontend: `lib/nav.ts`, `app/(app)/client-servicing/dashboard/page.tsx`, `app/(app)/orders/**`, `components/orders/handover-tab.tsx`, `components/handover/*`, `components/ops/bd-handover.tsx`, `project-details.tsx`.
+- Code was read only; nothing was executed for this document.
+
+> This is a business reference, not proof that every feature is implemented. Read the relevant source before modifying it.
+
+---
+
+## 1. Role, login and access boundaries
+
+| Item | Implemented behaviour |
+|---|---|
+| Permissions | `sales:read`, `clients:read` only (no `sales:write`, no `projects:*`) |
+| Platform | Web (`ROLE_PLATFORMS.CLIENT_SERVICING = ['web']`) |
+| Home | `/client-servicing/dashboard` redirects to `/orders` (there is no CS dashboard yet) |
+| Sidebar | **My Orders** (`/orders`), **Settings** |
+| Order list | `GET /sales/orders` is filtered to `csAssignee = me`, sorted by `-handover.assignedAt`. A **New** badge shows until the order is first opened; `GET /sales/orders/:id` sets `handover.seenAt` (`markSeen`). |
+| Order scope | `salesRouter.param('id', scopeOrder)`: any `/sales/orders/:id…` route for an order not assigned to this user returns **404** |
+| Lead Management | No nav item (needs `sales:write`). Every `/sales/leads*` route returns **403** (`assertLeadAccess`). |
+| Sales board | `GET /sales/orders/board` returns **403** |
+| Writes | All `sales:write` routes return 403: shop rows, uploads, type / toggle, assignment, comments, recce. **The only exception is posting handover chat messages (§4).** |
+
+## 2. Workflow (what CS does, in order)
+
+| # | Step | Where | Trigger / prerequisite | Result |
+|---|---|---|---|---|
+| 1 | Receive the order | Notification "New order assigned to you" | BD runs **Save & Complete Handover** on the CS route (`bd-business.md` §7) | The order appears in My Orders with a **New** badge |
+| 2 | Open the order | `/orders/:id?tab=handover` (default tab for CS) | — | `handover.seenAt` is set; the BD sees "Opened <date>" |
+| 3 | Review the handover | **Handover Details** tab | — | Read-only review (§3) |
+| 4 | Download lists | Shop table: **Template**, **Download Excel** | Shop types only | Current list as `.xlsx` with Row ID, sizes and image counts |
+| 5 | Communicate | **Communication & Attachments** | Order assigned to this user | Text, files and voice replies; the BD is notified (§4) |
+| 6 | Other tabs | **Client Details**, **Comments**, **History** | — | Read-only (posting comments needs `sales:write`) |
+
+**Not implemented for CS (explicitly out of the current code):**
+- requesting project / client codes;
+- emailing Operations;
+- assigning Recce;
+- creating projects from the handover shop list.
+
+The shop row schema comment says the rows "become project sites when Client Servicing creates the project", but no such CS action or endpoint exists.
+
+## 3. Handover review (read-only for CS)
+
+**Component:** `HandoverTab` in `components/orders/handover-tab.tsx`. For CS, `open` is false because `assignee` is set, and `canWrite` is false.
+
+| Section | What CS sees |
+|---|---|
+| Status banner | "Handed over to <CS> on <date> by <BD>", the assignment note, and an Opened / Not opened yet badge |
+| Client & Contact Persons (shown first) | Company name, Client Name, **Client ID** (CRM `clientNo`), **Zoho Client ID** (`client.zohoCustomerNo`, when known), email, phone, GST number, contact persons (optional; may be empty). **GST Certificate** and **Custom Fields** appear for New clients only. No Add / Edit contact. |
+| Handover Type | The chosen type is highlighted. The toggle appears as a badge: "Handover details sent" or "Client details only". |
+| SO Contacts (ASO only) | Name, phone, optional email, primary. Read-only. |
+| Shop table (shop types) | See below |
+| Communication & Attachments | Full history; a composer when assigned to this user (§4) |
+| Assign section | Hidden |
+
+**Shop table:**
+- KPI cards: **Total Shops** (row count), Valid, To Check, With Errors.
+- State filter; rows with issues; **Modified** (IST + user).
+- **History** per row and for the whole table (actor, time, action, row identity, old → new values, deleted rows included).
+- **Other Columns:** extra columns from the client's Excel, shown per row.
+- Shop + Measurement: **Size** column and **Images** (n/10). Thumbnails and preview only; no upload or remove.
+- No Add / Edit / Delete / Upload / Clear.
+
+**Handover branches as CS receives them:**
+
+| Type | What CS gets |
+|---|---|
+| `ASO` | Client + contact persons, plus the SO contacts the BD added (optional). No shop table; CS collects shop details from the client (business intent stated in the `HANDOVER_TYPES` comment in `sales.model.ts` and the hint in `lib/api/sales.ts`). |
+| `SHOP_DETAILS` (Shop Details Only) | Shop table without sizes; Excel without Size |
+| `SHOP_MEASUREMENT` (Shop + Measurement) | Shop table with optional Size (W × H) + Unit, and up to 10 images per shop |
+| Toggle OFF | Client details and contact persons only (type and shops not required) |
+
+**Data source:** the CS view reads the **live** client (`order.client`). The `handoverClient` snapshot taken at assignment is used by the Operations BD Handover view, not by the CS tab.
+
+## 4. Handover chat: CS permissions (verified)
+
+| Capability | CS behaviour | Enforcement |
+|---|---|---|
+| Post on an order assigned to me | **Allowed**: text, files (up to 10 per message: PDF / Office / CSV / images / audio), voice note (record with Pause / Resume, Send; or one uploaded audio file) | Route `POST /sales/orders/:id/handover/messages` uses `read` + `chat` middleware. `chat` lets `CLIENT_SERVICING` through; other roles need `sales:write`. |
+| Post on an order not assigned to me | **Refused (404)** | `scopeOrder` → `assertOrderAccess` (`csAssignee` must be this user) |
+| Composer visible | Only when `user.role === "CLIENT_SERVICING"` and `handover.assignee._id === user.id` (`csReply` in `handover-tab.tsx`) | UI |
+| Delete messages | **Not allowed (403)** | `DELETE …/handover/messages/:messageId` needs `sales:write` |
+| Edit shops / type / toggle / contacts / upload | **Not allowed (403)** | `sales:write` routes; the order is also handed over (409) |
+| Add shop images | Not allowed (403). The images endpoint needs `sales:write`. | Route guard |
+
+**Message validation:**
+- Text is trimmed and max 4000 characters. An empty text with no files is refused.
+- A voice note must be exactly one audio file (`.mp3 .m4a .webm .ogg .wav`), max 5 minutes (`durationSec` ≤ 305).
+- Max 1000 messages per order.
+
+**Stored as:** `handoverMessagesArray` with `by`, `role`, and `afterHandover: true` (CS replies are always after handover). Every post updates `handoverUpdatedAt`.
+
+**Notifications** (`kind: ORDER_ASSIGNED`):
+- A CS reply goes to the order `owner` and `handover.assignedBy`: "Client Servicing replied on a handover".
+- A BD message goes to the CS assignee: "New handover message".
+- The sender is excluded, and duplicate recipients are removed.
+
+**Files:** opened through `GET /sales/orders/:id/files/:fileId/url` (`sales:read`, scoped). Preview: images and PDF in a modal; other types download.
+
+## 5. Operations / Recce access (for comparison)
+
+This applies to orders assigned on the **Recce** route; the CS route never creates a project.
+
+- **Where:** `/operations/projects/:id` › **BD Handover** section (`components/ops/project-details.tsx` → `bd-handover.tsx`). Shown only when `GET /projects/:id/bd-handover` returns data (the project has `salesOrder`).
+- **Shows:**
+  - Project Code, Estimation Code, **Client ID (Zoho)** (`recce.clientId`), assigned date / by, BD note, handover type;
+  - client from the `handoverClient` snapshot (GST certificate and custom fields for New clients) and contacts; SO contacts for ASO;
+  - chat read-only (no composer);
+  - shop table read-only via the project routes: images view, **Download Excel**, Template.
+- **Routes** (all `projects:read` + project scope):
+  - `GET /projects/:id/bd-handover`
+  - `…/bd-handover/shops`
+  - `…/bd-handover/shops/export`
+  - `…/bd-handover/files/:fileId/url`
+- **After assignment** the project follows the Operations stages (`lib/pipeline.ts`): `RECCE_ASSIGNED` "New Assigned" → `PLANNING` → `IN_PROGRESS` → `CLIENT_APPROVAL` → `COMPLETED`. This is outside CS scope.
+
+## 6. Code requests and email handling
+
+**There is no CS-side code request.** The project code / client code request email, its history and resend belong to the BD's Recce route (`bd-business.md` §8). The CS role cannot reach `/sales/orders/:id/recce*` (needs `sales:write`).
+
+**Client ID storage:**
+
+| Client type | Where the Client ID comes from |
+|---|---|
+| New | Typed at Project Code & Estimation Code (`recce.clientId`, and `client.zohoCustomerNo` when empty) |
+| Existing | Taken from Zoho |
+
+CS sees it as **Zoho Client ID** on the client section when `client.zohoCustomerNo` is set.
+
+## 7. Invariants to preserve
+
+1. CS reads and replies only on orders where `csAssignee` is the user. Keep `scopeOrder` on every `/orders/:id` route.
+2. Chat posting is the only CS write. Any new CS write must be deliberately allowed, like the `chat` middleware; do not grant `sales:write`.
+3. CS has no lead, board, recce or project access.
+4. CS chat replies notify the BD side, never the sender.
+5. Shop rows, images and history are BD-owned. CS views them, with no changes.
+
+## 8. Source map
+
+| Area | Backend (`src/modules/…`) | Frontend |
+|---|---|---|
+| Role / permissions | `roles/roles.ts` | `lib/nav.ts` (`ROLE_NAV.CLIENT_SERVICING`), `lib/auth` |
+| Scope / list / seen | `sales/sales.controller.ts` (`scopeOrder`, `board`, `get`), `handover.service.ts` (`assertOrderAccess`, `isCs`, `markSeen`), `order.service.ts` (`listOrders`) | `app/(app)/orders/orders-view.tsx`, `app/(app)/orders/[id]/order-workspace.tsx`, `app/(app)/client-servicing/dashboard/page.tsx` |
+| Handover view | `sales/handover.service.ts` (`getHandover`, `listShops`, `exportShops`, `shopHistory`) | `components/orders/handover-tab.tsx`, `components/handover/shop-table.tsx` |
+| Chat | `sales/sales.routes.ts` (`chat` middleware), `handover.service.ts` (`addMessage`, `removeMessage`) | `components/handover/handover-chat.tsx`, `components/orders/voice-notes.tsx`, `lib/api/sales.ts` (`useAddHandoverMessage`) |
+| Ops BD handover | `projects/bdHandover.service.ts`, `project.controller.ts`, `project.routes.ts` | `components/ops/bd-handover.tsx`, `components/ops/project-details.tsx`, `lib/api/recce.ts` |
+
+## 9. Manual verification checklist (for future changes)
+
+- [ ] CS login lands on My Orders. Only assigned orders are listed. The New badge clears after opening.
+- [ ] Opening another CS's order URL gives "not found". `/leads` is not reachable.
+- [ ] Handover tab: client (Client ID, Zoho Client ID, GST certificate / custom fields for New), contacts, type, shop table, images preview, Template / Download Excel all work. No edit controls.
+- [ ] Chat: the assigned CS can send text, files and voice (pause / resume / send). There is no delete control. The BD receives "Client Servicing replied on a handover".
+- [ ] Unassigned CS posting via the API → 404. Delete or shop edit via the API → 403.
+- [ ] Operations project › BD Handover shows codes, Client ID, client, read-only chat, shop table and export.
+
+## Gaps and open points
+
+- **No CS project creation.** The schema comment suggests CS converts shop rows to project sites, but no endpoint or UI exists.
+- **No CS code requests, Recce coordination or subsequent stages.** The two Project Assign routes are mutually exclusive, and the CS route ends at assignment.
+- **No CS dashboard** (the redirect to `/orders`).
+- **CS sees the live client, not the handover snapshot.** If the BD edits the client after handover, CS sees the new values while Operations sees the snapshot.
+- **CS cannot post Comments** (Comments tab) or add shop images. Only chat replies were enabled on request.
+- **Legacy handover data.** Notes / voice / documents from before the chat are hidden, not migrated; their purge has not been run (`bd-business.md`, Gaps).

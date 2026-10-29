@@ -117,12 +117,25 @@ function SideCard({ card, side, color, state, delay }: { card: BranchCard; side:
   );
 }
 
-function StageNode({ s, badge, celebrate, closed, onOpen, delay }: { s: LeadStageState; badge?: string; celebrate: boolean; closed: boolean; onOpen: () => void; delay: number }) {
+/** "Last updated" line of a completed card: the time that step itself was saved (IST), the same on every card. */
+function Stamp({ at, label = "Last updated", className }: { at?: string | null; label?: string; className?: string }) {
+  if (!at) return null;
+  return (
+    <span className={cn("mt-0.5 flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground", className)}>
+      <Clock3 className="size-3 shrink-0" aria-hidden /> {label} {formatDateTimeIST(at)}
+    </span>
+  );
+}
+
+function StageNode({ s, badge, celebrate, closed, onOpen, delay, client }: { s: LeadStageState; badge?: string; celebrate: boolean; closed: boolean; onOpen: () => void; delay: number; client?: ClientChoice }) {
   const m = STAGE_META[s.key];
   const reduce = useReducedMotion();
   const current = s.status === "CURRENT";
   const done = s.status === "DONE";
-  const statusText = done ? `Done${s.completedAt ? ` · ${formatDateTimeIST(s.completedAt)}` : ""}` : current ? (closed ? "Lead closed here" : "In progress") : s.available ? "Pending" : "Next update";
+  const statusText = done ? "Completed" : current ? (closed ? "Lead closed here" : "In progress") : s.available ? "Pending" : "Next update";
+  // Create Project: the client chosen (type + company); its time is the last client save (creation or Change Client).
+  const picked = done && client?.done && client.flag ? `${CLIENT_META[client.flag].label} · ${client.name ?? ""}` : null;
+  const at = done ? (client?.done ? (client.at ?? s.completedAt) : s.completedAt) : null;
   return (
     <motion.button
       type="button"
@@ -132,7 +145,7 @@ function StageNode({ s, badge, celebrate, closed, onOpen, delay }: { s: LeadStag
       animate={celebrate && !reduce ? { opacity: 1, y: 0, scale: [1, 1.07, 1] } : { opacity: 1, y: 0, scale: 1 }}
       transition={celebrate ? { duration: 0.55 } : { delay, duration: 0.35 }}
       whileHover={lift(reduce)}
-      aria-label={`${m.label}: ${statusText}`}
+      aria-label={`${m.label}: ${statusText}${picked ? `, ${picked}` : ""}${at ? `, last updated ${formatDateTimeIST(at)}` : ""}`}
       className={cn(
         "relative w-full max-w-[320px] justify-self-center rounded-2xl px-4 py-3.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2",
         SURFACE,
@@ -177,6 +190,8 @@ function StageNode({ s, badge, celebrate, closed, onOpen, delay }: { s: LeadStag
             {!s.available && !done && !current && <LockKeyhole className="size-3" aria-hidden />}
             {statusText}
           </span>
+          {picked && <span className="mt-0.5 block truncate text-[11px] font-medium text-foreground">{picked}</span>}
+          <Stamp at={at} />
         </span>
         {badge && (
           <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: m.soft, color: m.color }}>
@@ -270,7 +285,7 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
   const locked = !assigned && (!a.unlocked || !!other);
   const active = !assigned && !locked;
   const status = assigned
-    ? `${mine.assignee!.name}${mine.assignedAt ? ` · ${formatDateTimeIST(mine.assignedAt)}` : ""}`
+    ? `Completed · ${mine.assignee!.name}`
     : other
       ? a.completed
         ? `Not used · assigned to ${other}`
@@ -308,6 +323,7 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
           <span className={cn("mt-0.5 block text-xs", assigned ? "font-medium" : !active && "text-muted-foreground")} style={active || assigned ? { color: m.color } : undefined}>
             {status}
           </span>
+          {assigned && <Stamp at={mine.assignedAt} />}
           {!other && (
             <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold" style={{ borderColor: locked ? GREY : `${m.color}66`, color: locked ? "#64748b" : m.color }}>
               {/* Client Servicing has the ON / OFF toggle; the Recce team always gets the full handover. */}
@@ -425,11 +441,7 @@ function StepNode({ s, n, color: branch, onOpen, onBlocked, delay }: { s: ChainS
               {s.info}
             </span>
           )}
-          {s.at && (
-            <span className="mt-0.5 flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
-              <Clock3 className="size-3 shrink-0" aria-hidden /> {s.atLabel ?? (done ? "Done" : "Updated")} {formatDateTimeIST(s.at)}
-            </span>
-          )}
+          <Stamp at={s.at} label={done ? "Last updated" : (s.atLabel ?? "Updated")} />
           {s.types !== undefined && <TypeBranches chosen={s.types} color={tone} />}
         </span>
       </span>
@@ -520,6 +532,8 @@ export interface ClientChoice {
   flag: ClientType | null;
   done: boolean;
   name?: string | null;
+  /** When the client was last saved on the lead (order created, or Change Client). */
+  at?: string | null;
 }
 
 function ClientNode({ f, c, onOpen, delay }: { f: ClientType; c: ClientChoice; onOpen: () => void; delay: number }) {
@@ -529,7 +543,7 @@ function ClientNode({ f, c, onOpen, delay }: { f: ClientType; c: ClientChoice; o
   const done = c.done && mine;
   const locked = c.done && !mine;
   const ready = !c.done && (!c.flag || mine);
-  const status = done ? (c.name ?? "Selected") : locked ? "Not used" : mine ? "Selecting the company..." : c.flag ? "Switch to this" : "Choose to start";
+  const status = done ? `Completed · ${c.name ?? "Selected"}` : locked ? "Not used" : mine ? "Selecting the company..." : c.flag ? "Switch to this" : "Choose to start";
   return (
     <motion.button
       type="button"
@@ -565,6 +579,7 @@ function ClientNode({ f, c, onOpen, delay }: { f: ClientType; c: ClientChoice; o
           <span className={cn("mt-0.5 block truncate text-xs", !done && !mine && "text-muted-foreground")} style={done || mine ? { color: m.color } : undefined}>
             {status}
           </span>
+          {done && <Stamp at={c.at} />}
           {!c.done && (
             <ul className="mt-1.5 hidden space-y-0.5 sm:block">
               {m.items.map((it) => (
@@ -682,7 +697,7 @@ export function LeadMindMap({
           <div key={s.key}>
             <div className="grid grid-cols-1 items-center xl:grid-cols-[minmax(0,1fr)_320px_minmax(0,1fr)] xl:gap-x-10">
               {m.left ? <SideCard card={m.left} side="left" color={m.color} state={s.status} delay={0.1 + i * 0.06} /> : <span className="hidden xl:block" />}
-              <StageNode s={s} badge={badges[s.key]} celebrate={celebrate === s.key} closed={closed} onOpen={() => onOpen(s.key)} delay={i * 0.06} />
+              <StageNode s={s} badge={badges[s.key]} celebrate={celebrate === s.key} closed={closed} onOpen={() => onOpen(s.key)} delay={i * 0.06} client={s.key === "NEW_LEAD" ? client : undefined} />
               {m.right ? <SideCard card={m.right} side="right" color={m.color} state={s.status} delay={0.14 + i * 0.06} /> : <span className="hidden xl:block" />}
             </div>
             {next && s.key === "NEW_LEAD" && client ? (

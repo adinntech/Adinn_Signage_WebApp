@@ -10,6 +10,7 @@ import {
   Building2,
   CheckCircle2,
   CircleAlert,
+  Contact,
   FileSpreadsheet,
   Handshake,
   Info,
@@ -17,9 +18,11 @@ import {
   PhoneCall,
   RefreshCw,
   Ruler,
+  Save,
   Send,
   Star,
   Store,
+  Trash2,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -30,13 +33,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import {
   HANDOVER_TYPES,
   useAssignClientServicing,
@@ -44,9 +48,11 @@ import {
   useHandover,
   useSetHandoverScope,
   useSetHandoverType,
+  useSetSoContacts,
   type HandoverState,
   type HandoverType,
   type Order,
+  type SoContact,
 } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
@@ -57,9 +63,9 @@ import { ShopTable } from "@/components/handover/shop-table";
 const TYPE_ICON: Record<HandoverType, typeof Store> = { ASO: PhoneCall, SHOP_DETAILS: FileSpreadsheet, SHOP_MEASUREMENT: Ruler };
 
 /**
- * "Send handover details" toggle, on the right of the Handover Type header (Client Servicing route only). On
- * (default): the full handover. Off: only the client details and contact persons go to Client Servicing (what was
- * entered for the full handover is kept, just not sent or required).
+ * "Send handover details" toggle, on the right of the Handover Type header (Client Servicing route only). Off (default
+ * for new orders): only the client details and contact persons go to Client Servicing. On: the full handover. What was
+ * entered for the full handover is kept when it is switched off, just not sent or required.
  */
 function ScopeToggle({ orderId, data, editable }: { orderId: string; data: HandoverState; editable: boolean }) {
   const toast = useToast();
@@ -162,7 +168,7 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
       <SectionTitle
         icon={Building2}
         title="Client & Contact Persons"
-        description={aso ? "ASO: Client Servicing calls these contacts to collect the shop details. Add anyone they should speak to." : "Auto-filled from Client Management."}
+        description={aso ? "Auto-filled from Client Management. Contact persons are optional; add the client's SO contacts in the ASO section below." : "Auto-filled from Client Management. Contact persons are optional."}
         action={
           canAddContact && (
             <Button variant="brand-outline" size="sm" onClick={() => setEditing(-1)}>
@@ -274,6 +280,189 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
   );
 }
 
+type SoRow = { key: string; name: string; phone: string; email: string; isPrimary: boolean };
+const blankSo = (): SoRow => ({ key: Math.random().toString(36).slice(2), name: "", phone: "", email: "", isPrimary: false });
+const soRowsOf = (list: SoContact[]): SoRow[] => list.map((k, i) => ({ key: k._id ?? String(i), name: k.name, phone: k.phone, email: k.email ?? "", isPrimary: k.isPrimary }));
+const isBlankSo = (r: SoRow) => !r.name.trim() && !r.phone.trim() && !r.email.trim();
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Inline checks, same as the server: name and 10-digit mobile for a contact that is kept; email optional. */
+function soRowErrors(r: SoRow) {
+  if (isBlankSo(r)) return {};
+  const e: Partial<Record<"name" | "phone" | "email", string>> = {};
+  if (!r.name.trim()) e.name = "Enter the name";
+  if (!/^[6-9]\d{9}$/.test(r.phone)) e.phone = "10-digit mobile number";
+  if (r.email.trim() && !EMAIL_RE.test(r.email.trim())) e.email = "Enter a valid email";
+  return e;
+}
+
+/**
+ * ASO: the client's SO contacts (name, mobile, optional email), kept apart from the client's contact persons. Any
+ * number of contacts, none required; one is primary when there are any. Saved as one list with "Save SO Contacts";
+ * unsaved edits stay on screen (they are not overwritten by other handover saves).
+ */
+function SoContactsSection({ orderId, saved, editable }: { orderId: string; saved: SoContact[]; editable: boolean }) {
+  const toast = useToast();
+  const save = useSetSoContacts(orderId);
+  const savedKey = JSON.stringify(saved);
+  const [rows, setRows] = useState<SoRow[]>(() => soRowsOf(saved));
+  const [base, setBase] = useState(savedKey);
+  const [dirty, setDirty] = useState(false);
+  const [tried, setTried] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
+  // Saved list changed elsewhere (another tab, a reload) while nothing is being edited here: show it.
+  if (savedKey !== base && !dirty) {
+    setBase(savedKey);
+    setRows(soRowsOf(saved));
+  }
+  const edit = (next: SoRow[]) => {
+    setRows(next);
+    setDirty(true);
+    setServerErrors({});
+  };
+  const setField = (i: number, f: "name" | "phone" | "email", v: string) => edit(rows.map((r, j) => (j === i ? { ...r, [f]: f === "phone" ? v.replace(/\D/g, "").slice(0, 10) : v } : r)));
+  const makePrimary = (i: number) => edit(rows.map((r, j) => ({ ...r, isPrimary: j === i })));
+  const remove = (i: number) => {
+    const next = rows.filter((_, j) => j !== i);
+    // Deleting the primary hands it to the first remaining contact.
+    if (rows[i]?.isPrimary && next.length && !next.some((r) => r.isPrimary)) next[0] = { ...next[0]!, isPrimary: true };
+    edit(next);
+  };
+  const kept = rows.filter((r) => !isBlankSo(r));
+  const errors = rows.map(soRowErrors);
+  const invalid = errors.some((e) => Object.keys(e).length);
+
+  const submit = async () => {
+    setTried(true);
+    if (invalid) return;
+    const primary = Math.max(0, kept.findIndex((r) => r.isPrimary));
+    try {
+      await save.mutateAsync(kept.map((r, i) => ({ name: r.name.trim(), phone: r.phone, email: r.email.trim() || undefined, isPrimary: i === primary })));
+      setDirty(false);
+      setTried(false);
+      setBase("");
+      toast(kept.length ? `${kept.length} SO contact${kept.length === 1 ? "" : "s"} saved` : "SO contacts cleared");
+    } catch (e) {
+      // Server paths index the kept (non-blank) rows; point them back at the rows on screen.
+      const map: Record<string, string> = {};
+      for (const [path, msg] of Object.entries(fieldErrorsOf(e))) {
+        const m = /^contacts\.(\d+)\.(\w+)$/.exec(path);
+        const row = m ? rows.indexOf(kept[Number(m[1])]!) : -1;
+        if (m && row >= 0) map[`${row}.${m[2]}`] = msg;
+      }
+      setServerErrors(map);
+      toast(errorMessage(e), "error");
+    }
+  };
+
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionTitle
+        icon={Contact}
+        title="SO Contacts"
+        description={editable ? "Optional. The client's SO contacts for this ASO handover: name and mobile for each one you add, email if known." : "The client's SO contacts for this ASO handover."}
+        action={
+          editable && (
+            <Button variant="brand-outline" size="sm" onClick={() => edit([...rows, { ...blankSo(), isPrimary: !rows.some((r) => r.isPrimary) }])} disabled={rows.length >= 50}>
+              <UserPlus className="size-4" aria-hidden /> Add SO Contact
+            </Button>
+          )
+        }
+      />
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No SO contacts{editable ? " yet. They are optional." : "."}</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2.5">Name</th>
+                <th className="px-3 py-2.5">Phone Number</th>
+                <th className="px-3 py-2.5">Email (optional)</th>
+                <th className="px-3 py-2.5">Primary</th>
+                {editable && (
+                  <th className="px-3 py-2.5 text-right">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r, i) => {
+                const err = (f: "name" | "phone" | "email") => serverErrors[`${i}.${f}`] ?? (tried ? errors[i]![f] : undefined);
+                return editable ? (
+                  <tr key={r.key} className="align-top">
+                    {(["name", "phone", "email"] as const).map((f) => (
+                      <td key={f} className="px-3 py-2">
+                        <Input
+                          aria-label={`SO contact ${i + 1} ${f === "phone" ? "phone number" : f}`}
+                          aria-invalid={!!err(f)}
+                          value={r[f]}
+                          inputMode={f === "phone" ? "numeric" : f === "email" ? "email" : undefined}
+                          placeholder={f === "phone" ? "10-digit mobile" : f === "email" ? "name@company.com" : "Contact name"}
+                          maxLength={f === "name" ? 120 : f === "email" ? 200 : 10}
+                          autoComplete="off"
+                          onChange={(e) => setField(i, f, e.target.value)}
+                        />
+                        {err(f) && <p className="mt-1 text-xs text-danger">{err(f)}</p>}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2">
+                      <label className="flex h-10 items-center gap-2 text-sm">
+                        <input type="radio" name={`so-primary-${orderId}`} checked={r.isPrimary} onChange={() => makePrimary(i)} className="size-4 accent-brand" />
+                        Primary
+                      </label>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Button variant="ghost" size="icon" onClick={() => remove(i)} aria-label={`Remove SO contact ${r.name || i + 1}`} title="Remove">
+                        <Trash2 className="size-4 text-danger" aria-hidden />
+                      </Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={r.key}>
+                    <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                    <td className="px-3 py-2.5 tabular-nums">+91 {r.phone}</td>
+                    <td className="px-3 py-2.5">{r.email || "-"}</td>
+                    <td className="px-3 py-2.5">
+                      {r.isPrimary ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">
+                          <Star className="size-3" aria-hidden /> Primary
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editable && dirty && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+          <span className="mr-auto text-xs text-warning">Unsaved changes</span>
+          <Button
+            variant="outline"
+            disabled={save.isPending}
+            onClick={() => {
+              setRows(soRowsOf(saved));
+              setDirty(false);
+              setTried(false);
+              setServerErrors({});
+            }}
+          >
+            Discard
+          </Button>
+          <Button variant="brand" loading={save.isPending} onClick={() => void submit()}>
+            <Save className="size-4" aria-hidden /> Save SO Contacts
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /** Pick the Client Servicing person and hand the order over (once; it cannot be reassigned). */
 function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; data: HandoverState; order: Order; onAssigned?: () => void }) {
   const toast = useToast();
@@ -379,12 +568,12 @@ function StatusBanner({ data }: { data: HandoverState }) {
         <Info className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
         {data.full ? (
           <p>
-            <b>Not handed over yet.</b> Choose the handover type, complete what it needs (contacts for ASO; a verified shop list for the shop types), add notes,
-            voice notes and documents, then assign the order to Client Servicing.
+            <b>Not handed over yet.</b> Choose the handover type, complete what it needs (a shop list for the shop types; SO contacts are optional for ASO), add
+            messages and documents, then assign the order to Client Servicing.
           </p>
         ) : (
           <p>
-            <b>Not handed over yet.</b> Only the client details and contact persons go to Client Servicing. Add at least one contact person, then assign.
+            <b>Not handed over yet.</b> Only the client details and contact persons (optional) go to Client Servicing. Choose the person and assign.
           </p>
         )}
       </div>
@@ -430,7 +619,7 @@ export function HandoverTab({
   mode?: "cs" | "recce";
   locked?: boolean;
 }) {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const q = useHandover(order._id);
   const canWrite = can("sales:write");
   if (q.isPending)
@@ -446,6 +635,8 @@ export function HandoverTab({
   // The Recce team always gets the full handover; the toggle is a Client Servicing option.
   const data = recce ? { ...q.data, full: true } : q.data;
   const open = !data.assignee && !locked; // before handover the BD can still change everything
+  // The Client Servicing person the order is handed to can reply in the handover chat (read-only otherwise).
+  const csReply = user?.role === "CLIENT_SERVICING" && !!data.assignee && data.assignee._id === user.id;
 
   const toggle = recce ? undefined : canWrite && open ? (
     <ScopeToggle orderId={order._id} data={data} editable />
@@ -456,11 +647,13 @@ export function HandoverTab({
   return (
     <div className="space-y-4">
       {!recce && <StatusBanner data={data} />}
-      <TypeSection orderId={order._id} data={data} editable={canWrite && open} toggle={toggle} />
       <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
+      <TypeSection orderId={order._id} data={data} editable={canWrite && open} toggle={toggle} />
       <AnimatePresence initial={false}>
         {data.full && (
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
+            {/* SO contacts stay on the order for other types too (hidden, not deleted). */}
+            {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={canWrite && open} />}
             {data.type === "ASO" && !!data.shopList?.total && open && (
               <p className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
                 <AlertTriangle className="size-4" aria-hidden /> Shops were added earlier. ASO hands over without a shop list: clear it below, or choose a shop type.
@@ -473,7 +666,7 @@ export function HandoverTab({
           </motion.div>
         )}
       </AnimatePresence>
-      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={canWrite} canDelete={canWrite && open} />
+      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={canWrite || csReply} canDelete={canWrite && open} />
       {!recce && canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
       {!open && canWrite && !recce && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

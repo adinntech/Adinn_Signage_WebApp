@@ -407,8 +407,19 @@ export interface HandoverState {
   documents: HandoverDoc[];
   /** Communication & attachments, oldest first. */
   messages: HandoverMessage[];
+  /** ASO: the client's SO contacts (kept apart from the contact persons; shown for ASO only). */
+  soContacts: SoContact[];
+  /** Last save of any handover detail. */
+  updatedAt: string | null;
   /** Still needed before the order can be handed over (from the server). */
   missing: string[];
+}
+export interface SoContact {
+  _id?: string;
+  name: string;
+  phone: string;
+  email?: string;
+  isPrimary: boolean;
 }
 export type ShopState = "VALID" | "WARNING" | "ERROR";
 export interface HandoverShop {
@@ -433,6 +444,8 @@ export interface HandoverShop {
   boardType?: string | null;
   remarks?: string | null;
   clientSiteCode?: string | null;
+  /** Columns of the uploaded Excel that are not shop fields (header -> value). */
+  extra?: Record<string, string> | null;
   state: ShopState;
   issues: string[];
   /** Shop + Measurement: up to 10 images of this shop. */
@@ -441,10 +454,12 @@ export interface HandoverShop {
   updatedByName?: string | null;
 }
 /** Text values of a shop row as typed in the table (the server checks and cleans them). */
-export type ShopRowInput = Partial<Record<"shopName" | "dealerName" | "location" | "district" | "address1" | "address2" | "address3" | "pincode" | "mobile" | "mobileAlt" | "gstin" | "contactPerson" | "width" | "height" | "unit" | "boardType" | "quantity" | "remarks" | "clientSiteCode", string>>;
+export type ShopRowInput = Partial<Record<"shopName" | "dealerName" | "location" | "district" | "address1" | "address2" | "address3" | "pincode" | "mobile" | "mobileAlt" | "gstin" | "contactPerson" | "width" | "height" | "unit" | "boardType" | "quantity" | "remarks" | "clientSiteCode", string>> & { extra?: Record<string, string> };
 export interface ShopLog {
   _id: string;
   rowId?: string | null;
+  /** Row identity at the time ("Row 12 · ABC Traders"), also for deleted rows. */
+  label?: string | null;
   action: "ADD" | "EDIT" | "DELETE" | "IMPORT" | "CLEAR" | "IMAGE_ADD" | "IMAGE_REMOVE";
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
@@ -485,12 +500,35 @@ function useHandoverMutation<V, R = HandoverState>(id: string, fn: (v: V) => Pro
   });
 }
 
+/** What an upload added / updated, and the rows of the file that came in with problems (line = Excel row). */
+export interface ShopImportResult {
+  added: number;
+  updated: number;
+  sheet?: string;
+  extraColumns?: string[];
+  flaggedCount?: number;
+  flagged?: { line: number; row: number; state: ShopState; issues: string[] }[];
+}
+/** 422 SHOP_MAPPING_REQUIRED: the workbook is ambiguous; the BD picks the sheet / header row and maps the columns. */
+export interface ShopImportPreview {
+  sheets: { name: string; rows: number }[];
+  sheet: string;
+  headerRow: number | null;
+  rows: { rowNumber: number; cells: string[] }[];
+  headers: string[];
+  mapping: Record<string, string>;
+  problems: string[];
+  fields: string[];
+}
 export const useUploadShopList = (id: string) =>
-  useHandoverMutation(id, (body: FormData) => api<HandoverState & { imported?: { added: number; updated: number } }>(`/sales/orders/${id}/handover/shops`, { method: "POST", body }));
+  useHandoverMutation(id, (body: FormData) => api<HandoverState & { imported?: ShopImportResult }>(`/sales/orders/${id}/handover/shops`, { method: "POST", body }));
 /** Clears the whole shop table. */
 export const useRemoveShopList = (id: string) => useHandoverMutation(id, () => api<HandoverState>(`/sales/orders/${id}/handover/shops`, { method: "DELETE" }));
 export const useSetHandoverType = (id: string) =>
   useHandoverMutation(id, (type: HandoverType) => api<HandoverState>(`/sales/orders/${id}/handover/type`, { method: "PATCH", body: JSON.stringify({ type }) }));
+/** ASO: saves the whole SO contact list (blank rows are dropped; one primary). */
+export const useSetSoContacts = (id: string) =>
+  useHandoverMutation(id, (contacts: SoContact[]) => api<HandoverState>(`/sales/orders/${id}/handover/so-contacts`, { method: "PUT", body: JSON.stringify({ contacts }) }));
 export const useAddShopRow = (id: string) =>
   useHandoverMutation(id, (body: ShopRowInput) => api<HandoverShop>(`/sales/orders/${id}/handover/shop-rows`, { method: "POST", body: JSON.stringify(body) }));
 export const useUpdateShopRow = (id: string) =>

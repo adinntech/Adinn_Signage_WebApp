@@ -120,6 +120,8 @@ export interface ProjectHandover {
     contacts: ClientContact[];
   } | null;
   type: HandoverType | null;
+  /** ASO: the client's SO contacts as handed over. */
+  soContacts?: { name: string; phone: string; email?: string | null; isPrimary?: boolean }[];
   /** Communication & attachments (chat) from the BD. */
   messages: HandoverMessage[];
   documents: HandoverDoc[];
