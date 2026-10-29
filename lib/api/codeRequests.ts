@@ -147,3 +147,22 @@ export function useRejectCode(orderId: string) {
   const done = useRefresh(orderId);
   return useMutation({ mutationFn: (v: { kind: CodeKind; reason: string }) => api<CodesOverview>(`/sales/orders/${orderId}/codes/reject`, { method: "POST", body: JSON.stringify(v) }), onSuccess: done });
 }
+
+export type OrderBucket = "TODO" | "WAITING" | "DONE";
+export interface OrderCodeState {
+  orderId: string;
+  orderNo: string;
+  client: { id: string; name: string; clientNo: string | null };
+  assignedAt: string | null;
+  codes: Record<CodeKind, { state: "NOT_REQUESTED" | "PENDING" | "BD_SENT" | "CONFIRMED" | "FAILED"; code: string | null }>;
+  bucket: OrderBucket;
+}
+export interface OrderStatesMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  counts: { ALL: number; TODO: number; WAITING: number; DONE: number };
+}
+export const useCodeOrders = (params: { page?: number; limit?: number; q?: string; bucket?: string }) =>
+  useQuery({ queryKey: ["sales", "codes", "orders", params], queryFn: () => apiPage<OrderCodeState>(`/sales/codes/orders${qs(params)}`), placeholderData: keepPreviousData });

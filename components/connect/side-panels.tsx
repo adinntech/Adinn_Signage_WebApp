@@ -24,12 +24,48 @@ interface Me {
   name: string;
 }
 
+/** Pick people and add them to the channel (owner or Super Admin). */
+export function AddPeopleDialog({ channel, open, onClose }: { channel: ChannelDetail; open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const { add } = useChannelMembers(channel.id);
+  const [picked, setPicked] = useState<string[]>([]);
+  const close = () => (setPicked([]), onClose());
+  return (
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && close()}
+      title="Add people"
+      footer={
+        <>
+          <Button variant="outline" onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            variant="brand"
+            disabled={picked.length === 0}
+            loading={add.isPending}
+            onClick={() =>
+              add.mutateAsync(picked).then(
+                () => (toast("People added"), close()),
+                (e) => toast(errorMessage(e), "error"),
+              )
+            }
+          >
+            Add {picked.length || ""}
+          </Button>
+        </>
+      }
+    >
+      <PeoplePicker selected={picked} onChange={setPicked} exclude={channel.members.map((m) => m.id)} />
+    </Modal>
+  );
+}
+
 /** "Project Members (6)": who is in the channel, with add (managers) and remove / leave. */
 export function MembersPanel({ channel, me, onLeft }: { channel: ChannelDetail; me: Me; onLeft: () => void }) {
   const toast = useToast();
-  const { add, remove } = useChannelMembers(channel.id);
+  const { remove } = useChannelMembers(channel.id);
   const [adding, setAdding] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
   const [removing, setRemoving] = useState<ChannelMember | null>(null);
   const label = channel.kind === "PROJECT" ? "Project Members" : "Members";
   const fixed = channel.kind === "DM";
@@ -70,33 +106,7 @@ export function MembersPanel({ channel, me, onLeft }: { channel: ChannelDetail; 
       </ul>
       {channel.kind === "PROJECT" && <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">People on the project are added automatically.</p>}
 
-      <Modal
-        open={adding}
-        onOpenChange={(o) => !o && (setAdding(false), setPicked([]))}
-        title="Add people"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => (setAdding(false), setPicked([]))}>
-              Cancel
-            </Button>
-            <Button
-              variant="brand"
-              disabled={picked.length === 0}
-              loading={add.isPending}
-              onClick={() =>
-                add.mutateAsync(picked).then(
-                  () => (toast("People added"), setAdding(false), setPicked([])),
-                  (e) => toast(errorMessage(e), "error"),
-                )
-              }
-            >
-              Add {picked.length || ""}
-            </Button>
-          </>
-        }
-      >
-        <PeoplePicker selected={picked} onChange={setPicked} exclude={channel.members.map((m) => m.id)} />
-      </Modal>
+      <AddPeopleDialog channel={channel} open={adding} onClose={() => setAdding(false)} />
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}

@@ -45,6 +45,7 @@ export function MessageItem({
   const edit = useEditMessage(channelId);
   const del = useDeleteMessage(channelId);
   const [picker, setPicker] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const mine = m.author.id === meId;
@@ -115,7 +116,7 @@ export function MessageItem({
           )
         )}
         <Attachments channelId={channelId} items={m.attachments} />
-        {(m.reactions.length > 0 || m.pinned) && (
+        {(m.reactions.length > 0 || m.pinned || joined) && (
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {m.reactions.map((r) => (
               <button
@@ -131,6 +132,22 @@ export function MessageItem({
                 <span className="tabular-nums">{r.count}</span>
               </button>
             ))}
+            {joined && !select && (
+              <span className="relative">
+                <button type="button" aria-label="Add reaction" aria-expanded={addOpen} onClick={() => setAddOpen(!addOpen)} className="flex size-6 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground">
+                  <SmilePlus className="size-3.5" aria-hidden />
+                </button>
+                {addOpen && (
+                  <span className="absolute bottom-full left-0 z-20 mb-1 grid w-44 grid-cols-4 gap-0.5 rounded-xl border border-border bg-surface p-1.5 shadow-card">
+                    {QUICK.map((e) => (
+                      <button key={e} type="button" aria-label={`React ${e}`} onClick={() => (setAddOpen(false), run(react.mutateAsync({ id: m.id, emoji: e })))} className="rounded-md p-1 text-lg hover:bg-muted">
+                        {e}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </span>
+            )}
             {m.pinned && (
               <span className="flex items-center gap-1 text-[11px] text-approval">
                 <Pin className="size-3" aria-hidden /> Pinned

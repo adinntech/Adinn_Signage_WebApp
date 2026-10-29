@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { FolderKanban, Hash, Lock, MessagesSquare, Mic, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
+import { MessagesSquare, Mic, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
+import { ChannelGlyph } from "@/components/connect/channel-list";
 import { Avatar } from "@/components/connect/format";
+import { MiniChat } from "@/components/connect/mini-chat";
 import { useConnectSocket } from "@/hooks/use-connect-socket";
-import { attachmentUrl, useChannels, type ChannelItem } from "@/lib/api/connect";
+import { attachmentUrl, useChannels } from "@/lib/api/connect";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -65,8 +67,6 @@ const savePref = (key: string, v: boolean) => {
   }
 };
 
-const KIND_ICON = { PROJECT: FolderKanban, TEAM: Hash, PRIVATE: Lock, DM: Hash } as const;
-
 /**
  * Adinn Connect, on every screen for every login: a floating button with the unread count and a quick list of chats;
  * a chime and a banner when something arrives; and voice notes that start playing as they arrive (one after another).
@@ -80,6 +80,7 @@ export function ConnectLauncher() {
   const socket = useConnectSocket(enabled);
   const channels = useChannels(enabled);
   const [open, setOpen] = useState(false);
+  const [chat, setChat] = useState<string | null>(null);
   const [sound, setSound] = useState(() => pref("sound", true));
   const [autoplay, setAutoplay] = useState(() => pref("autoplay", true));
   const [ping, setPing] = useState(0);
@@ -94,15 +95,70 @@ export function ConnectLauncher() {
   const soundRef = useRef(sound);
   const autoRef = useRef(autoplay);
   const box = useRef<HTMLDivElement>(null);
+  // Where the button sits. Null = the bottom-right corner (also after every page refresh); a drag moves it anywhere.
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const SIZE = 56;
+  const clamp = (x: number, y: number) => ({ x: Math.min(Math.max(8, x), window.innerWidth - SIZE - 8), y: Math.min(Math.max(8, y), window.innerHeight - SIZE - 8) });
   useEffect(() => {
     soundRef.current = sound;
     autoRef.current = autoplay;
   }, [sound, autoplay]);
 
+  /** Away from the chat page a chat opens in the floating window; on it, in the page itself. */
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || !box.current) return;
+    const r = box.current.getBoundingClientRect();
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: r.left, oy: r.top, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx;
+    const dy = e.clientY - d.sy;
+    // A small wobble is still a click.
+    if (!d.moved && Math.hypot(dx, dy) < 6) return;
+    if (!d.moved) {
+      d.moved = true;
+      setDragging(true);
+      setOpen(false);
+      setBanner(null);
+    }
+    setPos(clamp(d.ox + dx, d.oy + dy));
+  };
+  const onPointerUp = () => {
+    if (drag.current?.moved) suppressClick.current = true;
+    drag.current = null;
+    setDragging(false);
+  };
+  // Keyboard: Shift + arrow keys move the button too.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const step = { ArrowLeft: [-24, 0], ArrowRight: [24, 0], ArrowUp: [0, -24], ArrowDown: [0, 24] }[e.key];
+    if (!e.shiftKey || !step || !box.current) return;
+    e.preventDefault();
+    const r = box.current.getBoundingClientRect();
+    setPos(clamp(r.left + step[0]!, r.top + step[1]!));
+  };
+  useEffect(() => {
+    if (!pos) return;
+    const fit = () => setPos((p) => (p ? clamp(p.x, p.y) : p));
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pos !== null]);
+
   const go = (channelId: string) => {
-    setOpen(false);
     setBanner(null);
-    router.push(`/connect?c=${channelId}`);
+    if (pathname === "/connect") {
+      setOpen(false);
+      router.push(`/connect?c=${channelId}`);
+    } else {
+      setChat(channelId);
+      setOpen(true);
+    }
   };
 
   /** Plays the next queued voice note, if none is playing. */
@@ -148,8 +204,9 @@ export function ConnectLauncher() {
 
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    // A click inside a dialog opened from the window (an image preview, a confirmation) is not a click outside it.
+    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && !(e.target as Element).closest('[role="dialog"]') && (setOpen(false), setChat(null));
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && (setOpen(false), setChat(null));
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", esc);
     return () => {
@@ -163,10 +220,13 @@ export function ConnectLauncher() {
   const unread = (channels.data ?? []).reduce((n, c) => n + c.unread, 0);
   const mentions = (channels.data ?? []).reduce((n, c) => n + c.mentionUnread, 0);
   const onChat = pathname === "/connect";
+  const above = !pos || pos.y + SIZE / 2 > (typeof window === "undefined" ? 0 : window.innerHeight / 2);
+  const right = !pos || pos.x + SIZE / 2 > (typeof window === "undefined" ? 0 : window.innerWidth / 2);
 
   return (
     <>
-      <div ref={box} className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3 print:hidden">
+      <div ref={box} style={pos ? { left: pos.x, top: pos.y } : { right: 20, bottom: 20 }} className="fixed z-40 size-14 print:hidden">
+        <div className={cn("absolute flex flex-col gap-3", above ? "bottom-full mb-3" : "top-full mt-3", right ? "right-0 items-end" : "left-0 items-start")}>
         <AnimatePresence>
           {voice && (
             <motion.div key="voice" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="w-72 rounded-2xl border border-border bg-surface p-3 shadow-card" role="region" aria-label="Incoming voice note">
@@ -246,7 +306,11 @@ export function ConnectLauncher() {
             </motion.button>
           )}
           {open && (
-            <motion.div key="panel" initial={reduce ? false : { opacity: 0, y: 12, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} className="w-80 overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
+            <motion.div key="panel" initial={reduce ? false : { opacity: 0, y: 12, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} className={cn("overflow-hidden rounded-2xl border border-border bg-surface shadow-card", chat ? "w-[24rem] max-w-[calc(100vw-2.5rem)]" : "w-80")}>
+              {chat ? (
+                <MiniChat channelId={chat} onBack={() => setChat(null)} onExpand={() => (setOpen(false), router.push(`/connect?c=${chat}`), setChat(null))} />
+              ) : (
+              <>
               <div className="flex items-center gap-2 bg-gradient-to-r from-navy via-[#173a8a] to-royal px-4 py-3 text-white">
                 <MessagesSquare className="size-5" aria-hidden />
                 <h2 className="flex-1 text-sm font-semibold">Adinn Connect</h2>
@@ -261,8 +325,8 @@ export function ConnectLauncher() {
                 {list.length === 0 && <li className="px-4 py-6 text-center text-sm text-muted-foreground">No conversations yet.</li>}
                 {list.map((c) => (
                   <li key={c.id}>
-                    <button type="button" onClick={() => go(c.id)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/60">
-                      <ChannelIcon c={c} />
+                    <button type="button" onClick={() => setChat(c.id)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/60">
+                      <ChannelGlyph c={c} size={34} />
                       <span className="min-w-0 flex-1">
                         <span className={cn("block truncate text-sm", c.unread ? "font-semibold text-primary" : "text-foreground")}>{c.name}</span>
                         <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
@@ -278,9 +342,12 @@ export function ConnectLauncher() {
               <button type="button" onClick={() => (setOpen(false), router.push("/connect"))} className="w-full border-t border-border bg-muted/50 px-4 py-2.5 text-center text-sm font-medium text-royal hover:bg-muted">
                 Open Adinn Connect
               </button>
+              </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
 
         {!onChat && (
           <motion.button
@@ -288,10 +355,24 @@ export function ConnectLauncher() {
             type="button"
             aria-label={`Adinn Connect${unread ? `, ${unread} unread` : ""}`}
             aria-expanded={open}
-            onClick={() => setOpen(!open)}
+            onClick={() => {
+              // A drag ends with a click event; that one is not a request to open.
+              if (suppressClick.current) {
+                suppressClick.current = false;
+                return;
+              }
+              setOpen(!open);
+              setChat(null);
+            }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onKeyDown={onKeyDown}
+            title="Adinn Connect. Drag to move it anywhere."
             whileHover={reduce ? undefined : { scale: 1.07 }}
             whileTap={reduce ? undefined : { scale: 0.95 }}
-            className={cn("relative flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-royal to-vendor text-white shadow-card outline-offset-4", ping > 0 && "connect-ping")}
+            className={cn("relative flex size-14 touch-none select-none items-center justify-center rounded-full bg-gradient-to-br from-royal to-vendor text-white shadow-card outline-offset-4", dragging ? "cursor-grabbing scale-110" : "cursor-grab", ping > 0 && "connect-ping")}
           >
             <MessagesSquare className="size-6" aria-hidden />
             {unread > 0 && (
@@ -301,15 +382,5 @@ export function ConnectLauncher() {
         )}
       </div>
     </>
-  );
-}
-
-function ChannelIcon({ c }: { c: ChannelItem }) {
-  if (c.kind === "DM") return <Avatar name={c.name} size={32} />;
-  const I = KIND_ICON[c.kind];
-  return (
-    <span className="flex size-8 items-center justify-center rounded-lg bg-brand-soft text-brand">
-      <I className="size-4" aria-hidden />
-    </span>
   );
 }

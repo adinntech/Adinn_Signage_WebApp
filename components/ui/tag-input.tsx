@@ -72,7 +72,7 @@ export function TagInput({
           } else if (e.key === "Backspace" && !draft && value.length) onChange(value.slice(0, -1));
         }}
         onBlur={() => add(draft)}
-        className="min-w-24 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground/70"
+        className="bare-field min-w-24 flex-1 bg-transparent px-1 text-sm placeholder:text-muted-foreground/70"
       />
     </div>
   );

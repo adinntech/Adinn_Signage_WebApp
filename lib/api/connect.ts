@@ -46,6 +46,8 @@ export interface Attachment {
   kind: "image" | "video" | "document" | "sheet" | "audio";
   voice: boolean;
   durationSec: number | null;
+  /** Bar heights 0 to 100 of a voice note, recorded with it. */
+  peaks?: number[];
 }
 export interface Reaction {
   emoji: string;
@@ -140,7 +142,7 @@ export interface SendInput {
   parent?: string;
   mentions: string[];
   files: File[];
-  voice?: { durationSec: number };
+  voice?: { durationSec: number; peaks: number[] };
 }
 export function useSendMessage(channelId: string) {
   const qc = useQueryClient();

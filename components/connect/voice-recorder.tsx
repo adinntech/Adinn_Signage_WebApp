@@ -12,7 +12,7 @@ export { canRecordVoice };
  * The quick voice-note bar of a chat message box: start, pause / resume, stop, listen back, discard or send.
  * Recording itself is the shared useVoiceCapture hook (also used by the project workspace).
  */
-export function VoiceRecorder({ onSend, onCancel, sending }: { onSend: (file: File, durationSec: number) => void; onCancel: () => void; sending?: boolean }) {
+export function VoiceRecorder({ onSend, onCancel, sending }: { onSend: (file: File, durationSec: number, peaks: number[]) => void; onCancel: () => void; sending?: boolean }) {
   const v = useVoiceCapture();
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -61,7 +61,7 @@ export function VoiceRecorder({ onSend, onCancel, sending }: { onSend: (file: Fi
           <Button size="sm" variant="ghost" onClick={cancel} aria-label="Discard recording">
             <Trash2 className="size-4" aria-hidden />
           </Button>
-          <Button size="sm" variant="brand" className="ml-auto" loading={sending} onClick={() => onSend(v.result!.file, v.result!.durationSec)}>
+          <Button size="sm" variant="brand" className="ml-auto" loading={sending} onClick={() => onSend(v.result!.file, v.result!.durationSec, v.result!.peaks)}>
             <Send className="size-4" aria-hidden /> Send voice note
           </Button>
         </>

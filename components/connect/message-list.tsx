@@ -12,9 +12,7 @@ import { api } from "@/lib/api";
 import { connectKeys, useMessages, type ChannelMember, type ChatMessage, type MessagePage } from "@/lib/api/connect";
 import { qs } from "@/lib/api/common";
 
-const SAME_PERSON_MS = 5 * 60_000;
-
-/** The messages of a channel or of one thread: day separators, grouped authors, earlier messages on request, stays at the newest. */
+/** The messages of a channel or of one thread: day separators, the author on every message, earlier messages on request, stays at the newest. */
 export function MessageList({
   channelId,
   thread,
@@ -41,6 +39,7 @@ export function MessageList({
   const qc = useQueryClient();
   const q = useMessages(channelId, thread);
   const box = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const [away, setAway] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -54,9 +53,19 @@ export function MessageList({
     if (atBottom.current) el.scrollTop = el.scrollHeight;
     else setAway(true);
   }, [last]);
-  // The list is remounted (by key) for each channel and thread, so it always starts at the newest message.
+  // The list is remounted (by key) for each channel and thread, so it starts at the newest message. Pictures and voice
+  // notes change the height after they load; while the reader is at the bottom they stay at the bottom, so the view
+  // never jumps or ends up half way.
   useEffect(() => {
-    requestAnimationFrame(() => box.current && (box.current.scrollTop = box.current.scrollHeight));
+    const el = box.current;
+    const inner = content.current;
+    if (!el || !inner) return;
+    el.scrollTop = el.scrollHeight;
+    const watch = new ResizeObserver(() => {
+      if (atBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    watch.observe(inner);
+    return () => watch.disconnect();
   }, []);
 
   const onScroll = () => {
@@ -93,7 +102,8 @@ export function MessageList({
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={box} onScroll={onScroll} className="h-full overflow-y-auto py-2" role="log" aria-live="polite" aria-label="Messages">
+      <div ref={box} onScroll={onScroll} className="h-full overflow-y-auto overscroll-contain py-2" role="log" aria-live="polite" aria-label="Messages">
+        <div ref={content}>
         {header}
         {q.data!.hasMore && (
           <div className="flex justify-center py-2">
@@ -106,7 +116,6 @@ export function MessageList({
         {messages.map((m, i) => {
           const prev = messages[i - 1];
           const newDay = !prev || dayOf(prev.createdAt) !== dayOf(m.createdAt);
-          const showHeader = newDay || !prev || prev.author.id !== m.author.id || prev.deleted || +new Date(m.createdAt) - +new Date(prev.createdAt) > SAME_PERSON_MS;
           return (
             <div key={m.id}>
               {newDay && (
@@ -116,10 +125,11 @@ export function MessageList({
                   <span className="h-px flex-1 bg-border" />
                 </div>
               )}
-              <MessageItem m={m} members={members} meId={meId} meName={meName} channelId={channelId} joined={joined} canManage={canManage} showHeader={showHeader} onThread={thread ? undefined : onThread} select={select} />
+              <MessageItem m={m} members={members} meId={meId} meName={meName} channelId={channelId} joined={joined} canManage={canManage} showHeader onThread={thread ? undefined : onThread} select={select} />
             </div>
           );
         })}
+        </div>
       </div>
       {away && (
         <Button size="sm" variant="brand" className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-card" onClick={() => (box.current!.scrollTop = box.current!.scrollHeight)}>

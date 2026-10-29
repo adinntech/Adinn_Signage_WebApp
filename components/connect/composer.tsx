@@ -71,7 +71,7 @@ export function Composer({ channelId, members, parent, placeholder = "Type a mes
     setFiles([...files, ...picked]);
   };
 
-  const submit = async (extra?: { files: File[]; voice?: { durationSec: number } }) => {
+  const submit = async (extra?: { files: File[]; voice?: { durationSec: number; peaks: number[] } }) => {
     const body = text.trim();
     const all = extra?.files ?? files;
     if (!body && all.length === 0) return;
@@ -101,7 +101,7 @@ export function Composer({ channelId, members, parent, placeholder = "Type a mes
   return (
     <div className="relative border-t border-border bg-surface p-3">
       {voice ? (
-        <VoiceRecorder sending={send.isPending} onCancel={() => setVoice(false)} onSend={(file, durationSec) => void submit({ files: [file], voice: { durationSec } })} />
+        <VoiceRecorder sending={send.isPending} onCancel={() => setVoice(false)} onSend={(file, durationSec, peaks) => void submit({ files: [file], voice: { durationSec, peaks } })} />
       ) : (
         <>
           {files.length > 0 && (

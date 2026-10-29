@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, BadgeCheck, Building2, Check, FolderKanban, History, Mail, SquareArrowOutUpRight } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Building2, Check, ChevronDown, FolderKanban, History, Mail, SquareArrowOutUpRight } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { CodeStatusBadge } from "@/components/client-servicing/code-parts";
 import { CodeMailComposer, type SendMode } from "@/components/client-servicing/code-mail-composer";
 import { REQUIRED_DOCS, ViewMailModal } from "@/components/client-servicing/code-mail-view";
@@ -48,7 +49,10 @@ export function CodeRequestHub() {
   const { orderId } = useParams<{ orderId: string }>();
   const q = useCodes(orderId);
   const history = useCodeHistory(orderId);
-  const [step, setStep] = useState<"select" | "compose">("select");
+  const reduce = useReducedMotion();
+  const [mailOpen, setMailOpen] = useState(false);
+  const [run, setRun] = useState(0);
+  const center = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<CodeKind[] | null>(null);
   const [mode, setMode] = useState<SendMode>("COMBINED");
   const [ticked, setTicked] = useState<Record<CodeKind, string[]>>({ CLIENT_CODE: [], PROJECT_CODE: [] });
@@ -67,19 +71,15 @@ export function CodeRequestHub() {
   const open = KINDS.filter((k) => d.kinds[k].canRequest);
   const sel = (picked ?? open).filter((k) => open.includes(k));
   const toggle = (k: CodeKind) => setPicked(sel.includes(k) ? sel.filter((x) => x !== k) : [...sel, k]);
+  /** Opens the Mail Center on this same page, set up for one combined mail or separate mails. */
   const go = (m: SendMode) => {
     setMode(m);
-    setStep("compose");
+    setMailOpen(true);
+    setRun((n) => n + 1);
+    requestAnimationFrame(() => center.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }));
   };
   const mailKind = mailOf ? d.kinds[mailOf] : null;
   const mailRow = mailOf ? d.requests.find((r) => r.kind === mailOf && r.mail) : undefined;
-
-  if (step === "compose" && sel.length > 0)
-    return (
-      <div className="mx-auto max-w-7xl">
-        <CodeMailComposer data={d} initialKinds={sel} initialMode={mode} enclosed={ticked} onBack={() => (setStep("select"), setPicked(null))} />
-      </div>
-    );
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5">
@@ -191,8 +191,27 @@ export function CodeRequestHub() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <MailHistory d={d} />
+      <Card ref={center} className="overflow-hidden scroll-mt-4">
+        <button type="button" aria-expanded={mailOpen} aria-controls="mail-center" onClick={() => setMailOpen(!mailOpen)} className="flex w-full items-center gap-3 bg-gradient-to-r from-navy via-[#173a8a] to-royal px-5 py-4 text-left text-white">
+          <span className="flex size-9 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30">
+            <Mail className="size-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold">Mail Center – Client Code &amp; Project Code{sel.length === 2 ? (mode === "SEPARATE" ? " (Separate Mails)" : " (Single Mail)") : ""}</span>
+            <span className="block text-xs text-white/75">{open.length ? "Write, send and track the code request emails here." : "Mail history for this order."}</span>
+          </span>
+          <ChevronDown className={cn("size-5 transition-transform", mailOpen && "rotate-180")} aria-hidden />
+        </button>
+        <AnimatePresence initial={false}>
+          {mailOpen && (
+            <motion.div id="mail-center" initial={reduce ? false : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={reduce ? undefined : { height: 0, opacity: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden">
+              <CodeMailComposer key={`${run}-${mode}-${sel.join()}`} data={d} initialKinds={sel} initialMode={mode} enclosed={ticked} onDone={() => (setMailOpen(false), setPicked(null))} history={<MailHistory d={d} />} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+
+      <div className="grid gap-5">
         <Card className="overflow-hidden">
           <GradientHeader title="Activity" />
           {history.isPending ? (
@@ -223,14 +242,13 @@ export function CodeRequestHub() {
 function MailHistory({ d }: { d: CodesOverview }) {
   const rows = d.requests.filter((r) => r.status !== "DRAFT");
   return (
-    <Card className="overflow-hidden lg:col-span-2">
-      <GradientHeader title="Mail History" subtitle="Every request for this order" />
+    <div>
       {rows.length === 0 ? (
         <EmptyState icon={Mail} title="No requests yet" description="Sent requests and their status appear here." />
       ) : (
         <ul className="divide-y divide-border">
           {rows.map((r) => (
-            <li key={r._id} className="space-y-1 px-5 py-3 text-sm">
+            <li key={r._id} className="space-y-1 py-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{CODE_LABEL[r.kind]}</span>
                 <CodeStatusBadge status={r.status} />
@@ -253,7 +271,7 @@ function MailHistory({ d }: { d: CodesOverview }) {
           ))}
         </ul>
       )}
-    </Card>
+    </div>
   );
 }
 

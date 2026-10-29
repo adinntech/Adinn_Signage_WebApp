@@ -96,7 +96,7 @@ export function RichTextEditor({
             document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
           }}
           style={{ minHeight }}
-          className="prose-editor max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-2"
+          className="prose-editor bare-field max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-2"
         />
       </div>
     </div>

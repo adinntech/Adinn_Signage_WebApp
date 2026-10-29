@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Mic, Pause, Play } from "lucide-react";
-import { durationLabel } from "@/components/connect/format";
+import { Download, Eye, Loader2 } from "lucide-react";
+import { AudioPlayer } from "@/components/voice/audio-player";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { FileTypeIcon, kindOfName } from "@/components/upload/file-drop";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, saveBlob } from "@/lib/api";
 import { attachmentUrl, type Attachment } from "@/lib/api/connect";
 import { formatBytes } from "@/lib/format";
 
@@ -19,20 +19,61 @@ export type LinkOf = (fileId: string) => Promise<Link>;
 const useLink = (scope: string, fileId: string, linkOf: LinkOf, enabled = true) =>
   useQuery({ queryKey: ["connect", "link", scope, fileId], queryFn: () => linkOf(fileId), enabled, staleTime: 4 * 60_000 });
 
-function ImageThumb({ channelId, a, linkOf }: { channelId: string; a: Attachment; linkOf: LinkOf }) {
+const extOf = (name: string) => (name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toUpperCase() : "FILE");
+
+/** The eye (preview) and download buttons of a file card. */
+function CardActions({ a, linkOf, onView, viewing }: { a: Attachment; linkOf: LinkOf; onView: () => void; viewing?: boolean }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const { url } = await linkOf(a.fileId);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("The file could not be downloaded");
+      saveBlob(await res.blob(), a.name);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <button type="button" onClick={onView} aria-label={`View ${a.name}`} title="View" className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground">
+        {viewing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+      </button>
+      <button type="button" onClick={download} disabled={busy} aria-label={`Download ${a.name}`} title="Download" className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
+        {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Download className="size-4" aria-hidden />}
+      </button>
+    </span>
+  );
+}
+
+/** A picture: a small preview with its name, size and type; the eye opens it large. */
+function ImageCard({ channelId, a, linkOf }: { channelId: string; a: Attachment; linkOf: LinkOf }) {
   const link = useLink(channelId, a.fileId, linkOf);
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-label={`Preview ${a.name}`} className="group relative size-24 overflow-hidden rounded-lg border border-border bg-muted sm:size-28">
-        {link.data ? (
-          // Signed private URL: not optimisable by next/image.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={link.data.url} alt={a.name} loading="lazy" className="size-full object-cover transition-transform group-hover:scale-105" />
-        ) : (
-          <span className="flex size-full items-center justify-center text-muted-foreground">{link.isError ? "!" : <Loader2 className="size-4 animate-spin" aria-hidden />}</span>
-        )}
-      </button>
+      <div className="flex max-w-xl items-center gap-4 rounded-xl border border-border bg-muted/40 p-2">
+        <button type="button" onClick={() => setOpen(true)} aria-label={`Preview ${a.name}`} className="group size-24 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
+          {link.data ? (
+            // Signed private URL: not optimisable by next/image.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={link.data.url} alt={a.name} loading="lazy" className="size-full object-cover transition-transform group-hover:scale-105" />
+          ) : (
+            <span className="flex size-full items-center justify-center text-muted-foreground">{link.isError ? "!" : <Loader2 className="size-4 animate-spin" aria-hidden />}</span>
+          )}
+        </button>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-primary">{a.name}</span>
+          <span className="text-xs text-muted-foreground">
+            {formatBytes(a.size)} • {extOf(a.name)}
+          </span>
+        </span>
+        <CardActions a={a} linkOf={linkOf} onView={() => setOpen(true)} />
+      </div>
       <Modal open={open} onOpenChange={setOpen} title={a.name} description={formatBytes(a.size)} className="max-w-3xl">
         {link.data && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -43,62 +84,23 @@ function ImageThumb({ channelId, a, linkOf }: { channelId: string; a: Attachment
   );
 }
 
-/** A voice note: loads its audio only when played. */
+/** A voice note: real waveform from the recording, play / pause, seek, speed. Its audio is asked for when first played. */
 export function VoicePlayer({ channelId, a, linkOf }: { channelId: string; a: Attachment; linkOf: LinkOf }) {
-  const [want, setWant] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [el, setEl] = useState<HTMLAudioElement | null>(null);
-  const [progress, setProgress] = useState(0);
-  const link = useLink(channelId, a.fileId, linkOf, want);
-  const toast = useToast();
-  const toggle = () => {
-    if (!want) setWant(true);
-    else if (el) void (playing ? el.pause() : el.play().catch((e) => toast(errorMessage(e), "error")));
-  };
-  return (
-    <div className="flex w-64 max-w-full items-center gap-3 rounded-full border border-border bg-muted/60 py-1.5 pl-1.5 pr-4">
-      <button type="button" onClick={toggle} aria-label={playing ? "Pause voice note" : "Play voice note"} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-royal text-white">
-        {want && link.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
-      </button>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="h-1.5 overflow-hidden rounded-full bg-border">
-          <span className="block h-full rounded-full bg-royal" style={{ width: `${Math.round(progress * 100)}%` }} />
-        </span>
-        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Mic className="size-3" aria-hidden /> Voice note · {durationLabel(a.durationSec)}
-        </span>
-      </span>
-      {link.data && (
-        <audio
-          ref={(n) => {
-            if (n !== el) {
-              setEl(n);
-              if (n && want) void n.play().catch(() => undefined);
-            }
-          }}
-          src={link.data.url}
-          preload="metadata"
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => (setPlaying(false), setProgress(0))}
-          onTimeUpdate={(e) => setProgress(e.currentTarget.duration ? e.currentTarget.currentTime / e.currentTarget.duration : 0)}
-          className="hidden"
-        />
-      )}
-    </div>
-  );
+  void channelId;
+  return <AudioPlayer className="w-full max-w-md" getUrl={() => linkOf(a.fileId).then((l) => l.url)} durationSec={a.durationSec ?? 0} peaks={a.peaks ?? []} />;
 }
 
-/** A document, sheet or audio file: opens through its private link in a new tab. */
+/** A document, sheet or other file: a card with its type icon, size and the view / download buttons. */
 export function FileChip({ channelId, a, linkOf }: { channelId: string; a: Attachment; linkOf?: LinkOf }) {
   const toast = useToast();
+  const link: LinkOf = linkOf ?? ((id) => attachmentUrl(channelId, id));
   const [busy, setBusy] = useState(false);
-  const open = async () => {
+  const view = async () => {
     // The tab is opened first so pop-up blockers allow it.
     const win = window.open("about:blank", "_blank");
     setBusy(true);
     try {
-      const { url } = await (linkOf ?? ((id) => attachmentUrl(channelId, id)))(a.fileId);
+      const { url } = await link(a.fileId);
       if (win) win.location.href = url;
     } catch (e) {
       win?.close();
@@ -108,34 +110,26 @@ export function FileChip({ channelId, a, linkOf }: { channelId: string; a: Attac
     }
   };
   return (
-    <button type="button" onClick={open} disabled={busy} className="flex w-64 max-w-full items-center gap-3 rounded-lg border border-border bg-surface p-2 text-left hover:bg-muted/60">
-      <FileTypeIcon kind={kindOfName(a.name)} name={a.name} />
+    <div className="flex max-w-xl items-center gap-4 rounded-xl border border-border bg-muted/40 p-3">
+      <FileTypeIcon kind={kindOfName(a.name)} name={a.name} className="size-11" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{a.name}</span>
-        <span className="text-xs text-muted-foreground">{formatBytes(a.size)}</span>
+        <span className="block truncate text-sm font-semibold text-primary">{a.name}</span>
+        <span className="text-xs text-muted-foreground">
+          {formatBytes(a.size)} • {extOf(a.name)}
+        </span>
       </span>
-      {busy && <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />}
-    </button>
+      <CardActions a={a} linkOf={link} onView={view} viewing={busy} />
+    </div>
   );
 }
 
-/** `scope` keeps cached links apart (a channel id, or "note:<project>"). */
+/** `channelId` keeps cached links apart (a channel id, or "note:<project>"). */
 export function Attachments({ channelId, items, linkOf }: { channelId: string; items: Attachment[]; linkOf?: LinkOf }) {
   if (!items.length) return null;
   const link: LinkOf = linkOf ?? ((id) => attachmentUrl(channelId, id));
-  const images = items.filter((a) => a.kind === "image");
   return (
-    <div className="mt-1.5 space-y-2">
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {images.map((a) => (
-            <ImageThumb key={a.fileId} channelId={channelId} a={a} linkOf={link} />
-          ))}
-        </div>
-      )}
-      {items
-        .filter((a) => a.kind !== "image")
-        .map((a) => (a.voice ? <VoicePlayer key={a.fileId} channelId={channelId} a={a} linkOf={link} /> : <FileChip key={a.fileId} channelId={channelId} a={a} linkOf={link} />))}
+    <div className="mt-2 space-y-2">
+      {items.map((a) => (a.kind === "image" ? <ImageCard key={a.fileId} channelId={channelId} a={a} linkOf={link} /> : a.voice ? <VoicePlayer key={a.fileId} channelId={channelId} a={a} linkOf={link} /> : <FileChip key={a.fileId} channelId={channelId} a={a} linkOf={link} />))}
     </div>
   );
 }

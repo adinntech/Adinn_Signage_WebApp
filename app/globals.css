@@ -69,6 +69,13 @@ body {
   outline-offset: 2px;
 }
 
+/* Selected text: the app blue with white letters. Browsers only paint a plain colour behind selected text, so a gradient here would be ignored. */
+::selection {
+  background-color: #2563eb;
+  color: #fff;
+  text-shadow: none;
+}
+
 /* Lead mind map: soft directional flow on the connector into the active step (background only, no layout work). */
 @keyframes lm-flow {
   to {
@@ -82,8 +89,8 @@ body {
 }
 
 /* ------------------------------------------------------------------------------------------------
-   Scrollbars: slim, in the app's blue-to-violet tone. The thumb widens and its gradient drifts while the pointer is
-   over it. (Chrome / Edge / Safari use the pseudo-elements; Firefox gets the plain colour version below.)
+   Scrollbars: slim, in the app's blue-to-violet tone. The thumb widens while the pointer is over it. (An animated thumb
+   left painted fragments beside long message lists, so the thumb itself is not animated.) (Chrome / Edge / Safari use the pseudo-elements; Firefox gets the plain colour version below.)
    ------------------------------------------------------------------------------------------------ */
 ::-webkit-scrollbar {
   width: 10px;
@@ -99,19 +106,9 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   border-width: 1px;
-  animation: sb-drift 1.6s ease-in-out infinite alternate;
-}
-::-webkit-scrollbar-thumb:active {
-  border-width: 1px;
-  filter: brightness(0.9);
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
-}
-@keyframes sb-drift {
-  to {
-    background-position: 0 100%;
-  }
 }
 /* On the navy sidebar and other dark panels the thumb is light, so it stays visible. */
 .scroll-dark::-webkit-scrollbar-thumb,
