@@ -46,6 +46,8 @@ export class ApiError extends Error {
 
 // Access token is kept in memory only (never localStorage).
 let accessToken: string | null = null;
+/** The current access token, for the live (Socket.IO) connection. */
+export const getAccessToken = () => accessToken;
 let refreshInFlight: Promise<AuthPayload> | null = null;
 let onSessionExpired: (() => void) | null = null;
 

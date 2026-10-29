@@ -17,6 +17,9 @@ import {
   ReceiptIndianRupee,
   Waypoints,
   CloudDownload,
+  MessagesSquare,
+  FileCheck2,
+  BadgeCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,18 +44,21 @@ export type Permission =
   | "templates:manage"
   | "ratecards:manage"
   | "approvals:client"
-  | "zoho:sync";
+  | "zoho:sync"
+  | "connect:use";
 
 export interface NavLeaf {
   label: string;
   href: string;
   permission?: Permission;
 }
+/** Roles that see an item even though it has no permission of its own (permissions alone cannot tell Admin and Management apart). */
 export interface NavItem {
   label: string;
   icon: LucideIcon;
   href?: string;
   permission?: Permission;
+  roles?: string[];
   children?: NavLeaf[];
 }
 
@@ -63,6 +69,7 @@ export const NAV: NavItem[] = [
   { label: "Order Management", icon: ClipboardList, href: "/orders", permission: "sales:read" },
   { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
   { label: "Projects", icon: FolderKanban, href: "/projects", permission: "projects:read" },
+  { label: "Project Monitoring", icon: Waypoints, href: "/admin/projects", permission: "projects:read", roles: ["SUPER_ADMIN", "MANAGEMENT"] },
   { label: "Sites", icon: MapPin, href: "/sites", permission: "sites:read" },
   {
     label: "Recce",
@@ -100,6 +107,7 @@ export const NAV: NavItem[] = [
     ],
   },
   { label: "Communication", icon: MessageSquare, href: "/communication", permission: "communications:read" },
+  { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
   { label: "Issues / Rework", icon: AlertTriangle, href: "/issues" },
   { label: "Reports & Analytics", icon: BarChart3, href: "/reports", permission: "reports:read" },
   { label: "Users & Roles", icon: Users, href: "/users", permission: "users:manage" },
@@ -165,6 +173,7 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
     { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
     { label: "WhatsApp Group", icon: MessageSquare, href: "/bd/whatsapp", permission: "communications:read" },
     { label: "Communication", icon: MessageSquare, href: "/communication", permission: "communications:read" },
+    { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
     { label: "Approvals", icon: ScanSearch, href: "/bd/approvals", permission: "projects:read" },
     { label: "Reports", icon: BarChart3, href: "/reports", permission: "reports:read" },
     { label: "Settings", icon: Settings, href: "/settings" },
@@ -173,13 +182,19 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
 
 // Client Servicing: the orders BD handed over to them.
 ROLE_NAV.CLIENT_SERVICING = [
+  { label: "Dashboard", icon: LayoutDashboard, href: "/client-servicing/dashboard", permission: "sales:read" },
   { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" },
+  { label: "Client Finder", icon: Building2, href: "/client-servicing/clients", permission: "clients:read" },
+  { label: "Code Requests", icon: FileCheck2, href: "/client-servicing/codes", permission: "sales:read" },
+  { label: "Code Confirmation", icon: BadgeCheck, href: "/client-servicing/confirmations", permission: "sales:read" },
+  { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
 export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {
   const own = role ? ROLE_NAV[role] : undefined;
-  return own ? filterNav(can, own) : filterNav(can);
+  const items = own ? filterNav(can, own) : filterNav(can);
+  return items.filter((i) => !i.roles || (!!role && i.roles.includes(role)));
 }
 
 const OPERATIONS_NAV: NavItem[] = [
@@ -190,6 +205,7 @@ const OPERATIONS_NAV: NavItem[] = [
   { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
   { label: "Vendors", icon: Store, href: "/operations/vendors", permission: "vendors:manage" },
   { label: "Approvals", icon: AlertTriangle, href: "/operations/approvals", permission: "verification:manage" },
+  { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 ROLE_NAV.OPERATIONS = OPERATIONS_NAV;

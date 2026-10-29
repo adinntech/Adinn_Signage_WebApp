@@ -43,6 +43,8 @@ export interface Client {
   state?: string;
   pincode?: string;
   gstin?: string;
+  /** Customer Onboarding Form details (only PAN is read by Client Servicing). */
+  onboarding?: { pan?: string } | null;
   gstCertificates?: ClientFile[];
   customFields?: CustomField[];
   notes?: string;

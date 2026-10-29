@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { CsDashboard } from "@/components/client-servicing/cs-dashboard";
 
-/** Client Servicing lands on its own orders ("My Orders") until it has a dashboard of its own. */
 export default function ClientServicingHome() {
-  redirect("/orders");
+  return <CsDashboard />;
 }

@@ -12,6 +12,7 @@ import { canAccessPath } from "@/lib/role-routes";
 import { cn } from "@/lib/utils";
 import { LiveNotifications } from "@/components/notifications/live-notifications";
 import { PushPrompt } from "@/components/notifications/push-prompt";
+import { ConnectLauncher } from "@/components/connect/connect-launcher";
 import { AdinnLogo } from "./adinn-logo";
 import { Header } from "./header";
 import { SidebarUser } from "./sidebar-user";
@@ -78,6 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // it, so nothing (e.g. a visually hidden input deep in a long page) can extend the window and make it scroll.
     <div className="fixed inset-0 flex overflow-hidden">
       <LiveNotifications />
+      <ConnectLauncher />
       <aside
         className={cn(
           "hidden shrink-0 flex-col bg-navy transition-[width] duration-200 lg:flex",
@@ -85,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <Brand collapsed={collapsed} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="scroll-dark min-h-0 flex-1 overflow-y-auto">
           <SidebarNav scope="desktop" collapsed={collapsed} onExpandRequest={() => setCollapsed(false)} />
         </div>
         <SidebarUser collapsed={collapsed} />
@@ -121,7 +123,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <X className="size-5" aria-hidden />
                 </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="scroll-dark min-h-0 flex-1 overflow-y-auto">
                 <SidebarNav scope="mobile" onNavigate={() => setMobileOpen(false)} />
               </div>
               <SidebarUser />
@@ -132,7 +134,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header onOpenMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} />
-        <main className="flex-1 overflow-auto p-4 lg:p-6">
+        <main className={cn("flex-1", pathname.startsWith("/connect") ? "overflow-hidden" : "overflow-auto p-4 lg:p-6")}>
           <PushPrompt />
           {allowed ? (
             children
