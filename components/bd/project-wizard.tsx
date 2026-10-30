@@ -58,16 +58,17 @@ const schema = z
     startDate: z.string().min(1, "Pick a start date"),
     endDate: z.string().min(1, "Pick the expected end date"),
     priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
-    contacts: z
-      .array(
-        z.object({
-          id: z.string(),
-          name: z.string().trim().min(2, "Enter the contact name"),
-          email: z.string().trim().refine(isEmail, "Enter a valid email address"),
-          phone: z.string().trim().refine(isMobile, MOBILE_MESSAGE),
+    // Client contacts are optional: a row left completely blank is ignored; a row with anything typed must be complete.
+    contacts: z.array(
+      z
+        .object({ id: z.string(), name: z.string().trim(), email: z.string().trim(), phone: z.string().trim() })
+        .superRefine((c, ctx) => {
+          if (!c.name && !c.email && !c.phone) return;
+          if (c.name.length < 2) ctx.addIssue({ code: "custom", path: ["name"], message: "Enter the contact name" });
+          if (!isEmail(c.email)) ctx.addIssue({ code: "custom", path: ["email"], message: "Enter a valid email address" });
+          if (!isMobile(c.phone)) ctx.addIssue({ code: "custom", path: ["phone"], message: MOBILE_MESSAGE });
         }),
-      )
-      .min(1, "Add at least one client contact"),
+    ),
     requirementType: z.enum(["ASO", "SHOP_DETAILS", "SHOP_MEASUREMENT"]),
     expectedShops: z.string(),
     assigneeId: z.string(),
