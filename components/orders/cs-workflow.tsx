@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LockKeyhole, Route } from "lucide-react";
+import { Eye, History, LockKeyhole, Route } from "lucide-react";
 import { csRecceAssign, nextStepOf, resolveStep } from "@/components/leads/assign-steps";
+import { LeadFullDetails } from "@/components/leads/lead-full-details";
+import { HistoryList } from "@/components/leads/lead-workspace";
 import { RecceFlowMap } from "@/components/leads/lead-mind-map";
+import { Button } from "@/components/ui/button";
 import { RecceBranchPanel, type RecceStep } from "@/components/leads/recce-panel";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -12,6 +15,7 @@ import { SectionTitle } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
+import { useLead } from "@/lib/api/leads";
 import { useRecce } from "@/lib/api/recce";
 import type { Order } from "@/lib/api/sales";
 
@@ -26,6 +30,9 @@ export function CsWorkflow({ order }: { order: Order }) {
   const toast = useToast();
   const q = useRecce(order._id);
   const [celebrate, setCelebrate] = useState(false);
+  // Full Details / History: the BD's lead drawer and history list, loaded when first opened (read-only).
+  const [view, setView] = useState<"details" | "history" | null>(null);
+  const lead = useLead(view ? order._id : undefined);
   const asked = params.get("step");
   const openStep = (s: string | null) => router.replace(`/orders/${order._id}?tab=workflow${s ? `&step=${encodeURIComponent(s)}` : ""}`, { scroll: false });
 
@@ -48,12 +55,41 @@ export function CsWorkflow({ order }: { order: Order }) {
       <SectionTitle
         icon={Route}
         title="Workflow"
+        action={
+          <span className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setView("details")}>
+              <Eye className="size-4" aria-hidden /> Full Details
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setView("history")}>
+              <History className="size-4" aria-hidden /> History
+            </Button>
+          </span>
+        }
         description={
           q.data.csFlow?.handoverSent
             ? "The BD sent the handover details: send the project code request email, save the codes, then assign the Recce / Operations person."
             : "The BD sent client details only: complete Handover Type & Details, then the request email, the codes and the Recce / Operations person."
         }
       />
+      <Modal
+        open={!!view}
+        onOpenChange={(o) => !o && setView(null)}
+        variant={view === "details" ? "drawer" : "dialog"}
+        className={view === "details" ? "max-w-6xl" : "max-w-2xl"}
+        titleClassName="text-lg"
+        title={view === "history" ? "Lead History" : "Full Details"}
+        description={view === "history" ? `${order.orderNo} · BD and Client Servicing events, newest first` : `${order.orderNo} · ${order.client.name} · every saved stage, read-only`}
+      >
+        {lead.isPending ? (
+          <Skeleton className="h-64" />
+        ) : lead.isError ? (
+          <ErrorState error={lead.error} onRetry={() => lead.refetch()} />
+        ) : view === "history" ? (
+          <HistoryList history={lead.data.history} large />
+        ) : (
+          <LeadFullDetails detail={lead.data} />
+        )}
+      </Modal>
       <RecceFlowMap a={a} onOpen={openStep} onBlocked={(why) => toast(why, "info")} celebrate={celebrate} />
       <Modal
         open={!!shown}

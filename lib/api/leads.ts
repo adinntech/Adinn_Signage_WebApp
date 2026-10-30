@@ -97,6 +97,8 @@ export interface LeadDetail {
     emails?: { count: number; lastSentAt: string | null; lastStatus: "SENT" | "FAILED" | "SKIPPED" | null; done?: boolean };
     /** The full handover (type and details) is complete. */
     handoverReady?: boolean;
+    /** Recce step 1 (Handover Type & Details) confirmed with Continue. */
+    handoverDone?: boolean;
     missing?: string | null;
   };
   summary: { notes: number; documents: number; rateCardLabel: string | null; negotiationRounds: number; approvalDocuments: number };

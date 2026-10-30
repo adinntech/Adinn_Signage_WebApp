@@ -64,6 +64,8 @@
 
 **Where:** My Orders → order → **Workflow** tab (default for CS): `components/orders/cs-workflow.tsx`. It reuses the BD Recce branch: `RecceFlowMap` (the BD mind-map nodes: `BranchColumn` + `EndNode`), `assign-steps` (`csRecceAssign`, same sequence / gating / timestamps), and `RecceBranchPanel` drawers (handover, request email + Email History, codes, assignment). The open step is in the URL (`?tab=workflow&step=`), so refresh resumes; Continue / Send / Save refetch and open the next drawer.
 
+**Full Details / History** (Workflow header buttons): the BD's Lead Management drawer (`LeadFullDetails`, single-open accordion) and history list (`HistoryList`), read-only, from `GET /sales/leads/:id` (allowed for the assigned CS only, via `scopeOrder` + `flowActor`; lead writes stay BD-only). History shows BD and CS events newest first, CS actors marked "(Client Servicing)"; BD → CS and CS → Recce assignments are separate entries.
+
 **Flow by the toggle saved at BD assignment (`handoverFull`):**
 
 | Toggle | Steps |

@@ -107,6 +107,8 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
   const sel = (selected?.newValue ?? null) as { clientType?: string | null; name?: string | null } | null;
   const changes = d.history.filter((h) => h.action === "CLIENT_CHANGE");
   const csAssigned = !!d.handover.assignee;
+  // Recce steps after a Client Servicing handover are Client Servicing's own (BD -> CS, then CS -> Recce).
+  const by = csAssigned ? " (Client Servicing)" : "";
   // The first section opens by default; the others open one at a time.
   const [open, setOpen] = useState<number | null>(1);
   let n = 0;
@@ -168,7 +170,9 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
       <Section n={++n} icon={Waypoints} title="Handover Type & Details · Communication & Attachments" state={route || d.handover.type ? "done" : "pending"} meta={d.handover.updatedAt ? `Last saved ${when(d.handover.updatedAt)}` : null}>
         {route || d.handover.type ? (
           // Read-only: the selected type's data only, all uploaded columns, images, SO contacts and the chat (files, voice).
-          <HandoverTab order={o} mode={route === "RECCE" ? "recce" : "cs"} readOnly />
+          // Full handover: the Recce route, or Client Servicing completing it themselves (toggle OFF, step confirmed).
+          // Otherwise the Client Servicing view: with the toggle OFF only client details and the chat (no type / shops).
+          <HandoverTab order={o} mode={route === "RECCE" || (csAssigned && d.handover.full === false && !!d.recce.handoverDone) ? "recce" : "cs"} readOnly />
         ) : (
           <Pending text="Saved once a Project Assign route is started." />
         )}
@@ -176,16 +180,16 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
 
       {recceUsed ? (
         <>
-          <Section n={++n} icon={Mail} title="Project Code Request Email" state={d.recce.emails?.done ? "done" : "pending"} meta={d.recce.emails?.count ? `${d.recce.emails.count} recorded · last ${when(d.recce.emails.lastSentAt)}` : null}>
+          <Section n={++n} icon={Mail} title={`Project Code Request Email${by}`} state={d.recce.emails?.done ? "done" : "pending"} meta={d.recce.emails?.count ? `${d.recce.emails.count} recorded · last ${when(d.recce.emails.lastSentAt)}` : null}>
             {/* The emails as saved when sent (To / CC / subject / body / attachments / status), not regenerated. */}
             <div className="max-h-[480px] overflow-auto rounded-xl border border-border bg-surface p-3">
               <EmailHistory orderId={o._id} kind="PROJECT_CODE_REQUEST" allowResend={false} />
             </div>
           </Section>
-          <Section n={++n} icon={Hash} title="Project Code & Estimation Code" state={d.recce.projectCode ? "done" : "pending"} meta={r.data?.codes ? `${r.data.codes.savedBy ?? "—"} · ${when(r.data.codes.savedAt)}` : null}>
+          <Section n={++n} icon={Hash} title={`Project Code & Estimation Code${by}`} state={d.recce.projectCode ? "done" : "pending"} meta={r.data?.codes ? `${r.data.codes.savedBy ?? "—"} · ${when(r.data.codes.savedAt)}` : null}>
             {r.isPending ? <Skeleton className="h-20" /> : r.isError ? <ErrorState error={r.error} onRetry={() => r.refetch()} /> : r.data.codes ? <CodesView r={r.data} /> : <Pending text="Not saved yet." />}
           </Section>
-          <Section n={++n} icon={UserRoundCheck} title="Assign to Recce / Operations" state={d.recce.assignee ? "done" : "pending"} meta={d.recce.assignee ? `${r.data?.assignedBy ?? "—"} · ${when(d.recce.assignedAt)}` : null}>
+          <Section n={++n} icon={UserRoundCheck} title={`Assign to Recce / Operations${by}`} state={d.recce.assignee ? "done" : "pending"} meta={d.recce.assignee ? `${r.data?.assignedBy ?? "—"} · ${when(d.recce.assignedAt)}` : null}>
             {r.data?.assignee ? <AssignedBanner r={r.data} /> : <Pending text="Not assigned yet." />}
           </Section>
         </>

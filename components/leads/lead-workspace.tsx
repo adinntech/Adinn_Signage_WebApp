@@ -100,7 +100,7 @@ const assignOf = (d: LeadDetail): AssignState => ({
 });
 const isBranch = (k: string | null): k is "HANDOVER" | "RECCE" => k === "HANDOVER" || k === "RECCE";
 
-function historyText(h: LeadHistoryEntry) {
+export function historyText(h: LeadHistoryEntry) {
   const to = h.toStage ? STAGE_META[h.toStage].short : "";
   const from = h.fromStage ? STAGE_META[h.fromStage].short : "";
   if (h.action === "START") {
@@ -110,7 +110,7 @@ function historyText(h: LeadHistoryEntry) {
     return `${branch} selected${sel?.name ? `: ${sel.name}` : ""}`;
   }
   if (h.action === "COMPLETE" && h.fromStage === "NEW_LEAD") return "Project created";
-  if (h.action === "COMPLETE") return h.toStage ? `${from} completed → ${to}` : "Project assigned: lead completed";
+  if (h.action === "COMPLETE") return h.toStage ? `${from} completed → ${to}` : (h.note ?? "Project assigned: lead completed");
   if (h.action === "BACK") return `Moved back: ${from} → ${to}`;
   if (h.action === "CLOSE") return `Lead closed${h.note ? `: ${h.note}` : ""}`;
   if (h.action === "REOPEN") return "Lead reopened";
@@ -381,7 +381,7 @@ function LeadStrip({
 }
 
 /** `large`: the Lead History window (readable sizes); the side panel keeps the compact list. */
-function HistoryList({ history, large = false }: { history: LeadHistoryEntry[]; large?: boolean }) {
+export function HistoryList({ history, large = false }: { history: LeadHistoryEntry[]; large?: boolean }) {
   return (
     <ol className={large ? "space-y-4" : "space-y-2.5"}>
       {history.map((h) => (
@@ -389,7 +389,8 @@ function HistoryList({ history, large = false }: { history: LeadHistoryEntry[]; 
           <p className={cn("font-medium text-foreground", large && "break-words text-[15px]")}>{historyText(h)}</p>
           {h.action === "BACK" && h.note && <p className={cn("text-muted-foreground", large && "text-sm")}>Reason: {h.note}</p>}
           <p className={cn("text-muted-foreground", large && "mt-0.5 text-sm")}>
-            {h.by || "-"} · {formatDateTimeIST(h.at)}
+            {h.by || "-"}
+            {h.role === "CLIENT_SERVICING" ? " (Client Servicing)" : ""} · {formatDateTimeIST(h.at)}
           </p>
         </li>
       ))}
