@@ -2,12 +2,13 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { AlertTriangle, ArrowRight, Clock3, Link2, Paperclip, StickyNote, User } from "lucide-react";
+import { StageComments } from "@/components/journey/stage-comments";
 import { dayLabel, STAGE_ICON, STATE_META } from "@/components/journey/stage-meta";
 import type { JourneyStage } from "@/lib/api/journey";
 import { formatDate } from "@/lib/format";
 
 /** Everything known about one stage. Slides in when another stage is selected. */
-export function StagePanel({ stage }: { stage: JourneyStage }) {
+export function StagePanel({ stage, projectId }: { stage: JourneyStage; projectId: string }) {
   const reduce = useReducedMotion();
   const m = STATE_META[stage.state];
   const Icon = STAGE_ICON[stage.key];
@@ -18,8 +19,8 @@ export function StagePanel({ stage }: { stage: JourneyStage }) {
         initial={reduce ? false : { opacity: 0, x: 16 }}
         animate={{ opacity: 1, x: 0 }}
         exit={reduce ? undefined : { opacity: 0, x: -16 }}
-        transition={{ duration: 0.2 }}
-        className="space-y-4"
+        transition={{ duration: 0.2, staggerChildren: reduce ? 0 : 0.05 }}
+        className="stage-stagger space-y-4"
       >
         <div className="flex items-center gap-3">
           <span className="flex size-12 items-center justify-center rounded-xl text-white shadow-soft" style={{ background: m.color }}>
@@ -109,6 +110,8 @@ export function StagePanel({ stage }: { stage: JourneyStage }) {
             </ul>
           )}
         </section>
+
+        <StageComments projectId={projectId} stage={stage} />
 
         {stage.attachments > 0 && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">

@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiPage } from "@/lib/api";
 import { qs } from "./common";
 
@@ -22,6 +22,7 @@ export interface JourneyStage {
   overdueReason: string | null;
   notes: { text: string; at: string }[];
   attachments: number;
+  comments: { id: string; text: string; at: string; author: string; authorId: string }[];
 }
 export interface Journey {
   project: {
@@ -74,3 +75,13 @@ export const usePortfolio = (params: PortfolioParams) =>
   useQuery({ queryKey: ["journey", "portfolio", params], queryFn: () => apiPage<PortfolioRow>(`/journey/portfolio${qs(params)}`), placeholderData: keepPreviousData });
 
 export const useJourney = (id: string | undefined) => useQuery({ queryKey: ["journey", "project", id], queryFn: () => api<Journey>(`/journey/projects/${id}`), enabled: !!id });
+
+/** Both comment calls answer with the refreshed journey, so the page updates without a second fetch. */
+function useCommentCall<V>(projectId: string, call: (v: V) => Promise<Journey>) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: call, onSuccess: (data) => qc.setQueryData(["journey", "project", projectId], data) });
+}
+export const useAddJourneyComment = (projectId: string) =>
+  useCommentCall(projectId, (v: { stage: StageKey; body: string }) => api<Journey>(`/journey/projects/${projectId}/comments`, { method: "POST", body: JSON.stringify(v) }));
+export const useDeleteJourneyComment = (projectId: string) =>
+  useCommentCall(projectId, (commentId: string) => api<Journey>(`/journey/projects/${projectId}/comments/${commentId}`, { method: "DELETE" }));

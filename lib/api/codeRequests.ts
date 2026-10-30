@@ -168,6 +168,7 @@ export interface OrderCodeState {
   assignedAt: string | null;
   codes: Record<CodeKind, { state: "NOT_REQUESTED" | "PENDING" | "BD_SENT" | "CONFIRMED" | "FAILED"; code: string | null }>;
   bucket: OrderBucket;
+  hasProject: boolean;
 }
 export interface OrderStatesMeta {
   page: number;
@@ -178,3 +179,70 @@ export interface OrderStatesMeta {
 }
 export const useCodeOrders = (params: { page?: number; limit?: number; q?: string; bucket?: string }) =>
   useQuery({ queryKey: ["sales", "codes", "orders", params], queryFn: () => apiPage<OrderCodeState>(`/sales/codes/orders${qs(params)}`), placeholderData: keepPreviousData });
+
+/** What Client Servicing sees before creating the operations project from a handed-over order. */
+export interface ProjectDraft {
+  order: { _id: string; orderNo: string };
+  client: { _id: string; name: string };
+  codes: { client: string | null; project: string | null };
+  ready: boolean;
+  missing: string[];
+  project: { _id: string; code: string; status: string } | null;
+  handover: { type: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null; typeLabel: string | null; notes: string; shops: number | null; documents: number };
+  contacts: { name: string; email: string; phone: string }[];
+}
+export interface CreateProjectInput {
+  campaign: string;
+  district: string;
+  startDate: string;
+  targetDate: string;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  requirementType: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT";
+  expectedShops: number | null;
+  contacts: { name: string; email: string; phone: string }[];
+  instructions?: string;
+}
+export const useProjectDraft = (orderId: string | undefined) => useQuery({ queryKey: ["sales", "project-draft", orderId], queryFn: () => api<ProjectDraft>(`/sales/orders/${orderId}/project-draft`), enabled: !!orderId });
+export function useCreateProjectFromOrder(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: CreateProjectInput) => api<{ projectId: string; code: string }>(`/sales/orders/${orderId}/project`, { method: "POST", body: JSON.stringify(v) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales", "project-draft"] });
+      qc.invalidateQueries({ queryKey: ["sales", "codes"] });
+    },
+  });
+}
+
+/** The Recce Assignment screen: the project, the team with their workload, and earlier assignments. */
+export interface RecceAssignment {
+  order: { _id: string; orderNo: string };
+  project: {
+    _id: string;
+    code: string;
+    campaign: string | null;
+    district: string | null;
+    status: string;
+    priority: string;
+    requirementType: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
+    expectedShops: number | null;
+    startDate: string | null;
+    targetDate: string | null;
+    assignedTo: { id: string; name: string; role: string } | null;
+    assignedAt: string | null;
+  };
+  canAssign: boolean;
+  people: { id: string; name: string; role: string; email: string; phone: string | null; openProjects: number; eligible: boolean; current: boolean }[];
+  history: { id: string; at: string; by: string | null; text: string }[];
+}
+export const useRecceAssignment = (orderId: string | undefined) => useQuery({ queryKey: ["sales", "recce-assignment", orderId], queryFn: () => api<RecceAssignment>(`/sales/orders/${orderId}/recce-assignment`), enabled: !!orderId });
+export function useAssignRecce(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { assigneeId: string; targetDate?: string; note?: string }) => api<RecceAssignment>(`/sales/orders/${orderId}/recce-assignment`, { method: "POST", body: JSON.stringify(v) }),
+    onSuccess: (data) => {
+      qc.setQueryData(["sales", "recce-assignment", orderId], data);
+      qc.invalidateQueries({ queryKey: ["sales", "codes"] });
+    },
+  });
+}

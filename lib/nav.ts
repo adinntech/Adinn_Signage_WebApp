@@ -167,7 +167,6 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
   BD: [
     { label: "Dashboard", icon: LayoutDashboard, href: "/bd/dashboard", permission: "dashboard:view" },
     { label: "Lead Management", icon: Waypoints, href: "/leads", permission: "sales:write" },
-    { label: "Create Project", icon: FolderKanban, href: "/bd/projects/new", permission: "projects:write" },
     { label: "Clients", icon: Building2, href: "/clients", permission: "clients:read" },
     { label: "Order Management", icon: ClipboardList, href: "/orders", permission: "sales:read" },
     { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
@@ -187,6 +186,7 @@ ROLE_NAV.CLIENT_SERVICING = [
   { label: "Client Finder", icon: Building2, href: "/client-servicing/clients", permission: "clients:read" },
   { label: "Code Requests", icon: FileCheck2, href: "/client-servicing/codes", permission: "sales:read" },
   { label: "Code Confirmation", icon: BadgeCheck, href: "/client-servicing/confirmations", permission: "sales:read" },
+  { label: "Create Project", icon: FolderKanban, href: "/client-servicing/projects/new", permission: "sales:read" },
   { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, TriangleAlert } from "lucide-react";
+import { Check, MessageSquareText, TriangleAlert } from "lucide-react";
 import { STAGE_ICON, STATE_META } from "@/components/journey/stage-meta";
 import type { JourneyStage } from "@/lib/api/journey";
 import { formatDate } from "@/lib/format";
@@ -81,7 +81,7 @@ export function JourneyPath({ stages, selected, onSelect }: { stages: JourneySta
           </linearGradient>
         </defs>
         <path d={PATH} fill="none" stroke="#dbe5f7" strokeWidth={14} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path ref={base} d={PATH} fill="none" stroke="#b7c6e6" strokeWidth={3} strokeDasharray="2 10" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path ref={base} d={PATH} fill="none" stroke="#b7c6e6" strokeWidth={3} strokeDasharray="2 10" strokeLinecap="round" vectorEffect="non-scaling-stroke" className="journey-flow" />
         <path ref={done} d={PATH} fill="none" stroke="url(#journey-grad)" strokeWidth={8} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       </svg>
 
@@ -94,6 +94,7 @@ export function JourneyPath({ stages, selected, onSelect }: { stages: JourneySta
         return (
           <div key={s.key} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${(x / W) * 100}%`, top: `${(y / H) * 100}%` }}>
             <div className="journey-node relative">
+              {s.state === "IN_PROGRESS" && <span className="journey-pulse absolute inset-0 rounded-full" style={{ background: m.color }} aria-hidden />}
               {active && (
                 <motion.span layoutId="journey-selected" className="absolute -inset-2 rounded-full border-2" style={{ borderColor: m.color }} transition={{ type: "spring", stiffness: 420, damping: 34 }} />
               )}
@@ -108,6 +109,12 @@ export function JourneyPath({ stages, selected, onSelect }: { stages: JourneySta
                 style={{ background: m.color, boxShadow: `0 0 0 3px ${m.ring}, 0 8px 18px -6px ${m.color}80` }}
               >
                 <Icon className="size-[45%]" aria-hidden />
+                {s.comments.length > 0 && (
+                  <span className="absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full bg-royal px-1 text-[10px] font-bold text-white ring-2 ring-white" title={`${s.comments.length} comment${s.comments.length === 1 ? "" : "s"}`}>
+                    <MessageSquareText className="size-2.5" aria-hidden />
+                    {s.comments.length}
+                  </span>
+                )}
                 {s.overdue && (
                   <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-danger text-white ring-2 ring-white" title={s.overdueReason ?? "Overdue"}>
                     <TriangleAlert className="size-3" aria-hidden />

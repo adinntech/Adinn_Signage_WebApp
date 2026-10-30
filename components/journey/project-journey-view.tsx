@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Flag, ListOrdered, NotebookPen, Route, TriangleAlert, Waypoints } from "lucide-react";
 import { JourneyPath } from "@/components/journey/journey-path";
+import { JourneySummary } from "@/components/journey/journey-summary";
 import { StagePanel } from "@/components/journey/stage-panel";
 import { MilestoneTimeline, StageNavigator } from "@/components/journey/stage-views";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +76,8 @@ export function ProjectJourneyView() {
         </div>
       </Card>
 
+      <JourneySummary journey={j} onOpen={setPicked} />
+
       <Tabs
         idPrefix="journey-view"
         value={view}
@@ -103,7 +106,7 @@ export function ProjectJourneyView() {
           {view === "navigator" && <StageNavigator stages={j.stages} selected={selected} onSelect={setPicked} />}
         </Card>
         <Card className="p-5 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
-          <StagePanel stage={stage} />
+          <StagePanel stage={stage} projectId={j.project._id} />
         </Card>
       </div>
     </div>
