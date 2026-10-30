@@ -14,8 +14,6 @@ const SECTIONS: { kind: ChannelItem["kind"]; label: string }[] = [
   { kind: "DM", label: "Direct messages" },
   { kind: "PROJECT", label: "Projects" },
 ];
-/** Projects can be dozens; show the newest few and let the person open the rest. */
-const PROJECTS_SHOWN = 6;
 type Tab = "all" | "channels" | "direct" | "mentions";
 const TABS: { key: Tab; label: string }[] = [
   { key: "all", label: "All" },
@@ -55,8 +53,8 @@ export function ChannelList({ selected, onSelect, onNew, canBrowse, collapsed, o
   const dq = useDebounced(q.trim());
   const search = useSearch(dq);
   const [tab, setTab] = useState<Tab>("all");
-  const [folded, setFolded] = useState<Record<string, boolean>>({});
-  const [allProjects, setAllProjects] = useState(false);
+  // Projects start folded: a person on many projects would otherwise push the direct messages out of view.
+  const [folded, setFolded] = useState<Record<string, boolean>>({ PROJECT: true });
   // The project channels a manager can join are listed straight away, not hidden behind a click.
   const [browse, setBrowse] = useState(true);
   const [bq, setBq] = useState("");
@@ -143,9 +141,7 @@ export function ChannelList({ selected, onSelect, onNew, canBrowse, collapsed, o
             {SECTIONS.map(({ kind, label }) => {
               const every = items.filter((c) => c.kind === kind);
               if (!every.length) return null;
-              // Searching or filtering shows everything; otherwise the projects list is shortened.
-              const short = kind === "PROJECT" && !allProjects && tab === "all" && every.length > PROJECTS_SHOWN;
-              const rows = folded[kind] ? [] : short ? every.slice(0, PROJECTS_SHOWN) : every;
+              const rows = folded[kind] ? [] : every;
               const unread = every.reduce((n, c) => n + c.unread, 0);
               return (
                 <div key={kind} className="mb-2">
@@ -181,16 +177,6 @@ export function ChannelList({ selected, onSelect, onNew, canBrowse, collapsed, o
                       </span>
                     </button>
                   ))}
-                  {short && (
-                    <button type="button" onClick={() => setAllProjects(true)} className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-semibold text-royal hover:bg-muted">
-                      Show {every.length - PROJECTS_SHOWN} more projects
-                    </button>
-                  )}
-                  {kind === "PROJECT" && allProjects && tab === "all" && every.length > PROJECTS_SHOWN && !folded[kind] && (
-                    <button type="button" onClick={() => setAllProjects(false)} className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-semibold text-royal hover:bg-muted">
-                      Show fewer
-                    </button>
-                  )}
                 </div>
               );
             })}

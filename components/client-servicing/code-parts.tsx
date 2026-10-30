@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { Paperclip } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { FileUploader } from "@/components/ui/file-uploader";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { useConfirmCode, useRejectCode, CODE_LABEL, STATUS_LABEL, type CodeKind, type CodeStatus, type KindState } from "@/lib/api/codeRequests";
+import { evidenceLink, useConfirmCode, useRejectCode, CODE_LABEL, STATUS_LABEL, type CodeKind, type CodeStatus, type KindState } from "@/lib/api/codeRequests";
 
 const STATUS_TONE: Record<CodeStatus, Tone> = { DRAFT: "neutral", PENDING_CONFIRMATION: "warning", CONFIRMED: "success", REJECTED: "danger", FAILED: "danger" };
 export const CodeStatusBadge = ({ status }: { status: CodeStatus }) => <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>;
@@ -35,6 +37,7 @@ export function ConfirmCodeDialog({ orderId, kind, onClose }: { orderId: string;
   const confirm = useConfirmCode(orderId);
   const [code, setCode] = useState("");
   const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   if (!kind) return null;
   const submit = async () => {
@@ -42,7 +45,7 @@ export function ConfirmCodeDialog({ orderId, kind, onClose }: { orderId: string;
     setError(e);
     if (e) return;
     try {
-      await confirm.mutateAsync({ kind, code, evidenceNote: note.trim() || undefined });
+      await confirm.mutateAsync({ kind, code, evidenceNote: note.trim() || undefined, files });
       toast(`${CODE_LABEL[kind]} confirmed`);
       onClose();
     } catch (err) {
@@ -72,6 +75,9 @@ export function ConfirmCodeDialog({ orderId, kind, onClose }: { orderId: string;
         </Field>
         <Field label="Evidence (optional)" htmlFor="confirm-note" hint="Where it came from: reply mail, reference number, who confirmed.">
           <Textarea id="confirm-note" className="min-h-16" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+        <Field label="Evidence files (optional)" htmlFor="confirm-files" hint="Reply mail, screenshot or PDF. Up to 5 files, 10 MB each.">
+          <FileUploader id="confirm-files" compact multiple maxSizeMb={10} accept=".pdf,.jpg,.jpeg,.png,.webp" files={files} onChange={(l) => setFiles(l.slice(0, 5))} />
         </Field>
       </div>
     </Modal>
@@ -115,5 +121,22 @@ export function RejectCodeDialog({ orderId, kind, onClose }: { orderId: string; 
         <Textarea id="reject-reason" autoFocus className="min-h-20" maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
     </Modal>
+  );
+}
+
+/** Evidence files kept with a confirmed code. Each opens through a short-lived link. */
+export function EvidenceLinks({ orderId, files }: { orderId: string; files?: { fileId: string; name?: string }[] }) {
+  const toast = useToast();
+  if (!files?.length) return null;
+  const open = (id: string) => evidenceLink(orderId, id).then((r) => window.open(r.url, "_blank", "noopener"), (e) => toast(errorMessage(e), "error"));
+  return (
+    <span className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+      {files.map((f) => (
+        <button key={f.fileId} type="button" onClick={() => open(f.fileId)} className="inline-flex max-w-48 items-center gap-1 text-xs text-brand hover:underline">
+          <Paperclip className="size-3 shrink-0" aria-hidden />
+          <span className="truncate">{f.name ?? "Evidence"}</span>
+        </button>
+      ))}
+    </span>
   );
 }

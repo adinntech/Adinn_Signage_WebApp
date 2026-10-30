@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { BadgeCheck, Check, ExternalLink, FilterX, RefreshCw, Search } from "lucide-react";
-import { CodeStatusBadge, ConfirmCodeDialog, RejectCodeDialog } from "@/components/client-servicing/code-parts";
+import { CodeStatusBadge, ConfirmCodeDialog, EvidenceLinks, RejectCodeDialog } from "@/components/client-servicing/code-parts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -141,6 +141,7 @@ export function CodeConfirmation() {
                       <td className="px-4 py-3">
                         <span className="block">{CODE_LABEL[r.kind]}</span>
                         {r.confirmedCode && <span className="font-mono text-xs font-semibold text-success">{r.confirmedCode}</span>}
+                        <EvidenceLinks orderId={orderId} files={r.evidence} />
                         {r.mode === "COMBINED" && <Badge tone="info" className="mt-0.5">Combined mail</Badge>}
                       </td>
                       <td className="px-4 py-3">

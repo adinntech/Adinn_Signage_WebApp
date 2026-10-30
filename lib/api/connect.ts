@@ -67,6 +67,8 @@ export interface ChatMessage {
   lastReplyAt: string | null;
   edited: boolean;
   deleted: boolean;
+  /** When it was deleted (only on deleted messages). */
+  deletedAt?: string | null;
   pinned: boolean;
   createdAt: string;
 }

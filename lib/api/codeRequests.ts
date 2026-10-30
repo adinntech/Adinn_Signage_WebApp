@@ -43,6 +43,7 @@ export interface CodeRequestRow {
   confirmedAt?: string;
   confirmedByName?: string | null;
   evidenceNote?: string;
+  evidence?: { fileId: string; name?: string; size?: number }[];
   rejectedReason?: string;
   mail: SentMail | null;
   createdAt: string;
@@ -141,8 +142,19 @@ export function useRetryCodes(orderId: string) {
 }
 export function useConfirmCode(orderId: string) {
   const done = useRefresh(orderId);
-  return useMutation({ mutationFn: (v: { kind: CodeKind; code: string; evidenceNote?: string }) => api<CodesOverview>(`/sales/orders/${orderId}/codes/confirm`, { method: "POST", body: JSON.stringify(v) }), onSuccess: done });
+  return useMutation({
+    mutationFn: ({ files, ...v }: { kind: CodeKind; code: string; evidenceNote?: string; files?: File[] }) => {
+      const fd = new FormData();
+      fd.append("payload", JSON.stringify(v));
+      for (const f of files ?? []) fd.append("files", f);
+      return api<CodesOverview>(`/sales/orders/${orderId}/codes/confirm`, { method: "POST", body: fd });
+    },
+    onSuccess: done,
+  });
 }
+/** Short-lived link to one evidence file. */
+export const evidenceLink = (orderId: string, fileId: string) => api<{ url: string; name: string }>(`/sales/orders/${orderId}/codes/files/${fileId}/url`);
+
 export function useRejectCode(orderId: string) {
   const done = useRefresh(orderId);
   return useMutation({ mutationFn: (v: { kind: CodeKind; reason: string }) => api<CodesOverview>(`/sales/orders/${orderId}/codes/reject`, { method: "POST", body: JSON.stringify(v) }), onSuccess: done });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, MessageSquareReply, Pencil, Pin, PinOff, SmilePlus, Trash2, X } from "lucide-react";
+import { Ban, Check, MessageSquareReply, Pencil, Pin, PinOff, SmilePlus, Trash2, X } from "lucide-react";
 import { Attachments } from "@/components/connect/attachments";
 import { EMOJI } from "@/components/connect/composer";
 import { Avatar, FormattedText, roleLabel, timeOf } from "@/components/connect/format";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useDeleteMessage, useEditMessage, usePin, useReact, type ChannelMember, type ChatMessage } from "@/lib/api/connect";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ export function MessageItem({
   select?: { ids: Set<string>; toggle: (id: string) => void };
 }) {
   const toast = useToast();
+  const isAdmin = useAuth().user?.role === "SUPER_ADMIN"; // Super Admin may edit any message
   const react = useReact(channelId);
   const pin = usePin(channelId);
   const edit = useEditMessage(channelId);
@@ -53,8 +55,12 @@ export function MessageItem({
 
   if (m.deleted)
     return (
-      <div className="px-4 py-1 text-xs italic text-muted-foreground" id={`msg-${m.id}`}>
-        This message was deleted.
+      <div className="px-4 py-0.5" id={`msg-${m.id}`}>
+        <div className="flex items-center gap-2 rounded-xl bg-muted px-3 py-1.5 text-xs italic text-muted-foreground">
+          <Ban className="size-3.5 shrink-0" aria-hidden />
+          <span className="flex-1">This message was deleted.</span>
+          <time dateTime={m.deletedAt ?? m.createdAt} className="not-italic">{timeOf(m.deletedAt ?? m.createdAt)}</time>
+        </div>
       </div>
     );
 
@@ -64,17 +70,17 @@ export function MessageItem({
     <div
       id={`msg-${m.id}`}
       onClick={select ? () => select.toggle(m.id) : undefined}
-      className={cn("group relative flex gap-3 px-4 py-1 hover:bg-muted/40", mentionsMe && "bg-[#fff8e8] hover:bg-[#fff3dc]", showHeader && "mt-2", select && "cursor-pointer", select?.ids.has(m.id) && "bg-brand-soft hover:bg-brand-soft")}
+      className={cn("group relative flex gap-3 px-4 py-1 hover:bg-muted/40", mine && "flex-row-reverse", mentionsMe && "bg-[#fff8e8] hover:bg-[#fff3dc]", showHeader && "mt-2", select && "cursor-pointer", select?.ids.has(m.id) && "bg-brand-soft hover:bg-brand-soft")}
     >
       {select && (
         <input type="checkbox" aria-label={`Select message from ${m.author.name}`} checked={select.ids.has(m.id)} onChange={() => select.toggle(m.id)} onClick={(e) => e.stopPropagation()} className="mt-2 size-4 shrink-0 accent-[var(--color-royal)]" />
       )}
-      <div className="w-9 shrink-0">{showHeader && <Avatar name={m.author.name} />}</div>
-      <div className="min-w-0 flex-1">
+      {!mine && <div className="w-9 shrink-0">{showHeader && <Avatar name={m.author.name} />}</div>}
+      <div className={cn("min-w-0 max-w-[75%] rounded-2xl px-3 py-1.5", mine ? "rounded-tr-sm bg-brand-soft" : "rounded-tl-sm bg-muted")}>
         {showHeader && (
-          <p className="flex flex-wrap items-baseline gap-x-2 leading-tight">
-            <span className="text-sm font-semibold text-primary">{m.author.name}{mine && <span className="font-normal text-muted-foreground"> (You)</span>}</span>
-            <span className="text-xs text-muted-foreground">{roleLabel(m.author.role)}</span>
+          <p className={cn("flex flex-wrap items-baseline gap-x-2 leading-tight", mine && "justify-end")}>
+            <span className="text-sm font-semibold text-primary">{mine ? "You" : m.author.name}</span>
+            {!mine && <span className="text-xs text-muted-foreground">{roleLabel(m.author.role)}</span>}
             <time className="text-[11px] text-muted-foreground" dateTime={m.createdAt}>
               {timeOf(m.createdAt)}
             </time>
@@ -117,7 +123,7 @@ export function MessageItem({
         )}
         <Attachments channelId={channelId} items={m.attachments} />
         {(m.reactions.length > 0 || m.pinned || joined) && (
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <div className={cn("mt-1 flex flex-wrap items-center gap-1.5", mine && "justify-end")}>
             {m.reactions.map((r) => (
               <button
                 key={r.emoji}
@@ -186,7 +192,7 @@ export function MessageItem({
           <button type="button" aria-label={m.pinned ? "Unpin" : "Pin"} title={m.pinned ? "Unpin" : "Pin"} onClick={() => run(pin.mutateAsync({ id: m.id, pin: !m.pinned }))} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
             {m.pinned ? <PinOff className="size-4" aria-hidden /> : <Pin className="size-4" aria-hidden />}
           </button>
-          {mine && (
+          {(mine || isAdmin) && (
             <button type="button" aria-label="Edit" title="Edit" onClick={() => setEditing(m.body)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
               <Pencil className="size-4" aria-hidden />
             </button>
