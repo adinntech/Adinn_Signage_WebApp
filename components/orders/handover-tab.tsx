@@ -621,6 +621,7 @@ export function HandoverTab({
   mode = "cs",
   locked = false,
   csEdit = false,
+  readOnly = false,
 }: {
   order: Order;
   onAssigned?: () => void;
@@ -628,6 +629,8 @@ export function HandoverTab({
   locked?: boolean;
   /** Client Servicing workflow, handover sent without details: the assigned person completes type, SO contacts and shops. */
   csEdit?: boolean;
+  /** Lead Management > Full Details: everything shown, nothing editable (no posting either). */
+  readOnly?: boolean;
 }) {
   const { can, user } = useAuth();
   const q = useHandover(order._id);
@@ -644,10 +647,10 @@ export function HandoverTab({
   const recce = mode === "recce";
   // The Recce team always gets the full handover; the toggle is a Client Servicing option.
   const data = recce ? { ...q.data, full: true } : q.data;
-  const open = !data.assignee && !locked; // before handover the BD can still change everything
+  const open = !data.assignee && !locked && !readOnly; // before handover the BD can still change everything
   // Handover details (type, SO contacts, shop list, images): the BD before handover, or the assigned Client Servicing
   // person completing them (server-checked). Chat, contacts and delete permissions are not affected.
-  const details = (canWrite && open) || (csEdit && !locked);
+  const details = (canWrite && open) || (csEdit && !locked && !readOnly);
   // The Client Servicing person the order is handed to can reply in the handover chat (read-only otherwise).
   const csReply = user?.role === "CLIENT_SERVICING" && !!data.assignee && data.assignee._id === user.id;
 
@@ -669,14 +672,14 @@ export function HandoverTab({
             {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={details} />}
             {/* Each shop type has its own list; keyed by type so nothing of the other type's table stays on screen. */}
             {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT") && (
-              <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={details} canAddImages={canWrite || (csEdit && !locked)} />
+              <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={details} canAddImages={!readOnly && (canWrite || (csEdit && !locked))} />
             )}
           </motion.div>
         )}
       </AnimatePresence>
-      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={canWrite || csReply} canDelete={canWrite && open} />
+      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={!readOnly && (canWrite || csReply)} canDelete={canWrite && open} />
       {!recce && canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
-      {!open && canWrite && !recce && (
+      {!open && canWrite && !recce && !readOnly && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <RefreshCw className="size-3.5" aria-hidden /> Messages, files, voice notes and shop images can still be added; Client Servicing is notified.
         </p>

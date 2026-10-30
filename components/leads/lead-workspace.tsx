@@ -57,6 +57,7 @@ import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AssignChooser } from "./assign-panels";
 import { RecceBranchPanel, type RecceStep } from "./recce-panel";
+import { LeadFullDetails } from "./lead-full-details";
 import { LeadMindMap, type AssignState, type MapNode } from "./lead-mind-map";
 import { nextStepOf, resolveStep } from "./assign-steps";
 import { ASSIGN_META, CLIENT_META, STAGE_META } from "./stage-meta";
@@ -156,6 +157,7 @@ function SidePanel({
   onBack,
   onClose,
   onReopen,
+  onDetails,
 }: {
   detail: LeadDetail;
   canWrite: boolean;
@@ -163,6 +165,7 @@ function SidePanel({
   onBack: () => void;
   onClose: () => void;
   onReopen: () => void;
+  onDetails: () => void;
 }) {
   const toast = useToast();
   const { order, lead } = detail;
@@ -248,10 +251,8 @@ function SidePanel({
               <MousePointerClick className="size-4" aria-hidden /> Continue: {STAGE_META[current.key].short}
             </Button>
           )}
-          <Button variant="outline" className="justify-start" asChild>
-            <Link href={`/orders/${order._id}`}>
-              <Eye className="size-4" aria-hidden /> View Full Details
-            </Link>
+          <Button variant="outline" className="justify-start" onClick={onDetails}>
+            <Eye className="size-4" aria-hidden /> View Full Details
           </Button>
           {order.rateCardPdf?.fileId && (
             <Button
@@ -299,6 +300,7 @@ function LeadStrip({
   onClose,
   onReopen,
   onHistory,
+  onDetails,
 }: {
   detail: LeadDetail;
   canWrite: boolean;
@@ -307,6 +309,7 @@ function LeadStrip({
   onClose: () => void;
   onReopen: () => void;
   onHistory: () => void;
+  onDetails: () => void;
 }) {
   const toast = useToast();
   const { order, lead } = detail;
@@ -320,8 +323,8 @@ function LeadStrip({
         {[
           { icon: UserRound, label: "Created By", value: lead.startedBy?.name ?? order.owner?.name ?? "-" },
           { icon: CalendarDays, label: "Created", value: formatDateTimeIST(lead.startedAt) },
-          { icon: Building2, label: "Industry", value: order.client.industry || "-" },
-          { icon: MapPin, label: "Location", value: [order.client.city, order.client.state].filter(Boolean).join(", ") || "-" },
+          // { icon: Building2, label: "Industry", value: order.client.industry || "-" },
+          // { icon: MapPin, label: "Location", value: [order.client.city, order.client.state].filter(Boolean).join(", ") || "-" },
         ].map((d) => (
           <div key={d.label}>
             <dt className="flex items-center gap-1 text-muted-foreground">
@@ -345,10 +348,8 @@ function LeadStrip({
             <MousePointerClick className="size-4" aria-hidden /> Continue: {STAGE_META[current.key].short}
           </Button>
         )}
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/orders/${order._id}`}>
-            <Eye className="size-4" aria-hidden /> Full Details
-          </Link>
+        <Button variant="outline" size="sm" onClick={onDetails}>
+          <Eye className="size-4" aria-hidden /> Full Details
         </Button>
         {order.rateCardPdf?.fileId && (
           <Button variant="outline" size="sm" onClick={() => downloadFile(order.rateCardPdf!.fileId, { orderId: order._id }, `${order.orderNo}_Rate_Card.pdf`).catch((e) => toast(errorMessage(e), "error"))}>
@@ -626,6 +627,7 @@ export function LeadWorkspace() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeReason, setCloseReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
 
   const asked = params.get("stage") as MapNode | null;
@@ -759,6 +761,7 @@ export function LeadWorkspace() {
           onClose={() => setCloseOpen(true)}
           onReopen={doReopen}
           onHistory={() => setHistoryOpen(true)}
+          onDetails={() => setDetailsOpen(true)}
         />
       </div>
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_330px]">
@@ -782,9 +785,14 @@ export function LeadWorkspace() {
           </Canvas>
         </motion.div>
         <div className="hidden 2xl:block">
-          <SidePanel detail={d} canWrite={canWrite} onOpen={openNode} onBack={() => setBackOpen(true)} onClose={() => setCloseOpen(true)} onReopen={doReopen} />
+          <SidePanel detail={d} canWrite={canWrite} onOpen={openNode} onBack={() => setBackOpen(true)} onClose={() => setCloseOpen(true)} onReopen={doReopen} onDetails={() => setDetailsOpen(true)} />
         </div>
       </div>
+
+      {/* Full Details: every saved stage, read-only, on this page (mounted only while open). */}
+      <Modal open={detailsOpen} onOpenChange={setDetailsOpen} variant="drawer" className="max-w-6xl" titleClassName="text-lg" title="Full Details" description={`${d.order.orderNo} · ${d.order.client.name} · every saved stage, read-only`}>
+        <LeadFullDetails detail={d} />
+      </Modal>
 
       <Modal open={historyOpen} onOpenChange={setHistoryOpen} title="Lead History" titleClassName="text-lg" className="max-w-2xl" description={`${d.order.orderNo} · every stage move, newest first`}>
         <HistoryList history={d.history} large />

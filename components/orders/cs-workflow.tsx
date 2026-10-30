@@ -69,6 +69,7 @@ export function CsWorkflow({ order }: { order: Order }) {
             <RecceBranchPanel
               key={step}
               detail={{ order, handover: { assignee: null } }}
+              projectLink
               step={step}
               onDone={() => void finish(step, step === "handover" || step === "email" || step === "codes")}
               onAssigned={() => {

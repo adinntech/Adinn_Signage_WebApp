@@ -165,19 +165,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const fromZoho = !!r.zohoClientId?.fromZoho;
   const [clientId, setClientId] = useState(r.codes?.clientId ?? (fromZoho ? "" : (r.zohoClientId?.value ?? "")));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  if (locked && r.codes)
-    return (
-      <dl className="grid gap-4 sm:grid-cols-4">
-        <DetailItem label="Project Code">
-          <span className="font-mono text-base">{r.codes.projectCode}</span>
-        </DetailItem>
-        <DetailItem label="Estimation Code">
-          <span className="font-mono text-base">{r.codes.estimationCode}</span>
-        </DetailItem>
-        <DetailItem label={fromZoho ? "Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
-        <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTimeIST(r.codes.savedAt)}` : formatDateTimeIST(r.codes.savedAt)}</DetailItem>
-      </dl>
-    );
+  if (locked && r.codes) return <CodesView r={r} />;
   const submit = async () => {
     const e: Record<string, string> = {};
     if (!/^\d{8}$/.test(project)) e.projectCode = "Project code must be exactly 8 digits";
@@ -259,6 +247,24 @@ function ReceivedHandover({ r }: { r: RecceState }) {
       {!!a?.documents.length && <span className="text-muted-foreground">{a.documents.length} document{a.documents.length === 1 ? "" : "s"}</span>}
       <span className="text-xs text-muted-foreground">The email below is prepared from it.</span>
     </div>
+  );
+}
+
+/** Saved codes and Client ID, read-only (the locked codes step and Lead Management > Full Details). */
+export function CodesView({ r }: { r: RecceState }) {
+  if (!r.codes) return null;
+  const fromZoho = !!r.zohoClientId?.fromZoho;
+  return (
+      <dl className="grid gap-4 sm:grid-cols-4">
+        <DetailItem label="Project Code">
+          <span className="font-mono text-base">{r.codes.projectCode}</span>
+        </DetailItem>
+        <DetailItem label="Estimation Code">
+          <span className="font-mono text-base">{r.codes.estimationCode}</span>
+        </DetailItem>
+        <DetailItem label={fromZoho ? "Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
+        <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTimeIST(r.codes.savedAt)}` : formatDateTimeIST(r.codes.savedAt)}</DetailItem>
+      </dl>
   );
 }
 
@@ -387,7 +393,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
   );
 }
 
-function AssignedBanner({ r }: { r: RecceState }) {
+export function AssignedBanner({ r, projectLink = false }: { r: RecceState; projectLink?: boolean }) {
   return (
     <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" style={{ borderColor: `${TEAL}55`, background: ASSIGN_META.RECCE.soft }}>
       <span className="flex size-10 items-center justify-center rounded-full text-white" style={{ background: TEAL }}>
@@ -403,7 +409,7 @@ function AssignedBanner({ r }: { r: RecceState }) {
           {r.note ? ` · “${r.note}”` : ""}
         </p>
       </div>
-      {r.project && (
+      {projectLink && r.project && (
         <Button variant="outline" size="sm" asChild>
           <Link href={`/projects/${r.project._id}`}>
             <ExternalLink className="size-4" aria-hidden /> Open Project
@@ -426,12 +432,15 @@ export function RecceBranchPanel({
   step,
   onDone,
   onAssigned,
+  projectLink = false,
 }: {
   /** Lead Management: the lead. Client Servicing workflow: the order with `handover.assignee` null (their own steps). */
   detail: { order: LeadDetail["order"]; handover: { assignee: unknown } };
   step: RecceStep;
   onDone: () => void;
   onAssigned?: () => void;
+  /** "Open Project" on the assignment banner (Client Servicing workflow); Lead Management drawers do not show it. */
+  projectLink?: boolean;
 }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
   const confirm = useConfirmRecceHandover(detail.order._id);
@@ -449,7 +458,7 @@ export function RecceBranchPanel({
 
   return (
     <div className="space-y-4">
-      {assigned && <AssignedBanner r={r} />}
+      {assigned && <AssignedBanner r={r} projectLink={projectLink} />}
       {step === "handover" && !locked && !r.route && <RouteNotice branch="RECCE" />}
       {step === "email" && r.csFlow?.handoverSent && <ReceivedHandover r={r} />}
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}

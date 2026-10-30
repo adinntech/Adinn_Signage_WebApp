@@ -195,6 +195,8 @@ The picker is shared by `/leads/new` and the Create Order dialog: `OrderClientFo
 - **Lead log (`leadLogsArray`):** `action` (`START`, `COMPLETE`, `BACK`, `CLOSE`, `REOPEN`, `NOTES`, `STEP`, `CLIENT_CHANGE`), `fromStage`, `toStage`, `step`, `oldValue`, `newValue`, `by`, `role`, `at`, `note`.
 - **`STEP` entries:** handover type set (old → new), project code request email (`to`, `subject`, `status`), codes saved (old → new, including the Client ID).
 - **Lead History:** shown newest first, in IST.
+- **Full Details** (`/leads/:id`, header and side panel): a read-only drawer on the same page (`components/leads/lead-full-details.tsx`), in workflow order: Project created (order no, New / Existing selection with actor and time, client, GST certificate / custom fields for New, contacts, initial notes) → Project Assign route (Client Servicing person, assigned by / at, toggle) → Handover Type & Details + Communication & Attachments (`HandoverTab readOnly`: selected type only, all uploaded columns, images, SO contacts, files, voice) → Recce steps when used (saved request emails via Email History, no resend; saved codes via `CodesView`; assignment via `AssignedBanner`). Pending / not-used stages are labelled; nothing is editable or regenerated.
+- **Open Project** is not shown in Lead Management drawers (`AssignedBanner projectLink`, only the Client Servicing workflow passes it).
 - **Last-update times:**
   - `order.handoverUpdatedAt` is set on every handover save.
   - `recce.codesSavedAt` is set when the codes are saved.
