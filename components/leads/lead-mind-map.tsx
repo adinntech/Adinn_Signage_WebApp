@@ -637,6 +637,27 @@ function EndNode({ a, celebrate }: { a: AssignState; celebrate: boolean }) {
 }
 
 /**
+ * Client Servicing workflow map (My Orders): Order -> Assign to Recce Team with its steps -> Lead Completed, with the
+ * same nodes, states, timestamps and drawers as the BD's Recce branch.
+ */
+export function RecceFlowMap({ a, onOpen, onBlocked = () => {}, celebrate = false }: { a: AssignState; onOpen: (step: string) => void; onBlocked?: (why: string) => void; celebrate?: boolean }) {
+  return (
+    <div className="relative mx-auto w-full max-w-[560px] pb-6">
+      <div className="mb-3 flex justify-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-royal px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-soft">
+          <Play className="size-3 fill-current" aria-hidden /> Order
+        </span>
+      </div>
+      <Spine from="#2563eb" to={ASSIGN_META.RECCE.color} filled travel={false} flow={!a.completed} />
+      <BranchColumn k="RECCE" a={a} onOpen={onOpen} onBlocked={onBlocked} delay={0.1} celebrate={celebrate} />
+      <div className="mt-4">
+        <EndNode a={a} celebrate={celebrate} />
+      </div>
+    </div>
+  );
+}
+
+/**
  * Lead Management mind map: Create Project (NEW_LEAD) -> New Client / Existing Client -> Project Assign, then Project
  * Assign forks into Assign to Client Servicing and Assign to Recce Team; either branch leads to Lead Completed.
  * `celebrate` is the stage that was just completed (NEW_LEAD draws the forks, PROJECT_ASSIGN runs the chosen branch into

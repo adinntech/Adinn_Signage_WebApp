@@ -32,26 +32,38 @@
 | Order scope | `salesRouter.param('id', scopeOrder)`: any `/sales/orders/:id…` route for an order not assigned to this user returns **404** |
 | Lead Management | No nav item (needs `sales:write`). Every `/sales/leads*` route returns **403** (`assertLeadAccess`). |
 | Sales board | `GET /sales/orders/board` returns **403** |
-| Writes | All `sales:write` routes return 403: shop rows, uploads, type / toggle, assignment, comments, recce. **The only exception is posting handover chat messages (§4).** |
+| Writes | `sales:write` routes return 403 (toggle, CS assignment, comments, message delete, email resend…). **Exceptions:** posting handover chat messages (§4) and the **CS workflow** routes (§2A), which use the `csFlow` route guard and allow only the assigned CS person in the service. |
 
 ## 2. Workflow (what CS does, in order)
 
 | # | Step | Where | Trigger / prerequisite | Result |
 |---|---|---|---|---|
 | 1 | Receive the order | Notification "New order assigned to you" | BD runs **Save & Complete Handover** on the CS route (`bd-business.md` §7) | The order appears in My Orders with a **New** badge |
-| 2 | Open the order | `/orders/:id?tab=handover` (default tab for CS) | — | `handover.seenAt` is set; the BD sees "Opened <date>" |
+| 2 | Open the order | `/orders/:id?tab=workflow` (default tab for CS; §2A) | — | `handover.seenAt` is set; the BD sees "Opened <date>" |
 | 3 | Review the handover | **Handover Details** tab | — | Read-only review (§3) |
 | 4 | Download lists | Shop table: **Template**, **Download Excel** | Shop types only | Current list as `.xlsx` with Row ID, sizes and image counts |
 | 5 | Communicate | **Communication & Attachments** | Order assigned to this user | Text, files and voice replies; the BD is notified (§4) |
 | 6 | Other tabs | **Client Details**, **Comments**, **History** | — | Read-only (posting comments needs `sales:write`) |
 
-**Not implemented for CS (explicitly out of the current code):**
-- requesting project / client codes;
-- emailing Operations;
-- assigning Recce;
-- creating projects from the handover shop list.
+### 2A. CS workflow: Assign to Recce Team (2026-10-29)
 
-The shop row schema comment says the rows "become project sites when Client Servicing creates the project", but no such CS action or endpoint exists.
+**Where:** My Orders → order → **Workflow** tab (default for CS): `components/orders/cs-workflow.tsx`. It reuses the BD Recce branch: `RecceFlowMap` (the BD mind-map nodes: `BranchColumn` + `EndNode`), `assign-steps` (`csRecceAssign`, same sequence / gating / timestamps), and `RecceBranchPanel` drawers (handover, request email + Email History, codes, assignment). The open step is in the URL (`?tab=workflow&step=`), so refresh resumes; Continue / Send / Save refetch and open the next drawer.
+
+**Flow by the toggle saved at BD assignment (`handoverFull`):**
+
+| Toggle | Steps |
+|---|---|
+| OFF (client details only) | Order → Assign to Recce Team → **Handover Type & Details** (CS completes type, SO contacts, shop list, images with the BD components) → Project Code Request Email → Project Code & Estimation Code → Assign to Recce / Operations → Lead Completed |
+| ON (details sent) | Order → Assign to Recce Team → Project Code Request Email (shows "Handover received from BD" with the type) → Project Code & Estimation Code → Assign to Recce / Operations → Lead Completed |
+
+- The email draft, automatic attachments (selected type's shop Excel, communication documents, each once), Client ID rules (Existing: Zoho customer no; New: client code + project code requested, Client ID typed at the codes step), code validation / uniqueness and failed-email handling are the BD Recce route's (`recce.service`).
+- Progress is stored in the order's `recce` sub-document (`handoverDoneAt`, codes, `assignee`…), separate from the BD's `csAssignee` / `handover`. Assigning creates and assigns the operations project (notifications as for the BD) and appends a `STEP` lead log and a pipeline log; the BD's completed lead, `assignRoute: HANDOVER`, `handoverClient` snapshot and history are not changed.
+
+**Server-side rules (`csFlow` routes, `flowActor`):**
+- Recce routes (`GET /orders/:id/recce`, `handover-done`, `code-request`, `codes`, `assign`): CS only on an order handed to them (`csMine`, else 404) and until the Recce team is assigned; no route claim. `GET /recce-users`: only while the CS has such an order.
+- Handover edits (`PATCH …/handover/type`, `PUT …/so-contacts`, shop upload / clear / rows / images): CS only when `csCompletes`: assigned to them, **toggle OFF at assignment**, Recce not yet assigned (else 403). With the toggle ON they cannot change the BD's handover.
+- File storage: handover files need `sales:write` (`SALES_HANDOVER_DOCUMENT`, checked in `storeEmbeddedFile`). The shop list Excel and shop images of a `csCompletes` order, and the request email's shop Excel / added files of the assigned CS, are stored with `workflowAuthorized` (set only by those services after the checks above). Fixed 2026-10-29: CS shop Excel uploads returned 403 "You do not have permission to do this".
+- Unchanged for CS: toggle, CS assignment, comments, chat delete (403), email resend (hidden; needs `sales:write`).
 
 ## 3. Handover review (read-only for CS)
 
@@ -132,7 +144,7 @@ This applies to orders assigned on the **Recce** route; the CS route never creat
 
 ## 6. Code requests and email handling
 
-**There is no CS-side code request.** The project code / client code request email, its history and resend belong to the BD's Recce route (`bd-business.md` §8). The CS role cannot reach `/sales/orders/:id/recce*` (needs `sales:write`).
+The assigned CS sends the project code request email, saves the codes and assigns the Recce / Operations person through the CS workflow (§2A), with the BD Recce route's logic (`bd-business.md` §8). Email resend stays BD-only.
 
 **Client ID storage:**
 

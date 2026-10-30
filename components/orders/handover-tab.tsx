@@ -620,11 +620,14 @@ export function HandoverTab({
   onAssigned,
   mode = "cs",
   locked = false,
+  csEdit = false,
 }: {
   order: Order;
   onAssigned?: () => void;
   mode?: "cs" | "recce";
   locked?: boolean;
+  /** Client Servicing workflow, handover sent without details: the assigned person completes type, SO contacts and shops. */
+  csEdit?: boolean;
 }) {
   const { can, user } = useAuth();
   const q = useHandover(order._id);
@@ -642,6 +645,9 @@ export function HandoverTab({
   // The Recce team always gets the full handover; the toggle is a Client Servicing option.
   const data = recce ? { ...q.data, full: true } : q.data;
   const open = !data.assignee && !locked; // before handover the BD can still change everything
+  // Handover details (type, SO contacts, shop list, images): the BD before handover, or the assigned Client Servicing
+  // person completing them (server-checked). Chat, contacts and delete permissions are not affected.
+  const details = (canWrite && open) || (csEdit && !locked);
   // The Client Servicing person the order is handed to can reply in the handover chat (read-only otherwise).
   const csReply = user?.role === "CLIENT_SERVICING" && !!data.assignee && data.assignee._id === user.id;
 
@@ -655,15 +661,15 @@ export function HandoverTab({
     <div className="space-y-4">
       {!recce && <StatusBanner data={data} />}
       <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
-      <TypeSection orderId={order._id} data={data} editable={canWrite && open} toggle={toggle} />
+      <TypeSection orderId={order._id} data={data} editable={details} toggle={toggle} />
       <AnimatePresence initial={false}>
         {data.full && (
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
             {/* SO contacts stay on the order for other types too (hidden, not deleted). */}
-            {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={canWrite && open} />}
+            {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={details} />}
             {/* Each shop type has its own list; keyed by type so nothing of the other type's table stays on screen. */}
             {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT") && (
-              <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={canWrite && open} canAddImages={canWrite} />
+              <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={details} canAddImages={canWrite || (csEdit && !locked)} />
             )}
           </motion.div>
         )}

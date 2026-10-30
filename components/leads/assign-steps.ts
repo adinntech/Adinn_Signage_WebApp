@@ -1,5 +1,6 @@
 import { ClipboardList, Hash, Mail, UserRoundCheck, type LucideIcon } from "lucide-react";
 import type { LeadShops } from "@/lib/api/leads";
+import type { RecceState } from "@/lib/api/recce";
 import { ASSIGN_META, EMAIL_COLOR } from "./stage-meta";
 
 /** The two Project Assign branches (HANDOVER = Client Servicing, RECCE = Recce team). */
@@ -38,6 +39,8 @@ export interface AssignState {
     handoverReady?: boolean;
     /** Step 1 confirmed with "Continue" (not just free of gaps). */
     handoverDone?: boolean;
+    /** Client Servicing with the handover details received from the BD: no Handover Type & Details step. */
+    skipHandover?: boolean;
     missing?: string | null;
   };
 }
@@ -136,7 +139,7 @@ function recceSteps(a: AssignState): ChainStep[] {
   const r = a.recce;
   const sent = r.emails?.count ?? 0;
   const labels = ["Handover Type & Details", "Project Code Request Email", "Project Code & Estimation Code", "Assign to Recce / Operations"];
-  const s = sequence([!!r.handoverDone || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
+  const s = sequence([!!r.skipHandover || !!r.handoverDone || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
   const last = r.emails?.lastStatus === "SKIPPED" ? "not sent (mail off)" : r.emails?.lastStatus === "FAILED" ? "failed" : "sent";
   return [
     {
@@ -173,8 +176,35 @@ function recceSteps(a: AssignState): ChainStep[] {
       atLabel: "Saved",
     },
     { step: "assign", label: labels[3]!, desc: "Person, dates, location and notes", icon: UserRoundCheck, ...s[3]!, info: who(r), at: r.assignedAt, atLabel: "Assigned" },
-  ];
+  ].filter((x) => !(r.skipHandover && x.step === "handover"));
 }
+
+/**
+ * The Recce branch as Client Servicing continues it on an order handed to them (same steps and gating as the BD's
+ * Recce route): no Client Servicing branch, the route is Recce, and assigning the Recce team completes it. With the
+ * handover details sent by the BD, the Handover Type & Details step is skipped.
+ */
+export const csRecceAssign = (r: RecceState): AssignState => ({
+  unlocked: r.unlocked,
+  completed: !!r.assignee,
+  completedAt: r.assignedAt,
+  route: "RECCE",
+  cs: { assignee: null, assignedAt: null },
+  recce: {
+    available: true,
+    assignee: r.assignee,
+    assignedAt: r.assignedAt,
+    projectCode: r.codes?.projectCode ?? null,
+    estimationCode: r.codes?.estimationCode ?? null,
+    codesSavedAt: r.codes?.savedAt ?? null,
+    clientId: r.codes?.clientId ?? null,
+    emails: { count: r.requests.count, lastSentAt: r.requests.lastSentAt, lastStatus: r.requests.lastStatus, done: r.emailDone },
+    handoverReady: r.handoverReady,
+    handoverDone: r.handoverDone,
+    skipHandover: !!r.csFlow?.handoverSent,
+    missing: r.missing[0] ?? null,
+  },
+});
 
 export const branchSteps = (a: AssignState, k: Branch) => (k === "HANDOVER" ? csSteps(a) : recceSteps(a));
 

@@ -27,6 +27,14 @@ export interface RecceState {
   handoverReady?: boolean;
   /** Handover Type & Details confirmed with "Continue" (step 1 done): unlocks the request email. */
   handoverDone?: boolean;
+  /** Gaps of the full handover (step 1). */
+  handoverMissing?: string[];
+  handoverType?: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
+  /**
+   * Client Servicing workflow (the order is handed to this Client Servicing person): `handoverSent` = the BD sent the
+   * handover details, so step 1 is skipped. Null for the BD's own Recce route.
+   */
+  csFlow?: { handoverSent: boolean } | null;
   clientType?: "NEW" | "EXISTING";
   /** Client ID in Zoho: Existing clients have it from Zoho (read-only); New clients type it at Project Code. */
   zohoClientId?: { value: string | null; fromZoho: boolean };

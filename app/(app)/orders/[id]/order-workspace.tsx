@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Building2, CalendarDays, GitBranch, Handshake, MessageSquare, UserRound } from "lucide-react";
+import { ArrowLeft, Building2, CalendarDays, GitBranch, Handshake, MessageSquare, Route, UserRound } from "lucide-react";
 import { CompanyDetailsCard, ContactsCard } from "@/components/clients/client-info";
 import { ClientTypeBadge } from "@/components/clients/client-type-badge";
+import { CsWorkflow } from "@/components/orders/cs-workflow";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { OrderComments } from "@/components/sales/order-comments";
 import { PipelineHistory } from "@/components/sales/pipeline-history";
@@ -17,7 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { clientIdOf } from "@/lib/api/clients";
 
-type Tab = "client" | "handover" | "comments" | "history";
+type Tab = "workflow" | "client" | "handover" | "comments" | "history";
 
 /**
  * One order (Order Management > View): the order, its New / Existing client flag and the client's full details.
@@ -31,7 +32,8 @@ export function OrderWorkspace() {
   const { user } = useAuth();
   const isCs = user?.role === "CLIENT_SERVICING";
   const q = useOrder(id);
-  const tabKeys: Tab[] = isCs ? ["handover", "client", "comments", "history"] : ["client", "comments", "history"];
+  // Client Servicing: the workflow (Assign to Recce Team) first, then what the BD handed over.
+  const tabKeys: Tab[] = isCs ? ["workflow", "handover", "client", "comments", "history"] : ["client", "comments", "history"];
   // The tab lives in the URL (?tab=), so notification links and Back land on the right tab even when this page was kept alive.
   const asked = params.get("tab") as Tab | null;
   const tab: Tab = asked && tabKeys.includes(asked) ? asked : tabKeys[0]!;
@@ -47,6 +49,7 @@ export function OrderWorkspace() {
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not load this order" />;
   const o = q.data;
   const allTabs: Record<Tab, TabItem<Tab>> = {
+    workflow: { key: "workflow", label: "Workflow", icon: Route },
     handover: { key: "handover", label: "Handover Details", icon: Handshake },
     client: { key: "client", label: "Client Details", icon: Building2 },
     comments: { key: "comments", label: "Comments", icon: MessageSquare },
@@ -101,6 +104,7 @@ export function OrderWorkspace() {
             <ContactsCard contacts={o.client.contacts ?? []} />
           </div>
         )}
+        {tab === "workflow" && <CsWorkflow order={o} />}
         {tab === "handover" && <HandoverTab order={o} />}
         {tab === "comments" && <OrderComments orderId={o._id} />}
         {tab === "history" && <PipelineHistory orderId={o._id} />}

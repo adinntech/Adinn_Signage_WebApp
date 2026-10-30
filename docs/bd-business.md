@@ -384,7 +384,7 @@ Assignment needs an empty gap list.
 
 ## 8. Recce route
 
-All Recce endpoints need `sales:write`.
+All Recce endpoints need `sales:write`, except that the Client Servicing person an order is handed to runs the same steps on it (`client-service.md` §2A: `csFlow` routes, assignment checked in the service, BD route and completed lead untouched).
 
 **Get state:** `GET /sales/orders/:id/recce`. Returns:
 - `handoverReady` (no gaps), `handoverDone` (step 1 confirmed), `emailDone`, `route`, `codes`;

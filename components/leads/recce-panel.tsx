@@ -24,6 +24,7 @@ import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile } from "@/lib/api/files";
 import { downloadShopExcel } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
+import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
 import { formatDateTimeIST } from "@/lib/format";
 import { RouteNotice, StepFooter } from "./assign-panels";
@@ -245,6 +246,22 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   );
 }
 
+/** Client Servicing workflow: the handover the BD sent (its selected type only), used as it is for the request email. */
+function ReceivedHandover({ r }: { r: RecceState }) {
+  const a = r.autoAttachments;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: `${TEAL}55`, background: ASSIGN_META.RECCE.soft }}>
+      <span className="flex items-center gap-1.5 font-semibold text-foreground">
+        <BadgeCheck className="size-4" style={{ color: TEAL }} aria-hidden /> Handover received from BD
+      </span>
+      <span>{r.handoverType ? HANDOVER_TYPES[r.handoverType].label : "No type"}</span>
+      {a?.shopExcel && <span className="text-muted-foreground">{a.shopExcel.rows} shops{a.shopExcel.sized ? " with sizes" : ""}</span>}
+      {!!a?.documents.length && <span className="text-muted-foreground">{a.documents.length} document{a.documents.length === 1 ? "" : "s"}</span>}
+      <span className="text-xs text-muted-foreground">The email below is prepared from it.</span>
+    </div>
+  );
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Step 4: the Recce / Operations person, the project dates and location, and notes. Assigning completes the lead. */
@@ -404,7 +421,18 @@ export type RecceStep = "email" | "history" | "codes" | "handover" | "assign";
  * for Client Servicing, always in full), the project code request email (+ Email History), the codes with the Client
  * ID, and the Recce / Operations person. `onDone` moves on; assigning creates the operations project and completes the lead.
  */
-export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail: LeadDetail; step: RecceStep; onDone: () => void; onAssigned?: () => void }) {
+export function RecceBranchPanel({
+  detail,
+  step,
+  onDone,
+  onAssigned,
+}: {
+  /** Lead Management: the lead. Client Servicing workflow: the order with `handover.assignee` null (their own steps). */
+  detail: { order: LeadDetail["order"]; handover: { assignee: unknown } };
+  step: RecceStep;
+  onDone: () => void;
+  onAssigned?: () => void;
+}) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
   const confirm = useConfirmRecceHandover(detail.order._id);
   if (q.isPending)
@@ -423,16 +451,18 @@ export function RecceBranchPanel({ detail, step, onDone, onAssigned }: { detail:
     <div className="space-y-4">
       {assigned && <AssignedBanner r={r} />}
       {step === "handover" && !locked && !r.route && <RouteNotice branch="RECCE" />}
+      {step === "email" && r.csFlow?.handoverSent && <ReceivedHandover r={r} />}
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
-      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked} />}
+      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked && !r.csFlow} />}
       {step === "codes" && <CodesStep r={r} locked={locked} onSaved={onDone} />}
       {step === "handover" && (
         <>
-          <HandoverTab order={detail.order} mode="recce" locked={locked} />
+          <HandoverTab order={detail.order} mode="recce" locked={locked} csEdit={!!r.csFlow} />
           {!locked && <StepFooter
               orderId={r.orderId}
               next="Project Code Request Email"
               full
+              missing={r.csFlow ? (r.handoverMissing ?? []) : undefined}
               // Saves step 1 as done (server-checked), then opens the email drawer.
               onContinue={async () => {
                 await confirm.mutateAsync(undefined);
