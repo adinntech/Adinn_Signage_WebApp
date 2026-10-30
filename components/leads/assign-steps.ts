@@ -9,6 +9,8 @@ export type HandoverType = "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT";
 
 /** Project Assign branches: who the project went to (either one completes the lead), and how far each branch is. */
 export interface AssignState {
+  /** Client Servicing workflow map (My Orders): the Recce branch only, without the BD's route badges. */
+  csFlow?: boolean;
   /** The lead is open at Project Assign, so a branch can be worked on. */
   unlocked: boolean;
   completed: boolean;
@@ -189,7 +191,15 @@ export const csRecceAssign = (r: RecceState): AssignState => ({
   completed: !!r.assignee,
   completedAt: r.assignedAt,
   route: "RECCE",
-  cs: { assignee: null, assignedAt: null },
+  csFlow: true,
+  // Handover Type & Details card: the saved type (none until chosen), its shop count and the last handover save.
+  cs: {
+    assignee: null,
+    assignedAt: null,
+    type: r.handoverType ?? null,
+    updatedAt: r.handoverUpdatedAt ?? null,
+    shops: r.autoAttachments?.shopExcel ? { total: r.autoAttachments.shopExcel.rows, valid: r.autoAttachments.shopExcel.rows, declared: null, verified: false } : null,
+  },
   recce: {
     available: true,
     assignee: r.assignee,

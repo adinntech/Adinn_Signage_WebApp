@@ -30,6 +30,7 @@ export interface RecceState {
   /** Gaps of the full handover (step 1). */
   handoverMissing?: string[];
   handoverType?: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
+  handoverUpdatedAt?: string | null;
   /**
    * Client Servicing workflow (the order is handed to this Client Servicing person): `handoverSent` = the BD sent the
    * handover details, so step 1 is skipped. Null for the BD's own Recce route.

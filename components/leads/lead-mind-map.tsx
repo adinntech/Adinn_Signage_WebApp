@@ -324,7 +324,7 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
             {status}
           </span>
           {assigned && <Stamp at={mine.assignedAt} />}
-          {!other && (
+          {!other && !(a.csFlow && k === "RECCE") && (
             <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold" style={{ borderColor: locked ? GREY : `${m.color}66`, color: locked ? "#64748b" : m.color }}>
               {/* Client Servicing has the ON / OFF toggle; the Recce team always gets the full handover. */}
               {k === "HANDOVER" ? (a.cs.full === false ? "Toggle OFF · client details only" : "Toggle ON · full handover") : "Full handover · no toggle"}
