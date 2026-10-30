@@ -102,7 +102,13 @@ const isBranch = (k: string | null): k is "HANDOVER" | "RECCE" => k === "HANDOVE
 function historyText(h: LeadHistoryEntry) {
   const to = h.toStage ? STAGE_META[h.toStage].short : "";
   const from = h.fromStage ? STAGE_META[h.fromStage].short : "";
-  if (h.action === "START") return "Lead created";
+  if (h.action === "START") {
+    // The client branch the user selected (saved on the entry, or from saved client data for older entries).
+    const sel = (h.newValue ?? null) as { clientType?: string | null; name?: string | null } | null;
+    const branch = sel?.clientType === "NEW" ? "New Client" : sel?.clientType === "EXISTING" ? "Existing Client" : "Client";
+    return `${branch} selected${sel?.name ? `: ${sel.name}` : ""}`;
+  }
+  if (h.action === "COMPLETE" && h.fromStage === "NEW_LEAD") return "Project created";
   if (h.action === "COMPLETE") return h.toStage ? `${from} completed → ${to}` : "Project assigned: lead completed";
   if (h.action === "BACK") return `Moved back: ${from} → ${to}`;
   if (h.action === "CLOSE") return `Lead closed${h.note ? `: ${h.note}` : ""}`;
@@ -373,14 +379,15 @@ function LeadStrip({
   );
 }
 
-function HistoryList({ history }: { history: LeadHistoryEntry[] }) {
+/** `large`: the Lead History window (readable sizes); the side panel keeps the compact list. */
+function HistoryList({ history, large = false }: { history: LeadHistoryEntry[]; large?: boolean }) {
   return (
-    <ol className="space-y-2.5">
+    <ol className={large ? "space-y-4" : "space-y-2.5"}>
       {history.map((h) => (
-        <li key={h.id} className="border-l-2 border-border pl-3 text-xs">
-          <p className="font-medium text-foreground">{historyText(h)}</p>
-          {h.action === "BACK" && h.note && <p className="text-muted-foreground">Reason: {h.note}</p>}
-          <p className="text-muted-foreground">
+        <li key={h.id} className={large ? "border-l-2 border-border pl-4 leading-relaxed" : "border-l-2 border-border pl-3 text-xs"}>
+          <p className={cn("font-medium text-foreground", large && "break-words text-[15px]")}>{historyText(h)}</p>
+          {h.action === "BACK" && h.note && <p className={cn("text-muted-foreground", large && "text-sm")}>Reason: {h.note}</p>}
+          <p className={cn("text-muted-foreground", large && "mt-0.5 text-sm")}>
             {h.by || "-"} · {formatDateTimeIST(h.at)}
           </p>
         </li>
@@ -779,8 +786,8 @@ export function LeadWorkspace() {
         </div>
       </div>
 
-      <Modal open={historyOpen} onOpenChange={setHistoryOpen} title="Lead History" description={`${d.order.orderNo} · every stage move, newest first`}>
-        <HistoryList history={d.history} />
+      <Modal open={historyOpen} onOpenChange={setHistoryOpen} title="Lead History" titleClassName="text-lg" className="max-w-2xl" description={`${d.order.orderNo} · every stage move, newest first`}>
+        <HistoryList history={d.history} large />
       </Modal>
 
       <Modal

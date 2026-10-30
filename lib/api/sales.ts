@@ -207,7 +207,13 @@ export interface OrderRow {
   shopList?: ShopListSummary | null;
   createdAt: string;
   updatedAt: string;
+  /** My Orders (Client Servicing): workflow status and current step label (from the server). */
+  csStatus?: CsOrderStatus;
+  csStage?: string;
+  /** My Orders: the Recce / Operations assignment (not the BD -> Client Servicing `handover.assignedAt`). */
+  recce?: { assignee: { name?: string } | null; /** The Client Servicing person who assigned the Recce team. */ assignedBy?: { name?: string | null } | null; assignedAt: string | null };
 }
+export type CsOrderStatus = "PROJECT_ASSIGN" | "RECCE_ASSIGNED" | "COMPLETED" | "CLOSED";
 export interface OrderListParams {
   page?: number;
   limit?: number;
@@ -218,6 +224,8 @@ export interface OrderListParams {
   ownerId?: string;
   clientId?: string;
   sort?: string;
+  /** Client Servicing (My Orders): workflow status filter. */
+  csStatus?: CsOrderStatus | "";
 }
 
 /** One key per form session: a retried or double-clicked submit returns the first result instead of a duplicate. */
@@ -307,6 +315,15 @@ export function useZohoClients(q: string, enabled = true) {
     enabled,
     staleTime: 60_000,
     placeholderData: keepPreviousData,
+  });
+}
+
+/** My Orders cards (Client Servicing): counts by workflow status over all their orders. */
+export function useCsOrderSummary(enabled = true) {
+  return useQuery({
+    queryKey: ["sales", "orders", "cs-summary"],
+    queryFn: () => api<{ total: number; projectAssign: number; recceAssigned: number; completed: number; closed: number }>("/sales/orders/cs-summary"),
+    enabled,
   });
 }
 

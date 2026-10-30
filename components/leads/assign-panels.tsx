@@ -36,7 +36,7 @@ export function RouteNotice({ branch }: { branch: Branch }) {
  * Bottom of a handover details step: what is still missing, or "complete" with Continue to the next step. Reads the
  * handover itself, so it follows every save in the step.
  */
-export function StepFooter({ orderId, next, onContinue, full, missing: given }: { orderId: string; next: string; onContinue: () => void | Promise<void>; full?: boolean; missing?: string[] }) {
+export function StepFooter({ orderId, next, onContinue, missing: given }: { orderId: string; next: string; onContinue: () => void | Promise<void>; missing?: string[] }) {
   const q = useHandover(orderId);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -52,8 +52,8 @@ export function StepFooter({ orderId, next, onContinue, full, missing: given }: 
     }
   };
   // The Recce team always gets the full handover: its gaps are those of the full handover.
-  // `given`: gaps worked out by the caller (Client Servicing completing a handover sent without details).
-  const missing = given ?? (full && !q.data.full ? ["Turn the handover toggle on (the Recce team gets the full handover)"] : q.data.missing);
+  // `given`: gaps worked out by the caller (Recce route: the full handover, whatever the Client Servicing toggle).
+  const missing = given ?? q.data.missing;
   const ready = missing.length === 0;
   return (
     <div className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>

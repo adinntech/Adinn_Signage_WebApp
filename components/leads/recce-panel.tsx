@@ -461,8 +461,9 @@ export function RecceBranchPanel({
           {!locked && <StepFooter
               orderId={r.orderId}
               next="Project Code Request Email"
-              full
-              missing={r.csFlow ? (r.handoverMissing ?? []) : undefined}
+              // The Recce route always takes the full handover of the selected type: its gaps come from the server
+              // (handoverGaps with the full handover), never from the Client Servicing toggle.
+              missing={r.handoverMissing ?? []}
               // Saves step 1 as done (server-checked), then opens the email drawer.
               onContinue={async () => {
                 await confirm.mutateAsync(undefined);

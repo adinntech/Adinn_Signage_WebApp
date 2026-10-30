@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Building2, CalendarDays, GitBranch, Handshake, MessageSquare, Route, UserRound } from "lucide-react";
@@ -33,11 +34,17 @@ export function OrderWorkspace() {
   const isCs = user?.role === "CLIENT_SERVICING";
   const q = useOrder(id);
   // Client Servicing: the workflow (Assign to Recce Team) first, then what the BD handed over.
-  const tabKeys: Tab[] = isCs ? ["workflow", "handover", "client", "comments", "history"] : ["client", "comments", "history"];
+  // Comments are not shown to Client Servicing (they use Communication & Attachments in the handover).
+  const tabKeys: Tab[] = isCs ? ["workflow", "handover", "client", "history"] : ["client", "comments", "history"];
   // The tab lives in the URL (?tab=), so notification links and Back land on the right tab even when this page was kept alive.
   const asked = params.get("tab") as Tab | null;
   const tab: Tab = asked && tabKeys.includes(asked) ? asked : tabKeys[0]!;
   const setTab = (t: Tab) => router.replace(`/orders/${id}?tab=${t}`, { scroll: false });
+  // A tab this role does not have (e.g. ?tab=comments for Client Servicing): replace it in the URL with the default.
+  const invalidTab = !!asked && !tabKeys.includes(asked);
+  useEffect(() => {
+    if (invalidTab) router.replace(`/orders/${id}?tab=${tabKeys[0]}`, { scroll: false });
+  }, [invalidTab, id, router, tabKeys]);
 
   if (q.isPending)
     return (

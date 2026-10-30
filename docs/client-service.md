@@ -43,7 +43,22 @@
 | 3 | Review the handover | **Handover Details** tab | — | Read-only review (§3) |
 | 4 | Download lists | Shop table: **Template**, **Download Excel** | Shop types only | Current list as `.xlsx` with Row ID, sizes and image counts |
 | 5 | Communicate | **Communication & Attachments** | Order assigned to this user | Text, files and voice replies; the BD is notified (§4) |
-| 6 | Other tabs | **Client Details**, **Comments**, **History** | — | Read-only (posting comments needs `sales:write`) |
+| 6 | Other tabs | **Client Details**, **History** | — | Read-only. **Comments** is not shown to CS; `?tab=comments` (or any tab CS does not have) is replaced with `?tab=workflow`. Comments data / APIs are unchanged for other roles. |
+
+### My Orders list (2026-10-30)
+
+- **Cards** (CS only, all of the user's assigned orders, `GET /sales/orders/cs-summary`; click filters the list with `csStatus`, combined with search and client flag; Clear Filters resets all):
+
+| Card | Orders |
+|---|---|
+| Total Orders | All assigned to me |
+| Project Assign | CS workflow (Assign to Recce Team) in progress: `recce.assignee` empty, not closed |
+| Recce Team Assigned | `recce.assignee` set, operations project not completed / cancelled / lost |
+| Completed | Operations project (`recce.project`) `COMPLETED` |
+| Closed | Lead `CLOSED`, or operations project `CANCELLED` / `LOSS` |
+
+- **Columns:** Order No, Client Company, Client Flag, BD, **Current Stage** (CS workflow step label: Handover Type & Details / Project Code Request Email / Project Code & Estimation Code / Assign to Recce / Operations / Lead Completed, or Closed), **Recce Team** (Assigned + the CS person who assigned it (`recce.assignedBy`; older records: the `cs-recce-assign` lead log entry; else —) + `recce.assignedAt`, or Not Assigned; the recipient stays in `recce.assignee`), **BD Assigned On** (`handover.assignedAt`, BD → CS), **Project Created At** (order `createdAt`). Dates: IST date + time; missing = —. View opens `?tab=workflow`.
+- `listOrders` adds `csStatus`, `csStage` and `recce { assignee, assignedAt }` for CS only (`order.service`: `csStatusFilter`, `csStageOf`).
 
 ### 2A. CS workflow: Assign to Recce Team (2026-10-29)
 
