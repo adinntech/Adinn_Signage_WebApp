@@ -84,6 +84,16 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
               onDownload={() => void downloadShopExcel(r.orderId).catch(fail)}
             />
           )}
+          {a?.gstCertificates?.map((d) => (
+            <AttachmentRow
+              key={`gst-${d.fileId}`}
+              icon={FileText}
+              name={d.name ?? "GST certificate"}
+              meta="GST certificate · New Client (for the client ID)"
+              onPreview={() => setPreview({ saved: d, source })}
+              onDownload={() => void downloadFile(d.fileId, source, d.name ?? "file").catch(fail)}
+            />
+          ))}
           {a?.documents.map((d) => (
             <AttachmentRow
               key={d.fileId}
@@ -130,6 +140,7 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
       )}
       <EmailComposer
         idPrefix="recce-mail"
+        compact
         orderId={r.orderId}
         from={r.mail.from}
         mailEnabled={r.mail.enabled}

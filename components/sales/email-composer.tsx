@@ -44,6 +44,7 @@ export function EmailComposer({
   sending,
   notConfigured = "Email delivery is not configured on the server (SMTP). Sending will be recorded as \"Not sent\" until it is set up.",
   attachmentArea,
+  compact = false,
 }: {
   idPrefix: string;
   orderId: string;
@@ -60,26 +61,48 @@ export function EmailComposer({
   notConfigured?: string;
   /** Replaces the fixed attachment box, e.g. a file picker for files the person attaches themselves. */
   attachmentArea?: React.ReactNode;
+  /** Project Code Request Email: no From field (the server's configured sender), To / CC as compact rows. */
+  compact?: boolean;
 }) {
   const toast = useToast();
+  const id = (k: string) => `${idPrefix}-${k}`;
   const [v, setV] = useState(draft);
   const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const requestKey = useRef(newRequestKey());
+  // Typed in To / CC but not yet a chip (Send without pressing Enter still uses it).
+  const pending = useRef({ to: "", cc: "" });
+  const busy = useRef(false);
 
+  /** Chips + the text still being typed (comma separated), without duplicates. */
+  const withPending = (list: string[], typed: string) => {
+    const out = [...list];
+    for (const p of typed.split(",").map((s) => s.trim()).filter(Boolean)) if (!out.some((x) => x.toLowerCase() === p.toLowerCase())) out.push(p);
+    return out;
+  };
 
   const send = async () => {
+    if (busy.current || sending) return; // one submission at a time
+    const to = withPending(v.to, pending.current.to);
+    const cc = withPending(v.cc, pending.current.cc);
     const e: Record<string, string> = {};
-    if (!v.to.length) e.to = "Enter at least one recipient";
-    else if (v.to.some((x) => !isEmail(x))) e.to = `Invalid email: ${v.to.find((x) => !isEmail(x))}`;
-    if (v.cc.some((x) => !isEmail(x))) e.cc = `Invalid email: ${v.cc.find((x) => !isEmail(x))}`;
+    if (!to.length) e.to = "To Email is required";
+    else if (to.some((x) => !isEmail(x))) e.to = `Invalid To email address: ${to.find((x) => !isEmail(x))}`;
+    if (cc.some((x) => !isEmail(x))) e.cc = `Invalid CC email address: ${cc.find((x) => !isEmail(x))}`;
     if (!v.subject.trim()) e.subject = "Enter the email subject";
     if (!v.body.replace(/<[^>]+>/g, "").trim()) e.body = "Enter the email content";
     setErrors(e);
-    if (Object.keys(e).length) return;
+    if (Object.keys(e).length) {
+      // Say what is wrong and put the cursor there; nothing is sent and nothing typed is lost.
+      toast(e.to ?? e.cc ?? e.subject ?? e.body!, "error");
+      document.getElementById(id(e.to ? "to" : e.cc ? "cc" : e.subject ? "subject" : "body"))?.focus();
+      return;
+    }
+    if (to.length !== v.to.length || cc.length !== v.cc.length) setV({ ...v, to, cc });
     const body = notes.trim() ? `${v.body}<p><b>Additional Notes:</b><br>${esc(notes.trim()).replace(/\n/g, "<br>")}</p>` : v.body;
+    busy.current = true;
     try {
-      const r = await onSend({ to: v.to, cc: v.cc, subject: v.subject.trim(), body, requestKey: requestKey.current });
+      const r = await onSend({ to, cc, subject: v.subject.trim(), body, requestKey: requestKey.current });
       requestKey.current = newRequestKey();
       if (r.status === "SENT") toast(`Email sent to ${r.to.join(", ")}`);
       else if (r.status === "SKIPPED") toast(`Saved in history, but not sent: ${r.error ?? "email is not configured on the server"}.`, "error");
@@ -87,10 +110,11 @@ export function EmailComposer({
       if (r.status === "SENT") setNotes("");
     } catch (err) {
       toast(errorMessage(err), "error");
+    } finally {
+      busy.current = false;
     }
   };
 
-  const id = (k: string) => `${idPrefix}-${k}`;
   return (
     <div className="space-y-4">
       {!mailEnabled && (
@@ -99,20 +123,55 @@ export function EmailComposer({
           {notConfigured}
         </p>
       )}
+      {compact ? (
+        // Request email: one white card with compact To / CC rows and a full-width Subject (sender set by the server).
+        <div className="divide-y divide-border rounded-xl border border-border bg-surface">
+          {(["to", "cc"] as const).map((k) => (
+            <div key={k} className="grid items-start gap-x-3 gap-y-1 px-4 py-2.5 sm:grid-cols-[72px_1fr]">
+              <label htmlFor={id(k)} className="pt-2.5 text-sm font-semibold text-muted-foreground">
+                {k === "to" ? "To" : "CC"}
+                {k === "to" && <span className="ml-0.5 text-danger">*</span>}
+              </label>
+              <div>
+                <TagInput
+                  id={id(k)}
+                  value={v[k]}
+                  invalid={!!errors[k]}
+                  onDraftChange={(t) => (pending.current[k] = t)}
+                  onChange={(list) => setV((p) => ({ ...p, [k]: list }))}
+                  placeholder={k === "to" ? "name@company.com (Enter or comma to add more)" : "Optional"}
+                  max={20}
+                />
+                {errors[k] && <p className="mt-1 text-xs text-danger" role="alert">{errors[k]}</p>}
+              </div>
+            </div>
+          ))}
+          <div className="grid items-start gap-x-3 gap-y-1 px-4 py-2.5 sm:grid-cols-[72px_1fr]">
+            <label htmlFor={id("subject")} className="pt-2.5 text-sm font-semibold text-muted-foreground">
+              Subject<span className="ml-0.5 text-danger">*</span>
+            </label>
+            <div>
+              <Input id={id("subject")} value={v.subject} maxLength={250} aria-invalid={!!errors.subject} onChange={(e) => setV({ ...v, subject: e.target.value })} />
+              {errors.subject && <p className="mt-1 text-xs text-danger" role="alert">{errors.subject}</p>}
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="grid items-start gap-x-5 gap-y-4 md:grid-cols-2">
         <Field label="From Email" htmlFor={id("from")} hint="Auto display">
           <Input id={id("from")} value={from ?? "Not configured"} readOnly disabled />
         </Field>
         <Field label="To Email" htmlFor={id("to")} required error={errors.to}>
-          <TagInput id={id("to")} value={v.to} onChange={(to) => setV({ ...v, to })} placeholder="Type an email and press Enter" max={20} />
+          <TagInput id={id("to")} value={v.to} invalid={!!errors.to} onDraftChange={(t) => (pending.current.to = t)} onChange={(to) => setV((p) => ({ ...p, to }))} placeholder="Type an email and press Enter" max={20} />
         </Field>
         <Field label="CC Email" htmlFor={id("cc")} error={errors.cc} className="md:col-span-2">
-          <TagInput id={id("cc")} value={v.cc} onChange={(cc) => setV({ ...v, cc })} placeholder="Optional" max={20} />
+          <TagInput id={id("cc")} value={v.cc} invalid={!!errors.cc} onDraftChange={(t) => (pending.current.cc = t)} onChange={(cc) => setV((p) => ({ ...p, cc }))} placeholder="Optional" max={20} />
         </Field>
         <Field label="Subject" htmlFor={id("subject")} required error={errors.subject} className="md:col-span-2">
           <Input id={id("subject")} value={v.subject} maxLength={250} aria-invalid={!!errors.subject} onChange={(e) => setV({ ...v, subject: e.target.value })} />
         </Field>
       </div>
+      )}
       <Field label="Email Body" htmlFor={id("body")} required error={errors.body} className="[&_.ProseMirror]:min-h-56 [&_[contenteditable]]:min-h-56 [&_[contenteditable]]:leading-relaxed">
         <RichTextEditor id={id("body")} ariaLabel="Email body" value={v.body} onChange={(body) => setV({ ...v, body })} invalid={!!errors.body} />
       </Field>
@@ -121,7 +180,7 @@ export function EmailComposer({
           <Textarea id={id("notes")} className="min-h-16" maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       )}
-      <div className="rounded-xl border border-border bg-background p-4">
+      <div className={compact ? "rounded-xl border border-border bg-surface p-4" : "rounded-xl border border-border bg-background p-4"}>
         <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
           <Paperclip className="size-4 text-muted-foreground" aria-hidden /> {attachmentLabel}
         </p>
@@ -137,8 +196,8 @@ export function EmailComposer({
           ))}
       </div>
       <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
-        <span className="text-xs text-muted-foreground">{mailEnabled ? `Sends from ${from ?? "the configured mailbox"}` : "Email is off: the email is recorded, not sent."}</span>
-        <Button variant="brand" onClick={send} loading={sending} disabled={!!blockedReason}>
+        <span className="text-xs text-muted-foreground">{mailEnabled ? (compact ? "Sent from the company mailbox configured on the server." : `Sends from ${from ?? "the configured mailbox"}`) : "Email is off: the email is recorded, not sent."}</span>
+        <Button variant="brand" onClick={() => void send()} loading={sending} disabled={!!blockedReason || sending}>
           {sending ? <Mail className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />} Send Email
         </Button>
       </div>

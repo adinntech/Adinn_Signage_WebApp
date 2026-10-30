@@ -396,6 +396,9 @@ All Recce endpoints need `sales:write`, except that the Client Servicing person 
 - `draft`: To and CC empty; the body lists client details, contact persons and the attachments.
   - Existing client: subject `Project Code Request - <client> (<orderNo>)`; asks for the project / estimation code under the client's **Client ID** (`zohoCustomerNo`).
   - New client: subject `Client Code & Project Code Request - <client> (<orderNo>)`; asks for the client code in Zoho **and** the project / estimation code. Client ID shows "To be created in Zoho"; the CRM Client ID is labelled a temporary reference.
+- **New Client only** (the branch saved on the order, never Zoho `identity.mode`): the client's GST certificates are attached automatically (listed in the drawer with Preview / Download, sent and kept in the email history) and its custom fields are listed under Client details. Existing Client: Client ID = `zohoCustomerNo`, project code request only, no certificate or custom fields. Client records and sent emails are not changed.
+- **Body layout:** Dear Team, → the request paragraph → Client details → Project details → Contact persons (→ SO contacts) → Attachments → Regards, <sender>; paragraphs and line breaks only (no lists).
+- **Composer (`compact`):** no From field (sender configured on the server); To / CC / Subject as compact rows; Send with no To shows "To Email is required" (toast + inline) and focuses To; typed-but-not-added To / CC text is used and validated (specific invalid-address errors); one submission at a time; content kept on errors.
 - **Drawer:** From / To aligned, CC and Subject full width, a taller body editor, a separate Attachments panel listing each automatic file (shop Excel: Download; handover documents: Preview / Download through the signed-link API) and each added file (Preview), and a sticky footer with Send.
 
 **Request email:** `POST /sales/orders/:id/recce/code-request` (multipart `payload` + `files`).

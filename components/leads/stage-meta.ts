@@ -125,7 +125,11 @@ export const ASSIGN_META: Record<"HANDOVER" | "RECCE", AssignMeta> = {
     icon: Handshake,
     color: "#6366f1",
     soft: "#eef2ff",
-    items: ["Handover type: ASO / Shop Details / Shop + Measurement", "Contacts, notes, voice notes, documents", "Client Servicing person and note"],
+    items: [
+      "Handover type: ASO / Shop Details / Shop + Measurement (Optional – can be skipped)",
+      "Contacts, notes, voice notes, documents",
+      "Client Servicing person and note",
+    ],
   },
   RECCE: {
     label: "Assign to Recce Team",
@@ -133,7 +137,7 @@ export const ASSIGN_META: Record<"HANDOVER" | "RECCE", AssignMeta> = {
     icon: ScanSearch,
     color: "#0d9488",
     soft: "#f0fdfa",
-    items: ["Project code request email", "Project code and estimation code", "Handover type, Recce person and notes"],
+    items: [ "Handover type, Recce person and notes","Project code request email", "Project code and estimation code",],
   },
 };
 export const HANDOVER_META = ASSIGN_META.HANDOVER;

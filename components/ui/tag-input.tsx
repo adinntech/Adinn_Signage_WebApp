@@ -12,6 +12,8 @@ export function TagInput({
   placeholder,
   max = 200,
   disabled,
+  invalid,
+  onDraftChange,
 }: {
   id?: string;
   value: string[];
@@ -19,8 +21,15 @@ export function TagInput({
   placeholder?: string;
   max?: number;
   disabled?: boolean;
+  invalid?: boolean;
+  /** The text typed but not yet added as a tag (so a form can use it, e.g. Send without pressing Enter). */
+  onDraftChange?: (draft: string) => void;
 }) {
-  const [draft, setDraft] = React.useState("");
+  const [draft, setDraftState] = React.useState("");
+  const setDraft = (d: string) => {
+    setDraftState(d);
+    onDraftChange?.(d);
+  };
   const add = (raw: string) => {
     const parts = raw
       .split(",")
@@ -39,6 +48,7 @@ export function TagInput({
     <div
       className={cn(
         "flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1.5 shadow-soft focus-within:outline-2 focus-within:outline-ring",
+        invalid && "border-danger",
         disabled && "opacity-60",
       )}
     >
@@ -61,6 +71,7 @@ export function TagInput({
       ))}
       <input
         id={id}
+        aria-invalid={invalid || undefined}
         value={draft}
         disabled={disabled}
         placeholder={value.length ? "" : placeholder}

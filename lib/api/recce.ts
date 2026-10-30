@@ -39,7 +39,7 @@ export interface RecceState {
   /** Client ID in Zoho: Existing clients have it from Zoho (read-only); New clients type it at Project Code. */
   zohoClientId?: { value: string | null; fromZoho: boolean };
   /** Sent automatically with every request email (besides the client details and contacts in the message). */
-  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; documents: FileRef[] };
+  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; documents: FileRef[]; /** New Client only. */ gstCertificates?: FileRef[] };
   /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
   route: "HANDOVER" | "RECCE" | null;
   /** Client contacts with both a mobile number and an email (they go on the operations project). */
