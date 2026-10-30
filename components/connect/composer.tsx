@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { FileTypeIcon, kindOfName } from "@/components/upload/file-drop";
 import { errorMessage } from "@/lib/api";
+import { useDismiss } from "@/hooks/use-dismiss";
 import { useSendMessage, type ChannelMember } from "@/lib/api/connect";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ export function Composer({ channelId, members, parent, placeholder = "Type a mes
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [emoji, setEmoji] = useState(false);
+  const emojiBox = useDismiss<HTMLSpanElement>(emoji, () => setEmoji(false));
   const [voice, setVoice] = useState(false);
   const [pick, setPick] = useState<{ q: string; index: number } | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -170,7 +172,7 @@ export function Composer({ channelId, members, parent, placeholder = "Type a mes
               <button type="button" aria-label="Code" title="Code" onClick={() => wrap("`")} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
                 <Code className="size-4" aria-hidden />
               </button>
-              <span className="relative">
+              <span ref={emojiBox} className="relative">
                 <button type="button" aria-label="Emoji" aria-expanded={emoji} onClick={() => setEmoji(!emoji)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
                   <Smile className="size-4" aria-hidden />
                 </button>

@@ -8,6 +8,7 @@ import { Avatar, FormattedText, roleLabel, timeOf } from "@/components/connect/f
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
+import { useDismiss } from "@/hooks/use-dismiss";
 import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useDeleteMessage, useEditMessage, usePin, useReact, type ChannelMember, type ChatMessage } from "@/lib/api/connect";
@@ -50,6 +51,8 @@ export function MessageItem({
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const pickerBox = useDismiss<HTMLSpanElement>(picker, () => setPicker(false));
+  const addBox = useDismiss<HTMLSpanElement>(addOpen, () => setAddOpen(false));
   const mine = m.author.id === meId;
   const run = (p: Promise<unknown>) => p.catch((e) => toast(errorMessage(e), "error"));
 
@@ -139,7 +142,7 @@ export function MessageItem({
               </button>
             ))}
             {joined && !select && (
-              <span className="relative">
+              <span ref={addBox} className="relative">
                 <button type="button" aria-label="Add reaction" aria-expanded={addOpen} onClick={() => setAddOpen(!addOpen)} className="flex size-6 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground">
                   <SmilePlus className="size-3.5" aria-hidden />
                 </button>
@@ -170,7 +173,7 @@ export function MessageItem({
 
       {editing === null && joined && !select && (
         <div className="absolute -top-3 right-4 hidden items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 shadow-soft focus-within:flex group-hover:flex">
-          <span className="relative">
+          <span ref={pickerBox} className="relative">
             <button type="button" aria-label="Add reaction" aria-expanded={picker} onClick={() => setPicker(!picker)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
               <SmilePlus className="size-4" aria-hidden />
             </button>
