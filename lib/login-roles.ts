@@ -29,6 +29,14 @@ export const LOGIN_ROLES: LoginRoleOption[] = [
   { key: "ADMIN", label: "Admin", hint: "Admin & management", icon: ShieldCheck, roles: ["SUPER_ADMIN", "MANAGEMENT"], accent: "#102449" },
 ];
 
+/**
+ * Temporary, reversible: the BD card is hidden on the login screen while Client Servicing runs Lead Management. Set
+ * NEXT_PUBLIC_SHOW_BD_LOGIN=true to show it again. Display only: BD accounts, sign-in and data are unchanged.
+ */
+export const SHOW_BD_LOGIN = process.env.NEXT_PUBLIC_SHOW_BD_LOGIN === "true";
+/** The role cards shown on the login screen. */
+export const VISIBLE_LOGIN_ROLES = LOGIN_ROLES.filter((r) => r.key !== "BD" || SHOW_BD_LOGIN);
+
 export const roleMatches = (key: LoginRoleKey, actual: Role) =>
   LOGIN_ROLES.find((r) => r.key === key)?.roles.includes(actual) ?? false;
 
@@ -42,7 +50,7 @@ export interface LoginPref {
 export function readLoginPref(): LoginPref {
   try {
     const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}") as LoginPref;
-    return { identifier: typeof v.identifier === "string" ? v.identifier : undefined, role: LOGIN_ROLES.some((r) => r.key === v.role) ? v.role : undefined };
+    return { identifier: typeof v.identifier === "string" ? v.identifier : undefined, role: VISIBLE_LOGIN_ROLES.some((r) => r.key === v.role) ? v.role : undefined };
   } catch {
     return {};
   }

@@ -29,7 +29,7 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
           </DetailItem>
           <DetailItem label="Client ID (Zoho)">{h.clientId ? <span className="font-mono text-base">{h.clientId}</span> : null}</DetailItem>
           <DetailItem label="Assigned">{h.assignedAt ? `${formatDate(h.assignedAt)}${h.assignedBy ? ` by ${h.assignedBy}` : ""}` : null}</DetailItem>
-          <DetailItem label="Handover Type">{h.type ? HANDOVER_TYPES[h.type].label : null}</DetailItem>
+          <DetailItem label="Assign Type">{h.type ? HANDOVER_TYPES[h.type].label : null}</DetailItem>
           {h.note && (
             <DetailItem label="Note from BD" className="sm:col-span-2 lg:col-span-4">
               <span className="whitespace-pre-line">{h.note}</span>
@@ -91,6 +91,16 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
               </ul>
             </div>
           )}
+          {h.type === "ASO" && !!h.soDocuments?.length && (
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Additional Documents ({h.soDocuments.length})</p>
+              <span className="flex flex-wrap gap-1.5">
+                {h.soDocuments.map((f) => (
+                  <AttachmentChip key={f.fileId} file={f} source={source} />
+                ))}
+              </span>
+            </div>
+          )}
         </Card>
       )}
 
@@ -99,7 +109,7 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
       {(h.type === "SHOP_DETAILS" || h.type === "SHOP_MEASUREMENT") && (
         <ShopTable orderId="" projectId={projectId} type={h.type} summary={h.shopList} editable={false} canAddImages={false} />
       )}
-      {!h.shopList && h.type === "ASO" && <EmptyState icon={ClipboardList} title="ASO handover" description="No shop list: the shops are collected from the client and SO contacts during the survey." />}
+      {!h.shopList && h.type === "ASO" && <EmptyState icon={ClipboardList} title="SO handover" description="No shop list: the shops are collected from the client and SO contacts during the survey." />}
     </div>
   );
 }

@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AUTH_ERROR_MESSAGES, CREDENTIAL_DEFAULTS, checkCredential, credentialShape, toCredential } from "@/lib/auth-rules";
-import { LOGIN_ROLES, readLoginPref, writeLoginPref, type LoginRoleKey } from "@/lib/login-roles";
+import { VISIBLE_LOGIN_ROLES as LOGIN_ROLES, readLoginPref, writeLoginPref, type LoginRoleKey } from "@/lib/login-roles";
 import { cn, safeNext } from "@/lib/utils";
 import { RoleCards } from "./role-cards";
 

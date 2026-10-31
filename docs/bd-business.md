@@ -9,6 +9,7 @@
   - Either route completes the lead.
 - **Old stages are switched off, not deleted.** Client Registered, Requirement Discussion, Rate Card, Negotiation and Client Approval are kept in code but are **not** in the active lead flow. The order-pipeline APIs for Company Profile, Rate Card and Approval still exist, but have no entry point in the current Order Management UI.
 - **Shared behaviour is documented here:** handover, shop table, chat and routes. Client Servicing specifics are in `docs/client-service.md`.
+- **Active flow (2026-10-31):** Client Servicing creates leads (Zoho clients only) and runs the Recce route with these same screens, under Create Project (`/create-project`; `docs/client-service.md` "Active flow"). Labels are now Assign Type, SO and Only Shop Details everywhere (stored values unchanged); SO Additional Documents, Excel-only shop list import (.xlsx / .xls) and Download PDF apply to the BD screens too. The BD flow below is preserved: BD accounts, APIs and data are unchanged; only the BD login card is hidden until `NEXT_PUBLIC_SHOW_BD_LOGIN=true`.
 
 **Scope and evidence reviewed:** sales, clients, zoho, projects (BD handover) and files modules in the backend. Leads, orders, clients, handover and ops components and `lib/api/*` in the frontend. Routes, services, models, validators and role permissions were read selectively. Nothing was executed for this document.
 

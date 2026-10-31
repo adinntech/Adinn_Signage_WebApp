@@ -53,11 +53,14 @@ import {
 } from "@/lib/api/leads";
 import { useAuth } from "@/lib/auth";
 import type { ClientType } from "@/lib/api/clients";
+import type { Order } from "@/lib/api/sales";
+import { leadBase } from "@/lib/role-routes";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AssignChooser } from "./assign-panels";
 import { RecceBranchPanel, type RecceStep } from "./recce-panel";
 import { LeadFullDetails } from "./lead-full-details";
+import { CsWorkflow } from "@/components/orders/cs-workflow";
 import { LeadMindMap, type AssignState, type MapNode } from "./lead-mind-map";
 import { nextStepOf, resolveStep } from "./assign-steps";
 import { ASSIGN_META, CLIENT_META, STAGE_META } from "./stage-meta";
@@ -100,13 +103,14 @@ const assignOf = (d: LeadDetail): AssignState => ({
 });
 const isBranch = (k: string | null): k is "HANDOVER" | "RECCE" => k === "HANDOVER" || k === "RECCE";
 
-export function historyText(h: LeadHistoryEntry) {
+/** `cs`: Client Servicing (Create Project flow) reads an Existing client as plain "Client"; stored entries are unchanged. */
+export function historyText(h: LeadHistoryEntry, cs = false) {
   const to = h.toStage ? STAGE_META[h.toStage].short : "";
   const from = h.fromStage ? STAGE_META[h.fromStage].short : "";
   if (h.action === "START") {
     // The client branch the user selected (saved on the entry, or from saved client data for older entries).
     const sel = (h.newValue ?? null) as { clientType?: string | null; name?: string | null } | null;
-    const branch = sel?.clientType === "NEW" ? "New Client" : sel?.clientType === "EXISTING" ? "Existing Client" : "Client";
+    const branch = sel?.clientType === "NEW" ? "New Client" : sel?.clientType === "EXISTING" && !cs ? "Existing Client" : "Client";
     return `${branch} selected${sel?.name ? `: ${sel.name}` : ""}`;
   }
   if (h.action === "COMPLETE" && h.fromStage === "NEW_LEAD") return "Project created";
@@ -382,11 +386,13 @@ function LeadStrip({
 
 /** `large`: the Lead History window (readable sizes); the side panel keeps the compact list. */
 export function HistoryList({ history, large = false }: { history: LeadHistoryEntry[]; large?: boolean }) {
+  const { user } = useAuth();
+  const cs = user?.role === "CLIENT_SERVICING";
   return (
     <ol className={large ? "space-y-4" : "space-y-2.5"}>
       {history.map((h) => (
         <li key={h.id} className={large ? "border-l-2 border-border pl-4 leading-relaxed" : "border-l-2 border-border pl-3 text-xs"}>
-          <p className={cn("font-medium text-foreground", large && "break-words text-[15px]")}>{historyText(h)}</p>
+          <p className={cn("font-medium text-foreground", large && "break-words text-[15px]")}>{historyText(h, cs)}</p>
           {h.action === "BACK" && h.note && <p className={cn("text-muted-foreground", large && "text-sm")}>Reason: {h.note}</p>}
           <p className={cn("text-muted-foreground", large && "mt-0.5 text-sm")}>
             {h.by || "-"}
@@ -444,11 +450,13 @@ function StageFooter({
 }
 
 function LeadHeader({ detail }: { detail: LeadDetail | null }) {
+  const { user } = useAuth();
+  const cs = user?.role === "CLIENT_SERVICING";
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
-        <Link href="/leads" className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-brand">
-          <ArrowLeft className="size-4" aria-hidden /> Lead Management
+        <Link href={leadBase(user?.role)} className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-brand">
+          <ArrowLeft className="size-4" aria-hidden /> {cs ? "Create Project" : "Lead Management"}
         </Link>
         <h1 className="mt-1 flex flex-wrap items-center gap-2 text-xl font-bold text-primary">
           {detail ? (
@@ -462,7 +470,9 @@ function LeadHeader({ detail }: { detail: LeadDetail | null }) {
             "Create Project"
           )}
         </h1>
-        <p className="text-sm text-muted-foreground">From creating the project to assigning it to Client Servicing or the Recce team, as a mind map. Click a stage to work on it.</p>
+        <p className="text-sm text-muted-foreground">
+          {cs ? "From creating the project to assigning it to the Recce team, as a mind map. Click a step to work on it." : "From creating the project to assigning it to Client Servicing or the Recce team, as a mind map. Click a stage to work on it."}
+        </p>
       </div>
     </div>
   );
@@ -528,19 +538,33 @@ function ClientChooser({ onPick }: { onPick: (f: ClientType) => void }) {
  */
 export function NewLeadWorkspace() {
   const router = useRouter();
+  const { user } = useAuth();
+  // Active Client Servicing flow: Zoho customers only, straight to the company field (no New / Existing choice).
+  const zohoOnly = user?.role === "CLIENT_SERVICING";
+  const base = leadBase(user?.role);
   const [drawer, setDrawer] = useState(true);
   const [flag, setFlag] = useState<ClientType | null>(null);
   /** Client to pre-pick after a switch (a New Client GSTIN that is a Zoho customer -> Existing Client). */
   const [seed, setSeed] = useState<SearchOption>();
+  /**
+   * Client Servicing: the order just created. The same drawer stays open and shows Recce Team · Assign Type & Details
+   * for it (no close / reopen between the two); the address bar already points at the lead.
+   */
+  const [created, setCreated] = useState<Order | null>(null);
+  const lead = useLead(created?._id);
 
   // Next keeps visited routes mounted (React Activity): start again from the client choice on every visit.
   useLayoutEffect(
     () => () => {
       setDrawer(true);
       setFlag(null);
+      setCreated(null);
     },
     [],
   );
+  const leadUrl = (id: string, q = "") => `${base}/${id}${q}`;
+  /** Close: before saving, just the drawer; after, on to the lead (its mind map), as the drawer's work is saved there. */
+  const closeDrawer = () => (created ? router.replace(leadUrl(created._id)) : setDrawer(false));
 
   const pick = (f: ClientType) => {
     setSeed(undefined);
@@ -550,29 +574,73 @@ export function NewLeadWorkspace() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-4">
-      <LeadHeader detail={null} />
+      <LeadHeader detail={lead.data ?? null} />
       <Canvas>
         <LeadMindMap
-          stages={BLANK_STAGES}
-          assign={BLANK_ASSIGN}
-          client={{ flag, done: false }}
-          onOpen={(k) => k === "NEW_LEAD" && setDrawer(true)}
+          stages={lead.data?.stages ?? BLANK_STAGES}
+          assign={zohoOnly ? { ...(lead.data ? assignOf(lead.data) : BLANK_ASSIGN), csFlow: true } : BLANK_ASSIGN}
+          client={zohoOnly ? undefined : { flag, done: false }}
+          recceOnly={zohoOnly}
+          // Once the order exists, a step opens on the lead page (with its own drawer).
+          onOpen={(k, step) =>
+            created ? router.replace(leadUrl(created._id, `?stage=${k}${step ? `&step=${encodeURIComponent(step)}` : ""}`)) : k === "NEW_LEAD" && setDrawer(true)
+          }
           onClientOpen={pick}
         />
       </Canvas>
       <Modal
         open={drawer}
-        onOpenChange={setDrawer}
+        onOpenChange={(o) => (o ? setDrawer(true) : closeDrawer())}
+        // Client Servicing: closes only with Close / Cancel (not Escape or a click outside), so nothing typed is lost.
+        dismissible={!zohoOnly}
         variant="drawer"
-        className="max-w-3xl"
-        title={flag ? `1. Create Project · ${CLIENT_META[flag].label}` : "1. Create Project"}
+        className={created ? "max-w-6xl" : "max-w-3xl"}
+        title={created ? "Recce Team · Assign Type & Details" : zohoOnly ? "1. Create Project" : flag ? `1. Create Project · ${CLIENT_META[flag].label}` : "1. Create Project"}
         description={
-          flag
-            ? "Select the company. Saving creates the order and moves the lead to Project Assign."
-            : "Choose New Client or Existing Client to start."
+          created
+            ? `${created.orderNo} · assign type, client & contacts, shop list, communication`
+            : zohoOnly
+              ? "Select the client company from Zoho. Saving creates the order and opens Recce Team · Assign Type & Details here."
+              : flag
+                ? "Select the company. Saving creates the order and moves the lead to Project Assign."
+                : "Choose New Client or Existing Client to start."
         }
       >
-        {flag ? (
+        {created ? (
+          lead.isPending ? (
+            <div className="space-y-4" role="status" aria-live="polite">
+              <p className="text-sm text-muted-foreground">Order {created.orderNo} created. Opening Assign Type & Details…</p>
+              <Skeleton className="h-16" />
+              <Skeleton className="h-40" />
+            </div>
+          ) : lead.isError ? (
+            <ErrorState error={lead.error} onRetry={() => lead.refetch()} title={`Order ${created.orderNo} is created, but its lead could not be loaded`} />
+          ) : (
+            <RecceBranchPanel
+              detail={lead.data}
+              step="handover"
+              // Continue confirms step 1; the request email opens on the lead page.
+              onDone={() => router.replace(leadUrl(created._id, "?stage=RECCE&step=email"))}
+              onAssigned={() => router.replace(leadUrl(created._id))}
+            />
+          )
+        ) : zohoOnly ? (
+          <OrderClientForm
+            fixedFlag="EXISTING"
+            zohoOnly
+            withNotes
+            submitLabel="Save & Create Order"
+            footNote="Assign Type & Details opens here once the order is saved."
+            onCancel={() => setDrawer(false)}
+            onCreated={(o) => {
+              // Same drawer, new content: no route change (which would close and reopen it). The address bar points at
+              // the lead, so a reload (or a shared link) opens this step on the lead page.
+              setCreated(o);
+              setDrawer(true);
+              window.history.replaceState(null, "", leadUrl(o._id, "?stage=RECCE&step=handover"));
+            }}
+          />
+        ) : flag ? (
           <OrderClientForm
             key={flag}
             fixedFlag={flag}
@@ -591,7 +659,7 @@ export function NewLeadWorkspace() {
             onCreated={(o) => {
               setDrawer(false);
               // Straight on to Project Assign: the lead opens with its drawer, so the BD picks a route without extra clicks.
-              router.replace(`/leads/${o._id}?fresh=1&stage=PROJECT_ASSIGN`);
+              router.replace(leadUrl(o._id, "?fresh=1&stage=PROJECT_ASSIGN"));
             }}
           />
         ) : (
@@ -615,8 +683,11 @@ export function LeadWorkspace() {
   const params = useSearchParams();
   const router = useRouter();
   const toast = useToast();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canWrite = can("sales:write");
+  // Active Client Servicing flow: Project Assign goes to Assign to Recce Team only (single route).
+  const csUser = user?.role === "CLIENT_SERVICING";
+  const base = leadBase(user?.role);
   const q = useLead(id);
   const complete = useCompleteLeadStage(id);
   const back = usePreviousLeadStage(id);
@@ -631,11 +702,15 @@ export function LeadWorkspace() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
 
-  const asked = params.get("stage") as MapNode | null;
+  const askedRaw = params.get("stage") as MapNode | null;
+  // Client Servicing has one route: Project Assign / Client Servicing links open the Recce team branch.
+  const asked = csUser && (askedRaw === "PROJECT_ASSIGN" || askedRaw === "HANDOVER") ? "RECCE" : askedRaw;
   const selected: MapNode | null = asked && (isBranch(asked) || (LEAD_STAGES as readonly string[]).includes(asked)) ? asked : null;
   // `step`: a step of a Project Assign branch; its drawer opens scrolled to that section.
-  const openNode = (k: MapNode | null, step?: string) =>
-    router.replace(k ? `/leads/${id}?stage=${k}${step && isBranch(k) ? `&step=${encodeURIComponent(step)}` : ""}` : `/leads/${id}`, { scroll: false });
+  const openNode = (k0: MapNode | null, step?: string) => {
+    const k = csUser && (k0 === "PROJECT_ASSIGN" || k0 === "HANDOVER") ? "RECCE" : k0;
+    return router.replace(k ? `${base}/${id}?stage=${k}${step && isBranch(k) ? `&step=${encodeURIComponent(step)}` : ""}` : `${base}/${id}`, { scroll: false });
+  };
   const step = isBranch(selected) ? params.get("step") : null;
   const blocked = (why: string) => toast(why, "info");
   const fresh = params.get("fresh") === "1";
@@ -647,8 +722,9 @@ export function LeadWorkspace() {
     setCelebrate("NEW_LEAD");
   }
   useEffect(() => {
-    if (fresh) router.replace(`/leads/${id}${asked ? `?stage=${asked}` : ""}`, { scroll: false });
-  }, [fresh, id, router, asked]);
+    // Keeps the open drawer and its step (Client Servicing: Recce Team · Assign Type & Details).
+    if (fresh) router.replace(`${base}/${id}${asked ? `?stage=${asked}${params.get("step") ? `&step=${encodeURIComponent(params.get("step")!)}` : ""}` : ""}`, { scroll: false });
+  }, [fresh, id, router, asked, params, base]);
   useEffect(() => {
     if (!celebrate) return;
     const t = setTimeout(() => setCelebrate(null), CELEBRATE_MS);
@@ -669,6 +745,14 @@ export function LeadWorkspace() {
   const d = q.data;
   const open = d.lead.status === "OPEN";
   const current = d.stages.find((s) => s.status === "CURRENT")?.key ?? null;
+  // An order the BD handed to this Client Servicing person (earlier flow): their own workflow, as in My Orders.
+  if (csUser && d.handover.assignee)
+    return (
+      <div className="mx-auto max-w-[1600px] space-y-4">
+        <LeadHeader detail={d} />
+        <CsWorkflow order={d.order} basePath={`${base}/${id}`} />
+      </div>
+    );
 
   const doComplete = async (stage: LeadStage) => {
     try {
@@ -770,8 +854,9 @@ export function LeadWorkspace() {
           <Canvas>
             <LeadMindMap
               stages={d.stages}
-              assign={assignOf(d)}
-              client={{ flag: d.order.clientType, done: true, name: d.order.client.name, at: clientSavedAt(d) }}
+              assign={csUser ? { ...assignOf(d), csFlow: true } : assignOf(d)}
+              client={csUser ? undefined : { flag: d.order.clientType, done: true, name: d.order.client.name, at: clientSavedAt(d) }}
+              recceOnly={csUser}
               closed={d.lead.status === "CLOSED"}
               celebrate={celebrate}
               badges={{
@@ -801,6 +886,8 @@ export function LeadWorkspace() {
 
       <Modal
         open={!!selected}
+        // Client Servicing: step drawers close only with Close (not Escape or a click outside).
+        dismissible={!csUser}
         onOpenChange={(o) => {
           if (o) return;
           openNode(null);
@@ -814,7 +901,7 @@ export function LeadWorkspace() {
           selected === "HANDOVER"
             ? `${d.order.orderNo} · client, contact persons, shop list and documents for Client Servicing`
             : selected === "RECCE"
-              ? `${d.order.orderNo} · project code request, codes, handover and the Recce person`
+              ? `${d.order.orderNo} · assign type & details, project code request, codes and the Recce person`
               : d.order.orderNo + " · " + d.order.client.name
         }
         footer={

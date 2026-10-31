@@ -40,7 +40,8 @@ export interface RecceState {
   /** Client ID in Zoho: Existing clients have it from Zoho (read-only); New clients type it at Project Code. */
   zohoClientId?: { value: string | null; fromZoho: boolean };
   /** Sent automatically with every request email (besides the client details and contacts in the message). */
-  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; documents: FileRef[]; /** New Client only. */ gstCertificates?: FileRef[] };
+  /** documents: chat files and (SO) Additional Documents (`so`), one copy of each. */
+  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; documents: (FileRef & { so?: boolean })[]; /** New Client only. */ gstCertificates?: FileRef[] };
   /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
   route: "HANDOVER" | "RECCE" | null;
   /** Client contacts with both a mobile number and an email (they go on the operations project). */
@@ -138,6 +139,8 @@ export interface ProjectHandover {
     contacts: ClientContact[];
   } | null;
   type: HandoverType | null;
+  /** SO (stored as ASO): the Additional Documents. */
+  soDocuments?: FileRef[];
   /** ASO: the client's SO contacts as handed over. */
   soContacts?: { name: string; phone: string; email?: string | null; isPrimary?: boolean }[];
   /** Communication & attachments (chat) from the BD. */
@@ -156,6 +159,10 @@ export function useProjectHandover(projectId: string) {
 export async function downloadProjectShopExcel(projectId: string) {
   const { blob, fileName } = await apiBlob(`/projects/${projectId}/bd-handover/shops/export`);
   saveBlob(blob, fileName ?? "shop-list.xlsx");
+}
+export async function downloadProjectShopPdf(projectId: string) {
+  const { blob, fileName } = await apiBlob(`/projects/${projectId}/bd-handover/shops/export?format=pdf`);
+  saveBlob(blob, fileName ?? "shop-list.pdf");
 }
 
 export function useProjectHandoverShops(projectId: string, params: { page: number; limit: number; state?: string }, enabled = true) {

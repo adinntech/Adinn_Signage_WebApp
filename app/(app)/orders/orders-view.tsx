@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -19,6 +19,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useCsOrderSummary, useOrders, type CsOrderStatus } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
+import { leadBase } from "@/lib/role-routes";
 import { formatDate, formatDateTimeIST } from "@/lib/format";
 import { clientIdOf } from "@/lib/api/clients";
 
@@ -31,6 +32,10 @@ export function OrdersView() {
   const { can, user } = useAuth();
   const canWrite = can("sales:write");
   const isCs = user?.role === "CLIENT_SERVICING";
+  // Active flow: Client Servicing works in Create Project (old My Orders links land there).
+  useEffect(() => {
+    if (isCs) router.replace(leadBase(user?.role));
+  }, [isCs, router, user?.role]);
   const [q, setQ] = useState("");
   const [clientType, setClientType] = useState("");
   const [csStatus, setCsStatus] = useState<CsOrderStatus | "">("");
@@ -222,7 +227,7 @@ export function OrdersView() {
         onOpenChange={setCreating}
         onCreated={(o) => {
           setCreating(false);
-          router.push(`/leads/${o._id}`);
+          router.push(`${leadBase(user?.role)}/${o._id}`);
         }}
       />
     </div>

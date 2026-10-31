@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { CsRouteRedirect } from "@/components/leads/cs-route-redirect";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LeadWorkspace } from "@/components/leads/lead-workspace";
 
@@ -8,7 +9,9 @@ export const instant = false;
 export default function LeadPage() {
   return (
     <Suspense fallback={<Skeleton className="h-96" />}>
-      <LeadWorkspace />
+      <CsRouteRedirect>
+        <LeadWorkspace />
+      </CsRouteRedirect>
     </Suspense>
   );
 }

@@ -21,11 +21,16 @@ import { useAuth } from "@/lib/auth";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { clientIdOf } from "@/lib/api/clients";
+import { leadBase } from "@/lib/role-routes";
 
 /** Lead Management list: every lead with its current mind map stage. Opening one shows its mind map. */
 export function LeadsView() {
-  const { can } = useAuth();
-  const canWrite = can("sales:write");
+  const { can, user } = useAuth();
+  // Client Servicing (active flow) creates projects too; the server scopes what they see and may do.
+  const cs = user?.role === "CLIENT_SERVICING";
+  const canWrite = can("sales:write") || cs;
+  // Client Servicing: the same list as Create Project (/create-project); everyone else: Lead Management (/leads).
+  const base = leadBase(user?.role);
   const [q, setQ] = useState("");
   const [stage, setStage] = useState<LeadStage | "">("");
   const [status, setStatus] = useState("OPEN");
@@ -43,7 +48,7 @@ export function LeadsView() {
 
   const newButton = canWrite && (
     <Button variant="brand" size="lg" asChild>
-      <Link href="/leads/new">
+      <Link href={`${base}/new`}>
         <Plus className="size-4" aria-hidden /> Create Project
       </Link>
     </Button>
@@ -51,7 +56,12 @@ export function LeadsView() {
 
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-5">
-      <PageHeader icon={Waypoints} title="Lead Management" subtitle="Every order is a lead: from Create Project to the project assigned to Client Servicing or the Recce team." actions={newButton} />
+      <PageHeader
+        icon={Waypoints}
+        title={cs ? "Create Project" : "Lead Management"}
+        subtitle={cs ? "Every project you create, from the Zoho client to the Recce team assignment." : "Every order is a lead: from Create Project to the project assigned to Client Servicing or the Recce team."}
+        actions={newButton}
+      />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Open Leads" value={summary.data?.open} icon={Network} color="blue" loading={summary.isPending} active={status === "OPEN" && !stage} onClick={() => reset(() => (setStatus("OPEN"), setStage("")))} />
@@ -103,9 +113,10 @@ export function LeadsView() {
           </div>
           <div className="w-44">
             <Select aria-label="Filter by client flag" value={clientType} onChange={(e) => reset(() => setClientType(e.target.value))}>
-              <option value="">All Client Flags</option>
-              <option value="NEW">New Client</option>
-              <option value="EXISTING">Existing Client</option>
+              <option value="">{cs ? "All Clients" : "All Client Flags"}</option>
+              {/* Client Servicing: Zoho clients only, shown as "Client" (no New / Existing flag). */}
+              {!cs && <option value="NEW">New Client</option>}
+              <option value="EXISTING">{cs ? "Client" : "Existing Client"}</option>
             </Select>
           </div>
           <Button variant="outline" disabled={!filtered && !q} onClick={() => reset(() => (setQ(""), setStage(""), setStatus("OPEN"), setClientType("")))}>
@@ -127,7 +138,7 @@ export function LeadsView() {
           <EmptyState
             icon={Waypoints}
             title={filtered ? "No leads match your filters" : "No leads yet"}
-            description={filtered ? "Try a different search or filter." : "Start with Create Project: choose New or Existing Client and the company, and the mind map takes it from there."}
+            description={filtered ? "Try a different search or filter." : cs ? "Start with Create Project: choose the client from Zoho, and the mind map takes it from there." : "Start with Create Project: choose New or Existing Client and the company, and the mind map takes it from there."}
             action={!filtered ? newButton : undefined}
           />
         ) : (
@@ -152,7 +163,7 @@ export function LeadsView() {
                   return (
                     <motion.tr key={l._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="transition-colors hover:bg-muted/50">
                       <td className="px-4 py-3 font-mono text-xs font-semibold">
-                        <Link href={`/leads/${l._id}`} className="text-brand hover:underline">
+                        <Link href={`${base}/${l._id}`} className="text-brand hover:underline">
                           {l.orderNo}
                         </Link>
                       </td>
@@ -183,7 +194,7 @@ export function LeadsView() {
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
                           <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/leads/${l._id}`} aria-label={`Open lead ${l.orderNo}`}>
+                            <Link href={`${base}/${l._id}`} aria-label={`Open lead ${l.orderNo}`}>
                               <Waypoints className="size-4" aria-hidden /> Mind Map
                             </Link>
                           </Button>

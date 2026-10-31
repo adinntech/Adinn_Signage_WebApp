@@ -54,10 +54,10 @@ export interface ShopListSummary {
   duplicates?: number;
   uploadedAt: string;
 }
-/** What the BD hands to Client Servicing. */
+/** Assign types (display labels; the stored values stay ASO / SHOP_DETAILS / SHOP_MEASUREMENT). */
 export const HANDOVER_TYPES = {
-  ASO: { label: "ASO", hint: "Client and contact persons only. Client Servicing calls the client and collects the shop details." },
-  SHOP_DETAILS: { label: "Shop Details Only", hint: "The client's shop list without sizes: upload the Excel or add shops, then edit them in the table." },
+  ASO: { label: "SO", hint: "Client, contact persons and the client's SO contacts (with optional documents). The shop details are collected through the SO contacts." },
+  SHOP_DETAILS: { label: "Only Shop Details", hint: "The client's shop list without sizes: upload the Excel or add shops, then edit them in the table." },
   SHOP_MEASUREMENT: { label: "Shop + Measurement", hint: "Shop list with sizes (W × H) and up to 10 images per shop." },
 } as const;
 export type HandoverType = keyof typeof HANDOVER_TYPES;
@@ -430,6 +430,8 @@ export interface HandoverState {
   messages: HandoverMessage[];
   /** ASO: the client's SO contacts (kept apart from the contact persons; shown for ASO only). */
   soContacts: SoContact[];
+  /** SO (ASO): Additional Documents, kept apart from the chat files (empty for the other types; kept on the order). */
+  soDocuments?: (FileRef & { addedAt?: string | null })[];
   /** Last save of any handover detail. */
   updatedAt: string | null;
   /** Imported columns of the shop table, in sheet order (null for tables from before them). */
@@ -563,6 +565,11 @@ export const useSetHandoverType = (id: string) =>
 /** ASO: saves the whole SO contact list (blank rows are dropped; one primary). */
 export const useSetSoContacts = (id: string) =>
   useHandoverMutation(id, (contacts: SoContact[]) => api<HandoverState>(`/sales/orders/${id}/handover/so-contacts`, { method: "PUT", body: JSON.stringify({ contacts }) }));
+/** SO: Additional Documents (multipart `files`); a file already added is skipped by the server (`skipped`). */
+export const useAddSoDocuments = (id: string) =>
+  useHandoverMutation(id, (body: FormData) => api<HandoverState & { skipped?: number }>(`/sales/orders/${id}/handover/so-documents`, { method: "POST", body }));
+export const useRemoveSoDocument = (id: string) =>
+  useHandoverMutation(id, (fileId: string) => api<HandoverState>(`/sales/orders/${id}/handover/so-documents/${fileId}`, { method: "DELETE" }));
 export const useAddShopRow = (id: string) =>
   useHandoverMutation(id, (body: ShopRowInput) => api<HandoverShop>(`/sales/orders/${id}/handover/shop-rows`, { method: "POST", body: JSON.stringify(body) }));
 export const useUpdateShopRow = (id: string) =>
@@ -588,6 +595,11 @@ export function useShopHistory(id: string, rowId: string | undefined, enabled = 
 export async function downloadShopExcel(id: string) {
   const { blob, fileName } = await apiBlob(`/sales/orders/${id}/handover/shops/export`);
   saveBlob(blob, fileName ?? "shop-list.xlsx");
+}
+/** The same table as PDF (every column and row, header on each page; Shop + Measurement with sizes and images). */
+export async function downloadShopPdf(id: string) {
+  const { blob, fileName } = await apiBlob(`/sales/orders/${id}/handover/shops/export?format=pdf`);
+  saveBlob(blob, fileName ?? "shop-list.pdf");
 }
 
 export const useSetHandoverScope = (id: string) =>

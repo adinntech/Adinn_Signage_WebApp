@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, Columns3, Download, FileSpreadsheet, History, ImagePlus, Loader2, Pencil, Plus, Ruler, Store, Trash2, Upload, X, XCircle } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, Columns3, Download, FileSpreadsheet, FileText, History, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Ruler, Store, Trash2, Upload, X, XCircle } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,10 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { ApiError, errorMessage } from "@/lib/api";
 import { fileUrl, formData, type FileRef, type FileSource } from "@/lib/api/files";
-import { downloadProjectShopExcel, useProjectHandoverShops } from "@/lib/api/recce";
+import { downloadProjectShopExcel, downloadProjectShopPdf, useProjectHandoverShops } from "@/lib/api/recce";
 import {
   downloadShopExcel,
+  downloadShopPdf,
   downloadShopTemplate,
   MAX_ROW_IMAGES,
   useAddShopImages,
@@ -557,7 +558,7 @@ function FlaggedRows({ result, onClose }: { result: ShopImportResult; onClose: (
 }
 
 /**
- * Editable shop table of a handover (Shop Details Only / Shop + Measurement). Excel / CSV uploads ADD rows (a "Row ID"
+ * Editable shop table of a handover (Only Shop Details / Shop + Measurement). Excel uploads ADD rows (a "Row ID"
  * from the downloaded Excel updates that row instead); rows can be added, edited and deleted; Total Shops is the row
  * count. Shop + Measurement adds Size and up to 10 images per shop. Every change is logged per row.
  * `projectId`: the read-only view of an operations project (Recce / Operations), read through the project's routes.
@@ -609,13 +610,26 @@ export function ShopTable({
 
   const [mappingStep, setMappingStep] = useState<ShopImportPreview | null>(null);
   const [lastImport, setLastImport] = useState<ShopImportResult | null>(null);
+  /** The import that failed (kept on screen with Retry); cleared on success or a new pick. */
+  const [failed, setFailed] = useState(false);
+  /** The file being imported: a repeated change / drop event for it (or a double drop) does not import it twice. */
+  const busy = useRef<string | null>(null);
   const previewOf = (e: unknown) => (e instanceof ApiError && e.code === "SHOP_MAPPING_REQUIRED" ? ((e.details as { preview?: ShopImportPreview } | undefined)?.preview ?? null) : null);
+  const keyOf = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
 
-  /** Upload (optionally with the mapping step's choices); an ambiguous workbook opens the mapping step instead. */
-  const doUpload = async (opts: { sheet?: string; headerRow?: number; mapping?: Record<string, string> } = {}) => {
-    if (!file[0]) return;
+  /**
+   * Upload (optionally with the mapping step's choices); an ambiguous workbook opens
+   * the mapping step instead. Runs as soon as an Excel file is picked or dropped.
+   */
+  const doUpload = async (opts: { sheet?: string; headerRow?: number; mapping?: Record<string, string> } = {}, picked: File[] = file) => {
+    const f = picked[0];
+    if (!f) return;
+    const key = keyOf(f);
+    if (busy.current === key) return;
+    busy.current = key;
+    setFailed(false);
     try {
-      const r = await upload.mutateAsync(formData(file, { sheet: opts.sheet, headerRow: opts.headerRow ? String(opts.headerRow) : undefined, mapping: opts.mapping ? JSON.stringify(opts.mapping) : undefined }));
+      const r = await upload.mutateAsync(formData([f], { sheet: opts.sheet, headerRow: opts.headerRow ? String(opts.headerRow) : undefined, mapping: opts.mapping ? JSON.stringify(opts.mapping) : undefined }));
       setFile([]);
       setMappingStep(null);
       setPage(1);
@@ -630,8 +644,21 @@ export function ShopTable({
         // A retry of a file that did go in: nothing new, nothing failed.
         setFile([]);
         toast(errorMessage(e), "warning");
-      } else toast(errorMessage(e), "error");
+      } else {
+        setFailed(true);
+        toast(errorMessage(e), "error");
+      }
+    } finally {
+      busy.current = null;
     }
+  };
+  /** A pick or drop replaces the waiting file and imports it straight away (no extra click). */
+  const pick = (f: File[]) => {
+    const one = f.slice(-1);
+    setFile(one);
+    setMappingStep(null);
+    if (one[0]) void doUpload({}, one);
+    else setFailed(false);
   };
   /** Mapping step: a fresh preview for another sheet / header row (imports nothing). */
   const previewFor = async (o: { sheet: string; headerRow?: number }) => {
@@ -657,13 +684,13 @@ export function ShopTable({
       <div className="space-y-4 p-5 sm:p-6">
         <SectionTitle
           icon={Store}
-          title={measurement ? "Shop Details + Measurement" : "Shop Details"}
+          title={measurement ? "Shop + Measurement" : "Only Shop Details"}
           description={
             !editable
               ? `Shop list from the BD${measurement ? " with sizes and up to 10 images per shop" : ""}. Download Excel gives the current list.`
               : measurement
-                ? "Upload the Excel or add shops one by one. Size (W × H) is optional; add up to 10 images per shop."
-                : "Upload the Excel (no sizes) or add shops one by one."
+                ? "Pick the Excel (it is imported at once) or add shops one by one. Size (W × H) is optional; add up to 10 images per shop."
+                : "Pick the Excel (no sizes; it is imported at once) or add shops one by one."
           }
           action={
             <div className="flex flex-wrap gap-2">
@@ -671,9 +698,14 @@ export function ShopTable({
                 <Download className="size-4" aria-hidden /> Template
               </Button>
               {total > 0 && (
-                <Button variant="outline" size="sm" onClick={() => (projectId ? downloadProjectShopExcel(projectId) : downloadShopExcel(orderId)).catch(fail)}>
-                  <FileSpreadsheet className="size-4" aria-hidden /> Download Excel
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" onClick={() => (projectId ? downloadProjectShopExcel(projectId) : downloadShopExcel(orderId)).catch(fail)}>
+                    <FileSpreadsheet className="size-4" aria-hidden /> Download Excel
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => (projectId ? downloadProjectShopPdf(projectId) : downloadShopPdf(orderId)).catch(fail)}>
+                    <FileText className="size-4" aria-hidden /> Download PDF
+                  </Button>
+                </>
               )}
               {!projectId && (
                 <Button variant="outline" size="sm" onClick={() => setHistory("all")}>
@@ -698,18 +730,29 @@ export function ShopTable({
         </div>
         {editable && (
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-            <FileUploader
-              id="ho-shop-file"
-              files={file}
-              onChange={setFile}
-              accept=".xlsx,.xls,.csv"
-              compact
-              hint="Excel (.xlsx / .xls) or CSV in any column order; the template is optional. Rows are added; rows with a Row ID (from Download Excel) are updated."
-            />
+            <div className="space-y-2">
+              <FileUploader
+                id="ho-shop-file"
+                files={file}
+                onChange={pick}
+                accept=".xlsx,.xls"
+                typeError="Upload an Excel file (.xlsx or .xls)"
+                compact
+                disabled={upload.isPending}
+                hint="Excel (.xlsx / .xls) in any column order; the template is optional. Rows are added as soon as you pick the file; rows with a Row ID (from Download Excel) are updated."
+              />
+              {upload.isPending && !mappingStep && (
+                <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" aria-hidden /> Importing {file[0]?.name ?? "the file"}…
+                </p>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="brand" onClick={() => void doUpload()} disabled={!file[0]} loading={upload.isPending && !mappingStep}>
-                <Upload className="size-4" aria-hidden /> Upload & Add Rows
-              </Button>
+              {failed && file[0] && !upload.isPending && (
+                <Button variant="brand" onClick={() => void doUpload()}>
+                  <RotateCcw className="size-4" aria-hidden /> Retry Import
+                </Button>
+              )}
               <Button variant="brand-outline" onClick={() => setEditing("new")}>
                 <Plus className="size-4" aria-hidden /> Add Shop
               </Button>
@@ -884,7 +927,10 @@ export function ShopTable({
           onPreview={previewFor}
           onImport={(o) => void doUpload(o)}
           importing={upload.isPending}
-          onClose={() => setMappingStep(null)}
+          onClose={() => {
+            setMappingStep(null);
+            setFile([]);
+          }}
         />
       )}
       {editing &&

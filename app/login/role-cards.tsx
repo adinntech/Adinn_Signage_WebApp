@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { ChevronRight, Smartphone } from "lucide-react";
 import type { UseFormRegisterReturn } from "react-hook-form";
-import { LOGIN_ROLES } from "@/lib/login-roles";
+import { VISIBLE_LOGIN_ROLES as LOGIN_ROLES } from "@/lib/login-roles";
 import { cn } from "@/lib/utils";
 
 /**

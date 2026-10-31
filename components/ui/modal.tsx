@@ -17,6 +17,7 @@ export function Modal({
   variant = "dialog",
   className,
   titleClassName,
+  dismissible = true,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -27,7 +28,12 @@ export function Modal({
   variant?: "dialog" | "drawer";
   className?: string;
   titleClassName?: string;
+  /** false: closes only through its Close button (or the caller's Cancel), not by Escape or a click outside. */
+  dismissible?: boolean;
 }) {
+  const keep = (e: Event) => {
+    if (!dismissible) e.preventDefault();
+  };
   const drawer = variant === "drawer";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -49,7 +55,7 @@ export function Modal({
                 drawer ? "justify-end" : "items-center justify-center p-4",
               )}
             >
-              <Dialog.Content asChild forceMount>
+              <Dialog.Content asChild forceMount onEscapeKeyDown={keep} onPointerDownOutside={keep} onInteractOutside={keep}>
                 <motion.div
                   className={cn(
                     "pointer-events-auto flex max-h-full min-h-0 flex-col bg-surface shadow-card focus:outline-none",

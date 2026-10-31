@@ -338,7 +338,7 @@ function AssignNode({ k, a, delay, celebrate }: { k: Branch; a: AssignState; del
 
 /* ------------------------------ Branch step chains ------------------------------ */
 
-const TYPE_SHORT: Record<HandoverType, string> = { ASO: "ASO", SHOP_DETAILS: "Shop Details", SHOP_MEASUREMENT: "Shop + Measure" };
+const TYPE_SHORT: Record<HandoverType, string> = { ASO: "SO", SHOP_DETAILS: "Only Shop Details", SHOP_MEASUREMENT: "Shop + Measure" };
 const STATE_CHIP: Record<StepState, string> = { DONE: "Done", CURRENT: "Now", NEXT: "Next", LOCKED: "Locked", DISABLED: "Disabled" };
 
 /** Connector between two steps of a branch: solid in the branch colour once the step above is done. */
@@ -352,7 +352,7 @@ function StepLink({ color, filled, flow }: { color: string; filled: boolean; flo
 /** The three handover types under the Handover Type step, the chosen one highlighted. */
 function TypeBranches({ chosen, color }: { chosen: HandoverType | null; color: string }) {
   return (
-    <span className="relative mt-2 block pt-2.5" aria-label={`Handover type: ${chosen ? TYPE_LABEL[chosen] : "not chosen yet"}`}>
+    <span className="relative mt-2 block pt-2.5" aria-label={`Assign type: ${chosen ? TYPE_LABEL[chosen] : "not chosen yet"}`}>
       <span aria-hidden className="absolute left-[16.66%] right-[16.66%] top-0 h-2.5 rounded-t-md border-x-2 border-t-2" style={{ borderColor: `${color}55` }} />
       <span aria-hidden className="absolute left-1/2 top-0 h-2.5 border-l-2" style={{ borderColor: `${color}55` }} />
       <span className="grid grid-cols-3 gap-1">
@@ -673,7 +673,10 @@ export function LeadMindMap({
   onOpen,
   onClientOpen,
   onBlocked = () => {},
+  recceOnly = false,
 }: {
+  /** Active Client Servicing flow: Project Assign continues with Assign to Recce Team only. */
+  recceOnly?: boolean;
   stages: LeadStageState[];
   assign: AssignState | null;
   client?: ClientChoice;
@@ -730,7 +733,18 @@ export function LeadMindMap({
         );
       })}
 
-      {assign && (
+      {assign && recceOnly && (
+        <>
+          <Spine from={STAGE_META.PROJECT_ASSIGN.color} to={ASSIGN_META.RECCE.color} filled={!!assign.unlocked || assign.completed} travel={celebrate === "NEW_LEAD"} flow={!!assign.unlocked && !assign.completed} />
+          <div className="mx-auto w-full max-w-[560px]">
+            <BranchColumn k="RECCE" a={assign} onOpen={(step) => onOpen("RECCE", step)} onBlocked={onBlocked} delay={0.35} celebrate={celebrate === "PROJECT_ASSIGN"} />
+          </div>
+          <div className="mt-4">
+            <EndNode a={assign} celebrate={celebrate === "PROJECT_ASSIGN"} />
+          </div>
+        </>
+      )}
+      {assign && !recceOnly && (
         <>
           <Fork colors={branchColors} active={chosen ? [chosen === "HANDOVER", chosen === "RECCE"] : [open, open && assign.recce.available]} draw={celebrate === "NEW_LEAD"} />
           <div className="mt-4 grid grid-cols-1 gap-6 sm:mt-0 sm:grid-cols-2 sm:gap-8">

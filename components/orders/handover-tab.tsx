@@ -11,7 +11,11 @@ import {
   CheckCircle2,
   CircleAlert,
   Contact,
+  Download,
+  Eye,
   FileSpreadsheet,
+  FileText,
+  Paperclip,
   Handshake,
   Info,
   Loader2,
@@ -32,6 +36,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FileUploader } from "@/components/ui/file-uploader";
+import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
+import { downloadFile, formData, type FileRef } from "@/lib/api/files";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
@@ -40,7 +47,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { errorMessage, fieldErrorsOf } from "@/lib/api";
+import { ApiError, errorMessage, fieldErrorsOf } from "@/lib/api";
 import {
   HANDOVER_TYPES,
   useAssignClientServicing,
@@ -48,6 +55,8 @@ import {
   useHandover,
   useSetHandoverScope,
   useSetHandoverType,
+  useAddSoDocuments,
+  useRemoveSoDocument,
   useSetSoContacts,
   type HandoverState,
   type HandoverType,
@@ -108,13 +117,13 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
   const set = useSetHandoverType(orderId);
   return (
     <Card className="p-5 sm:p-6">
-      <SectionTitle icon={Handshake} title="Handover Type" description={editable ? "Choose what you hand over." : "What the BD handed over."} action={toggle} />
+      <SectionTitle icon={Handshake} title="Assign Type" description={editable ? "Choose what you hand over." : "What was handed over."} action={toggle} />
       {!data.full ? (
         <p className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-sm text-muted-foreground">
           <Info className="size-4 shrink-0" aria-hidden /> Handover details are off: only the client details and contact persons go to Client Servicing.
         </p>
       ) : (
-      <div role="radiogroup" aria-label="Handover type" className="grid gap-3 md:grid-cols-3">
+      <div role="radiogroup" aria-label="Assign type" className="grid gap-3 md:grid-cols-3">
         {(Object.keys(HANDOVER_TYPES) as HandoverType[]).map((k) => {
           const on = data.type === k;
           const Icon = TYPE_ICON[k];
@@ -125,7 +134,7 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
               role="radio"
               aria-checked={on}
               disabled={!editable || set.isPending}
-              onClick={() => !on && set.mutateAsync(k).then(() => toast(`Handover type: ${HANDOVER_TYPES[k].label}`), (e) => toast(errorMessage(e), "error"))}
+              onClick={() => !on && set.mutateAsync(k).then(() => toast(`Assign type: ${HANDOVER_TYPES[k].label}`), (e) => toast(errorMessage(e), "error"))}
               className={cn(
                 "flex items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default",
                 on ? "border-approval bg-[#fff7ed]" : "border-border hover:bg-muted/60",
@@ -175,7 +184,7 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
       <SectionTitle
         icon={Building2}
         title="Client & Contact Persons"
-        description={aso ? "Auto-filled from Client Management. Contact persons are optional; add the client's SO contacts in the ASO section below." : "Auto-filled from Client Management. Contact persons are optional."}
+        description={aso ? "Auto-filled from Client Management. Contact persons are optional; add the client's SO contacts in the SO section below." : "Auto-filled from Client Management. Contact persons are optional."}
         action={
           canAddContact && (
             <Button variant="brand-outline" size="sm" onClick={() => openContact(-1)}>
@@ -378,7 +387,7 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
       <SectionTitle
         icon={Contact}
         title="SO Contacts"
-        description={editable ? "Required for ASO: at least one SO contact with name and mobile number; email optional. Add more if needed." : "The client's SO contacts for this ASO handover."}
+        description={editable ? "Required for SO: at least one SO contact with name and mobile number; email optional. Add more if needed." : "The client's SO contacts for this SO handover."}
         action={
           editable && (
             <Button variant="brand-outline" size="sm" onClick={() => edit([...rows, { ...blankSo(), isPrimary: !rows.some((r) => r.isPrimary) }])} disabled={rows.length >= 50}>
@@ -599,7 +608,7 @@ function StatusBanner({ data }: { data: HandoverState }) {
         <Info className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
         {data.full ? (
           <p>
-            <b>Not handed over yet.</b> Choose the handover type, complete what it needs (a shop list for the shop types; at least one SO contact for ASO), add
+            <b>Not handed over yet.</b> Choose the assign type, complete what it needs (a shop list for the shop types; at least one SO contact for SO), add
             messages and documents, then assign the order to Client Servicing.
           </p>
         ) : (
@@ -627,6 +636,122 @@ function StatusBanner({ data }: { data: HandoverState }) {
         <Badge tone="warning">Not opened yet</Badge>
       )}
     </div>
+  );
+}
+
+const SO_DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
+const kb = (n?: number | null) => (n ? (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`) : "");
+
+/**
+ * SO: Additional Documents (optional), right below the SO contacts. Picking or dropping files uploads them at once
+ * (images, PDF, Excel, Word, PowerPoint, CSV); each saved file has Preview, Download and Remove. Kept apart from the chat
+ * files; they go with the project code request email and to the Recce team. Hidden for the other types (still saved).
+ */
+function SoDocumentsSection({ orderId, saved, editable }: { orderId: string; saved: (FileRef & { addedAt?: string | null })[]; editable: boolean }) {
+  const toast = useToast();
+  const add = useAddSoDocuments(orderId);
+  const remove = useRemoveSoDocument(orderId);
+  const [picked, setPicked] = useState<File[]>([]);
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const [removing, setRemoving] = useState<FileRef | null>(null);
+  const source = { orderId };
+  const fail = (e: unknown) => toast(errorMessage(e), "error");
+
+  const upload = async (files: File[]) => {
+    // One upload at a time; files picked meanwhile wait on screen and go with the next pick.
+    if (!files.length || add.isPending) return setPicked(files);
+    setPicked(files);
+    try {
+      const r = await add.mutateAsync(formData(files));
+      const added = files.length - (r.skipped ?? 0);
+      toast(`${added} document${added === 1 ? "" : "s"} added${r.skipped ? ` (${r.skipped} already added, skipped)` : ""}`, r.skipped ? "warning" : "success");
+      setPicked([]);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "DUPLICATE_FILE") {
+        setPicked([]);
+        return toast(errorMessage(e), "warning");
+      }
+      fail(e);
+    }
+  };
+
+  return (
+    <Card id="ho-so-documents" className="p-5 sm:p-6">
+      <SectionTitle
+        icon={Paperclip}
+        title="Additional Documents"
+        description={editable ? "Optional: images, PDF, Excel, Word or other documents for the SO. They go with the project code request email and to the Recce team." : "Documents shared with the SO handover."}
+      />
+      {saved.length ? (
+        <ul className="mb-3 max-h-[min(260px,40dvh)] divide-y divide-border overflow-auto overscroll-contain rounded-lg border border-border">
+          {saved.map((f) => (
+            <li key={f.fileId} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+              <FileText className="size-4 shrink-0 text-brand" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium" title={f.name ?? undefined}>
+                  {f.name ?? "Document"}
+                </span>
+                <span className="block text-xs text-muted-foreground">{[kb(f.size), f.addedAt ? formatDate(f.addedAt) : null].filter(Boolean).join(" · ")}</span>
+              </span>
+              <span className="flex shrink-0 gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => setPreview({ saved: f, source })} aria-label={`Preview ${f.name ?? "document"}`}>
+                  <Eye className="size-4" aria-hidden /> Preview
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => void downloadFile(f.fileId, source, f.name ?? "file").catch(fail)} aria-label={`Download ${f.name ?? "document"}`}>
+                  <Download className="size-4" aria-hidden /> Download
+                </Button>
+                {editable && (
+                  <Button variant="ghost" size="sm" onClick={() => setRemoving(f)} aria-label={`Remove ${f.name ?? "document"}`}>
+                    <Trash2 className="size-4 text-danger" aria-hidden />
+                  </Button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        !editable && <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No additional documents.</p>
+      )}
+      {editable && (
+        <div className="space-y-2">
+          <FileUploader
+            id="so-documents"
+            files={picked}
+            onChange={(f) => void upload(f)}
+            accept={SO_DOC_ACCEPT}
+            multiple
+            compact
+            disabled={add.isPending}
+            onPreview={(f) => setPreview({ local: f })}
+            hint="Optional · images, PDF, Excel, Word, PowerPoint or CSV · up to 10 at a time · uploaded as soon as you pick them"
+          />
+          {add.isPending && (
+            <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden /> Uploading {picked.length} document{picked.length === 1 ? "" : "s"}…
+            </p>
+          )}
+        </div>
+      )}
+      <FileRefPreview target={preview} onClose={() => setPreview(null)} />
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title="Remove this document?"
+        description={`${removing?.name ?? "The document"} is removed from the SO handover. A copy already sent with a request email stays in the email history.`}
+        confirmLabel="Remove"
+        destructive
+        loading={remove.isPending}
+        onConfirm={async () => {
+          try {
+            await remove.mutateAsync(removing!.fileId);
+            setRemoving(null);
+            toast("Document removed");
+          } catch (e) {
+            fail(e);
+          }
+        }}
+      />
+    </Card>
   );
 }
 
@@ -694,6 +819,8 @@ export function HandoverTab({
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
             {/* SO contacts stay on the order for other types too (hidden, not deleted). */}
             {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={details} />}
+            {/* SO: optional documents right below the SO contacts (kept, hidden, for the other types). */}
+            {data.type === "ASO" && <SoDocumentsSection orderId={order._id} saved={data.soDocuments ?? []} editable={details} />}
             {/* Each shop type has its own list; keyed by type so nothing of the other type's table stays on screen. */}
             {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT") && (
               <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={details} canAddImages={!readOnly && (canWrite || (csEdit && !locked))} />
@@ -701,7 +828,7 @@ export function HandoverTab({
           </motion.div>
         )}
       </AnimatePresence>
-      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={!readOnly && (canWrite || csReply)} canDelete={canWrite && open} />
+      <HandoverChat orderId={order._id} messages={data.messages} source={{ orderId: order._id }} canPost={!readOnly && (canWrite || csReply || csEdit)} canDelete={(canWrite || csEdit) && open} />
       {!recce && canWrite && open && <AssignSection orderId={order._id} data={data} order={order} onAssigned={onAssigned} />}
       {!open && canWrite && !recce && !readOnly && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

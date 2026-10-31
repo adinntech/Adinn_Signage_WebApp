@@ -16,6 +16,7 @@ import { ErrorState } from "@/components/ui/states";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useOrder } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
+import { leadBase } from "@/lib/role-routes";
 import { formatDate } from "@/lib/format";
 import { clientIdOf } from "@/lib/api/clients";
 
@@ -32,6 +33,12 @@ export function OrderWorkspace() {
   const router = useRouter();
   const { user } = useAuth();
   const isCs = user?.role === "CLIENT_SERVICING";
+  // Active flow: Client Servicing opens the same order in Create Project (old links and notifications land there, query kept).
+  useEffect(() => {
+    if (!isCs) return;
+    const qs = params.toString();
+    router.replace(`${leadBase(user?.role)}/${id}${qs ? `?${qs}` : ""}`);
+  }, [isCs, id, router, params, user?.role]);
   const q = useOrder(id);
   // Client Servicing: the workflow (Assign to Recce Team) first, then what the BD handed over.
   // Comments are not shown to Client Servicing (they use Communication & Attachments in the handover).

@@ -26,6 +26,7 @@ import { downloadShopExcel } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
+import { useAuth } from "@/lib/auth";
 import { formatDateTimeIST } from "@/lib/format";
 import { RouteNotice, StepFooter } from "./assign-panels";
 import { ASSIGN_META } from "./stage-meta";
@@ -99,7 +100,7 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
               key={d.fileId}
               icon={FileText}
               name={d.name ?? "File"}
-              meta="From Communication & Attachments"
+              meta={d.so ? "SO · Additional Documents" : "From Communication & Attachments"}
               onPreview={() => setPreview({ saved: d, source })}
               onDownload={() => void downloadFile(d.fileId, source, d.name ?? "file").catch(fail)}
             />
@@ -170,6 +171,8 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
  */
 function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onSaved: () => void }) {
   const toast = useToast();
+  const { user } = useAuth();
+  const csUser = user?.role === "CLIENT_SERVICING";
   const save = useSaveRecceCodes(r.orderId);
   const [project, setProject] = useState(r.codes?.projectCode ?? "");
   const [est, setEst] = useState((r.codes?.estimationCode ?? "").replace(/^EST-/, ""));
@@ -232,7 +235,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       </div>
       {fromZoho && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Lock className="size-3.5" aria-hidden /> Existing client: Client ID <span className="font-mono font-semibold text-foreground">{r.zohoClientId?.value ?? "not found in Zoho"}</span> is kept automatically.
+          <Lock className="size-3.5" aria-hidden /> {csUser ? "" : "Existing client: "}Client ID <span className="font-mono font-semibold text-foreground">{r.zohoClientId?.value ?? "not found in Zoho"}</span> is kept automatically.
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -454,6 +457,8 @@ export function RecceBranchPanel({
   projectLink?: boolean;
 }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
+  const { user } = useAuth();
+  const csUser = user?.role === "CLIENT_SERVICING";
   const confirm = useConfirmRecceHandover(detail.order._id);
   if (q.isPending)
     return (
@@ -470,14 +475,14 @@ export function RecceBranchPanel({
   return (
     <div className="space-y-4">
       {assigned && <AssignedBanner r={r} projectLink={projectLink} />}
-      {step === "handover" && !locked && !r.route && <RouteNotice branch="RECCE" />}
+      {step === "handover" && !locked && !r.route && !csUser && <RouteNotice branch="RECCE" />}
       {step === "email" && r.csFlow?.handoverSent && <ReceivedHandover r={r} />}
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
-      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked && !r.csFlow} />}
+      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked && !r.csFlow && !csUser} />}
       {step === "codes" && <CodesStep r={r} locked={locked} onSaved={onDone} />}
       {step === "handover" && (
         <>
-          <HandoverTab order={detail.order} mode="recce" locked={locked} csEdit={!!r.csFlow} />
+          <HandoverTab order={detail.order} mode="recce" locked={locked} csEdit={!!r.csFlow || csUser} />
           {!locked && <StepFooter
               orderId={r.orderId}
               next="Project Code Request Email"

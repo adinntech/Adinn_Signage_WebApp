@@ -61,7 +61,7 @@ export function StepFooter({ orderId, next, onContinue, missing: given }: { orde
       {ready ? <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden /> : <CircleAlert className="size-5 shrink-0 text-warning" aria-hidden />}
       <p className="min-w-0 flex-1 text-sm">
         {ready ? (
-          <b>Handover details complete.</b>
+          <b>Assign type &amp; details complete.</b>
         ) : missing[0] === SO_CONTACT_GAP ? (
           // ASO without an SO contact: say so and take the user to the section.
           <>

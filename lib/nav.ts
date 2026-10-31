@@ -120,7 +120,7 @@ export function filterNav(can: (p?: string) => boolean, source: NavItem[] = NAV)
 }
 
 /** Titles for pages that are not in the navigation (breadcrumbs). */
-const PAGE_TITLES: Record<string, string> = { "/leads/new": "Create Project" };
+const PAGE_TITLES: Record<string, string> = { "/leads/new": "Create Project", "/create-project/new": "New Project" };
 
 export function findNavTitle(pathname: string): { title: string; group?: string } | null {
   if (PAGE_TITLES[pathname]) return { title: PAGE_TITLES[pathname] };
@@ -171,11 +171,11 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
   ],
 };
 
-// Client Servicing: the orders BD handed over to them.
-ROLE_NAV.CLIENT_SERVICING = [
-  { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" },
-  { label: "Settings", icon: Settings, href: "/settings" },
-];
+// Client Servicing (active flow): Create Project only (the Lead Management screens at /create-project). My Orders
+// (/orders) and Settings stay implemented, not listed; to show them again add
+// { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" } and
+// { label: "Settings", icon: Settings, href: "/settings" } back here.
+ROLE_NAV.CLIENT_SERVICING = [{ label: "Create Project", icon: FolderKanban, href: "/create-project", permission: "sales:read" }];
 
 export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {
   const own = role ? ROLE_NAV[role] : undefined;

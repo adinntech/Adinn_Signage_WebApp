@@ -167,7 +167,7 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
         )}
       </Section>
 
-      <Section n={++n} icon={Waypoints} title="Handover Type & Details · Communication & Attachments" state={route || d.handover.type ? "done" : "pending"} meta={d.handover.updatedAt ? `Last saved ${when(d.handover.updatedAt)}` : null}>
+      <Section n={++n} icon={Waypoints} title="Assign Type & Details · Communication & Attachments" state={route || d.handover.type ? "done" : "pending"} meta={d.handover.updatedAt ? `Last saved ${when(d.handover.updatedAt)}` : null}>
         {route || d.handover.type ? (
           // Read-only: the selected type's data only, all uploaded columns, images, SO contacts and the chat (files, voice).
           // Full handover: the Recce route, or Client Servicing completing it themselves (toggle OFF, step confirmed).

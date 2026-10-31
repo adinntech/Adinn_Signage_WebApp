@@ -41,6 +41,7 @@ export function OrderClientForm({
   initialPick,
   onSubmitClient,
   footNote = "The order opens its lead at Project Assign.",
+  zohoOnly = false,
 }: {
   onCancel: () => void;
   onCreated: (o: Order) => void;
@@ -56,6 +57,8 @@ export function OrderClientForm({
   /** Instead of creating an order, hand the picked client back (Lead > Change Client). */
   onSubmitClient?: (body: { clientType: ClientType; clientId?: string; zohoId?: string }, label: string) => Promise<void>;
   footNote?: string;
+  /** Active Client Servicing flow: Zoho customers only, without the New / Existing Client card. */
+  zohoOnly?: boolean;
 }) {
   const toast = useToast();
   const [ownFlag, setFlag] = useState<ClientType | null>(null);
@@ -108,13 +111,15 @@ export function OrderClientForm({
   };
 
   const submit = async () => {
+    // One order per click: a second click (or Enter) while saving does nothing (the request key also makes a retry safe).
+    if (create.isPending) return;
     if (!flag) return setError("Choose New Client or Existing Client");
     if (!picked) return setError("Select the client company");
     try {
       const body = flag === "NEW" ? { clientId: picked.value } : { zohoId: picked.value };
       if (onSubmitClient) return await onSubmitClient({ ...body, clientType: flag }, picked.label);
       const r = await create.mutateAsync({ ...body, clientType: flag, requestKey, initialNotes: notes.trim() || undefined });
-      toast(`Order ${r.order.orderNo} created for ${r.client.name}. The lead is at Project Assign.`);
+      toast(`Order ${r.order.orderNo} created for ${r.client.name}.${zohoOnly ? "" : " The lead is at Project Assign."}`);
       onCreated(r.order);
     } catch (e) {
       setError(errorMessage(e));
@@ -126,7 +131,7 @@ export function OrderClientForm({
   return (
     <div className="space-y-5">
       <div className="min-h-[340px] space-y-5">
-        {fixedFlag ? (
+        {zohoOnly ? null : fixedFlag ? (
           <div className={cn("flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 px-3.5 py-2.5", fixedFlag === "NEW" ? "border-warning/60 bg-warning-soft/50" : "border-success/60 bg-success-soft/50")}>
             <span className="flex items-center gap-2.5">
               {(() => {

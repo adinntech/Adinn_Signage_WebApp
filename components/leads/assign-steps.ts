@@ -74,7 +74,8 @@ export interface ChainStep {
   history?: { info: string; enabled: boolean };
 }
 
-export const TYPE_LABEL: Record<HandoverType, string> = { ASO: "ASO", SHOP_DETAILS: "Shop Details Only", SHOP_MEASUREMENT: "Shop + Measurement" };
+/** Display labels of the assign types (stored values unchanged). */
+export const TYPE_LABEL: Record<HandoverType, string> = { ASO: "SO", SHOP_DETAILS: "Only Shop Details", SHOP_MEASUREMENT: "Shop + Measurement" };
 
 /** The branch the lead is on: the one assigned, else the route taken by the first save. */
 export const routeOfAssign = (a: AssignState): Branch | null => (a.cs.assignee ? "HANDOVER" : a.recce.assignee ? "RECCE" : (a.route ?? null));
@@ -115,7 +116,7 @@ const who = (p: { assignee: { name: string } | null }) => p.assignee?.name ?? nu
 function csSteps(a: AssignState): ChainStep[] {
   const cs = a.cs;
   const full = cs.full !== false;
-  const labels = ["Handover Type & Details"];
+  const labels = ["Assign Type & Details"];
   const s = sequence([!!cs.assignee], labels, gateOf(a, "HANDOVER"));
   const details = full ? typeInfo(a) : "Client details only";
   return [
@@ -140,7 +141,7 @@ function csSteps(a: AssignState): ChainStep[] {
 function recceSteps(a: AssignState): ChainStep[] {
   const r = a.recce;
   const sent = r.emails?.count ?? 0;
-  const labels = ["Handover Type & Details", "Project Code Request Email", "Project Code & Estimation Code", "Assign to Recce / Operations"];
+  const labels = ["Assign Type & Details", "Project Code Request Email", "Project Code & Estimation Code", "Assign to Recce / Operations"];
   const s = sequence([!!r.skipHandover || !!r.handoverDone || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
   const last = r.emails?.lastStatus === "SKIPPED" ? "not sent (mail off)" : r.emails?.lastStatus === "FAILED" ? "failed" : "sent";
   return [

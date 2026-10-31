@@ -24,7 +24,7 @@ import type { Order } from "@/lib/api/sales";
  * map and drawers. Handover sent without details: Handover Type & Details first; with details: straight to the
  * request email. The open step lives in the URL (?tab=workflow&step=), so a refresh resumes it.
  */
-export function CsWorkflow({ order }: { order: Order }) {
+export function CsWorkflow({ order, basePath }: { order: Order; /** Page the steps open on (default: My Orders > Workflow). */ basePath?: string }) {
   const params = useSearchParams();
   const router = useRouter();
   const toast = useToast();
@@ -34,7 +34,8 @@ export function CsWorkflow({ order }: { order: Order }) {
   const [view, setView] = useState<"details" | "history" | null>(null);
   const lead = useLead(view ? order._id : undefined);
   const asked = params.get("step");
-  const openStep = (s: string | null) => router.replace(`/orders/${order._id}?tab=workflow${s ? `&step=${encodeURIComponent(s)}` : ""}`, { scroll: false });
+  const base = basePath ?? `/orders/${order._id}?tab=workflow`;
+  const openStep = (s: string | null) => router.replace(`${base}${s ? `${base.includes("?") ? "&" : "?"}step=${encodeURIComponent(s)}` : ""}`, { scroll: false });
 
   if (q.isPending) return <Skeleton className="h-[520px]" />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
@@ -68,7 +69,7 @@ export function CsWorkflow({ order }: { order: Order }) {
         description={
           q.data.csFlow?.handoverSent
             ? "The BD sent the handover details: send the project code request email, save the codes, then assign the Recce / Operations person."
-            : "The BD sent client details only: complete Handover Type & Details, then the request email, the codes and the Recce / Operations person."
+            : "The BD sent client details only: complete Assign Type & Details, then the request email, the codes and the Recce / Operations person."
         }
       />
       <Modal

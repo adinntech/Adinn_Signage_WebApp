@@ -18,6 +18,7 @@ export function FileUploader({
   invalid,
   compact,
   onPreview,
+  typeError,
 }: {
   id: string;
   files: File[];
@@ -31,6 +32,8 @@ export function FileUploader({
   compact?: boolean;
   /** Shows a View button on each picked file (e.g. to check a certificate before saving). */
   onPreview?: (file: File) => void;
+  /** Message for a file of another type (default: "<name>: this file type is not allowed"). */
+  typeError?: string;
 }) {
   const [drag, setDrag] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -41,7 +44,7 @@ export function FileUploader({
     if (!list?.length) return;
     const picked = Array.from(list);
     const bad = picked.find((f) => !exts.some((x) => f.name.toLowerCase().endsWith(x)));
-    if (bad) return setError(`${bad.name}: this file type is not allowed`);
+    if (bad) return setError(typeError ?? `${bad.name}: this file type is not allowed`);
     const big = picked.find((f) => f.size > maxSizeMb * 1048576);
     if (big) return setError(`${big.name} is larger than ${maxSizeMb} MB`);
     setError(null);

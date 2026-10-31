@@ -55,6 +55,8 @@ export function MissingList({ missing }: { missing: string[] }) {
 }
 
 function FlagExplain({ type }: { type: "NEW" | "EXISTING" }) {
+  const { user } = useAuth();
+  const cs = user?.role === "CLIENT_SERVICING";
   return (
     <div className={cn("flex items-start gap-3 rounded-xl border p-3", type === "NEW" ? "border-warning/40 bg-warning-soft/40" : "border-success/40 bg-success-soft/40")}>
       <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", type === "NEW" ? "bg-warning-soft text-warning" : "bg-success-soft text-success")}>
@@ -65,7 +67,9 @@ function FlagExplain({ type }: { type: "NEW" | "EXISTING" }) {
         <p className="mt-1 text-muted-foreground">
           {type === "NEW"
             ? "Picked from Client Management. Use Change Client above until a Project Assign route starts."
-            : "Picked from the Zoho customer list. Use Change Client above until a Project Assign route starts."}
+            : cs
+              ? "Picked from the Zoho customer list."
+              : "Picked from the Zoho customer list. Use Change Client above until a Project Assign route starts."}
         </p>
       </div>
     </div>
@@ -85,7 +89,9 @@ function ChangeClientCard({ detail, canWrite }: { detail: LeadDetail; canWrite: 
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<{ body: { clientType: ClientType; clientId?: string; zohoId?: string }; label: string } | null>(null);
   const gate = detail.clientChange ?? { allowed: false, reason: null };
-  const current = detail.order.clientType === "NEW" ? "New Client" : "Existing Client";
+  const { user } = useAuth();
+  // Client Servicing (Create Project flow): Zoho clients read as plain "Client".
+  const current = detail.order.clientType === "NEW" ? "New Client" : user?.role === "CLIENT_SERVICING" ? "Client" : "Existing Client";
 
   const confirm = async () => {
     if (!pending) return;
