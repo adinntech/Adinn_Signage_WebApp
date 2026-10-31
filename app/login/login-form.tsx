@@ -128,7 +128,7 @@ export function LoginForm() {
   }
 
   return (
-    <AuthShell size="xl" eyebrow="Welcome to" title="ADINN Signage Recce CRM" subtitle="Sign in with your email or employee ID, using your password or MPIN.">
+    <AuthShell size="xl" eyebrow="Welcome to" title="ADINN Signage CRM" subtitle="Sign in with your email or employee ID, using your password or MPIN.">
       {expired && (
         <FormAlert kind="info">
           <span className="flex items-start gap-2">

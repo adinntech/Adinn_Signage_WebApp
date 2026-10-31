@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Adinn Signage Recce CRM",
+  title: "Adinn Signage CRM",
   description: "Digitize. Track. Approve. Execute.",
 };
 

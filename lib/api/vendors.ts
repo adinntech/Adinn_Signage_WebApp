@@ -67,7 +67,7 @@ export interface VendorInput {
   zohoContactId?: string;
   zohoVendorNo?: string;
 }
-export interface VendorSummary { PENDING_KYC: number; ACTIVE: number; INACTIVE: number; BLACKLISTED: number; ALL: number }
+export interface VendorSummary { PENDING_KYC: number; ACTIVE: number; INACTIVE: number; BLACKLISTED: number; ALL: number; NEW: number; NEW_PENDING_KYC: number; NEW_ACTIVE: number }
 export interface VendorListParams { page?: number; limit?: number; q?: string; status?: VendorStatus | ""; type?: VendorType | ""; sort?: string }
 
 export interface ImportRowResult { row: number; name: string; ok: boolean; duplicate?: string; errors: { field: string; message: string }[] }

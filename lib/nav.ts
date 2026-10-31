@@ -85,10 +85,10 @@ export const NAV: NavItem[] = [
     ],
   },
   {
-    label: "Vendors",
+    label: "Vendor Master",
     icon: Store,
     children: [
-      { label: "Vendor Master", href: "/vendors/master", permission: "vendors:manage" },
+      { label: "Vendors", href: "/vendors/master", permission: "vendors:manage" },
       { label: "Registration", href: "/vendors/registration", permission: "vendors:manage" },
       { label: "KYC", href: "/vendors/kyc", permission: "vendors:manage" },
       { label: "Rate Cards", href: "/vendors/rate-cards", permission: "vendors:manage" },

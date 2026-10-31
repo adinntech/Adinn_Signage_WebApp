@@ -14,7 +14,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, type Vendor, type VendorStatus, type VendorType } from "@/lib/api/vendors";
+import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoSyncStatus, type Vendor, type VendorStatus, type VendorType } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { STATUS_TONE, VendorDrawer } from "./vendor-drawer";
@@ -41,12 +41,13 @@ export function VendorsPage() {
   const [limit, setLimit] = useState(10);
   const list = useVendors({ page, limit, q: dq || undefined, status: tab === "ALL" ? "" : tab, type, sort: "name" });
   const del = useDeleteVendor();
-  const [mode, setMode] = useState<"REGISTERED" | "ZOHO">("REGISTERED");
+  const [mode, setMode] = useState<"REGISTERED" | "ZOHO">("ZOHO");
   const [form, setForm] = useState<{ open: boolean; vendor?: Vendor; zohoContact?: string }>({ open: false });
   const [importing, setImporting] = useState(false);
   const [view, setView] = useState<Vendor | null>(null);
   const [toDelete, setToDelete] = useState<Vendor | null>(null);
   const s = list.data?.summary;
+  const zoho = useZohoSyncStatus().data;
   const rows = list.data?.data ?? [];
 
   return (
@@ -63,15 +64,25 @@ export function VendorsPage() {
             </div>
           )}
         />
+        {/* One dashboard for the whole vendor base: the Zoho vendors plus the vendors registered here. A Zoho vendor also registered here is counted once (as Zoho). */}
         <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-4">
-          {([["Total vendors", s?.ALL, "bg-[#e8f0ff] text-royal"], ["Active", s?.ACTIVE, "bg-[#e2f8ea] text-finance"], ["Pending KYC", s?.PENDING_KYC, "bg-[#fff0e0] text-approval"], ["Inactive / blacklisted", (s?.INACTIVE ?? 0) + (s?.BLACKLISTED ?? 0), "bg-[#ffe8e8] text-loss"]] as const).map(([l, v, c]) => (
-            <div key={l} className={cn("rounded-xl p-3", c)}><p className="text-xs font-medium opacity-80">{l}</p><p className="text-2xl font-bold tabular-nums">{s ? v : "–"}</p></div>
+          {([
+            ["All vendors", zoho && s ? zoho.total + s.NEW : undefined, `${zoho?.total ?? 0} Zoho + ${s?.NEW ?? 0} new`, "bg-[#e8f0ff] text-royal", "ZOHO"],
+            ["Zoho vendors", zoho?.total, zoho ? `${zoho.active} active · ${zoho.total - zoho.active} inactive` : "", "bg-[#f1e6ff] text-vendor", "ZOHO"],
+            ["New registered", s?.NEW, s ? `${s.NEW_ACTIVE} active` : "", "bg-[#e2f8ea] text-finance", "REGISTERED"],
+            ["New - pending KYC", s?.NEW_PENDING_KYC, "Need documents and activation", "bg-[#fff0e0] text-approval", "REGISTERED"],
+          ] as const).map(([l, v, sub, c, target]) => (
+            <button key={l} type="button" onClick={() => { setMode(target); if (l === "New - pending KYC") { setTab("PENDING_KYC"); setPage(1); } }} className={cn("rounded-xl p-3 text-left transition-shadow hover:shadow-soft focus-visible:outline-2 focus-visible:outline-ring", c)}>
+              <span className="block text-xs font-medium opacity-80">{l}</span>
+              <span className="block text-2xl font-bold tabular-nums">{v ?? "–"}</span>
+              <span className="block truncate text-[11px] opacity-80">{sub}</span>
+            </button>
           ))}
         </div>
       </div>
 
       <div role="tablist" aria-label="Vendor lists" className="inline-flex rounded-xl border border-border bg-surface p-1 shadow-soft">
-        {([["REGISTERED", "Registered vendors"], ["ZOHO", "Zoho vendors"]] as const).map(([k, label]) => (
+        {([["ZOHO", "Zoho vendors"], ["REGISTERED", "New registered vendors"]] as const).map(([k, label]) => (
           <button key={k} role="tab" type="button" aria-selected={mode === k} onClick={() => setMode(k)} className={cn("rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-ring", mode === k ? "bg-royal text-white" : "text-muted-foreground hover:bg-muted")}>{label}</button>
         ))}
       </div>
