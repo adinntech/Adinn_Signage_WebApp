@@ -11,7 +11,9 @@ import { ErrorState } from "@/components/ui/states";
 import { useProject } from "@/lib/api/projects";
 import { formatDate } from "@/lib/format";
 
-export function AssignedSuccess() {
+export function AssignedSuccess({ as = "bd" }: { as?: "bd" | "cs" }) {
+  const cs = as === "cs";
+  const home = cs ? "/client-servicing/dashboard" : "/bd/dashboard";
   const { id } = useParams<{ id: string }>();
   const project = useProject(id);
 
@@ -27,7 +29,7 @@ export function AssignedSuccess() {
     { icon: CalendarClock, label: "Due Date", value: formatDate(p.targetDate) },
   ];
   const timeline = [
-    { icon: ClipboardCheck, label: "Created by BD", at: p.createdAt },
+    { icon: ClipboardCheck, label: cs ? "Created by Client Servicing" : "Created by BD", at: p.createdAt },
     { icon: Check, label: "Assigned to Operations", at: p.assignedAt ?? p.updatedAt },
     { icon: BellRing, label: "Notification Sent", at: p.assignedAt ?? p.updatedAt },
   ];
@@ -36,7 +38,7 @@ export function AssignedSuccess() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
-        <GradientHeader code="A3" title={assigned ? "Project Assigned Successfully" : "Project Saved"} subtitle="BD / Client Servicing" />
+        <GradientHeader code="A3" title={assigned ? "Project Assigned Successfully" : "Project Saved"} subtitle={cs ? "Client Servicing" : "BD / Client Servicing"} />
         <div className="space-y-6 p-6">
           <div className="flex items-center gap-4">
             <motion.span
@@ -84,14 +86,23 @@ export function AssignedSuccess() {
           )}
 
           <div className="flex flex-wrap gap-3">
-            <Button asChild variant="outline" className="flex-1 border-royal text-royal">
-              <Link href={`/bd/dashboard?view=${p._id}`}>View Project</Link>
-            </Button>
-            <Button asChild className="flex-1 bg-[#16a34a] hover:bg-[#15803d]">
-              <Link href={`/bd/whatsapp?project=${p._id}`}><MessageCircle className="size-4" aria-hidden /> Create WhatsApp Group</Link>
-            </Button>
+            {!cs && (
+              <>
+                <Button asChild variant="outline" className="flex-1 border-royal text-royal">
+                  <Link href={`/bd/dashboard?view=${p._id}`}>View Project</Link>
+                </Button>
+                <Button asChild className="flex-1 bg-[#16a34a] hover:bg-[#15803d]">
+                  <Link href={`/bd/whatsapp?project=${p._id}`}><MessageCircle className="size-4" aria-hidden /> Create WhatsApp Group</Link>
+                </Button>
+              </>
+            )}
+            {cs && (
+              <Button asChild variant="outline" className="flex-1 border-royal text-royal">
+                <Link href="/client-servicing/projects/new">Create another project</Link>
+              </Button>
+            )}
             <Button asChild variant="ghost">
-              <Link href="/bd/dashboard">Back to dashboard</Link>
+              <Link href={home}>Back to dashboard</Link>
             </Button>
           </div>
         </div>

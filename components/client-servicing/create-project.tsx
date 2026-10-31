@@ -26,12 +26,12 @@ import { Field } from "@/components/ui/field";
 import { GradientHeader } from "@/components/ui/gradient-header";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { ApiError, errorMessage, fieldErrorsOf } from "@/lib/api";
+import { ProjectWizard } from "@/components/bd/project-wizard";
 import {
-  useCodeOrders,
   useCreateProjectFromOrder,
   useProjectDraft,
   type ProjectDraft,
@@ -134,74 +134,10 @@ const schema = z
   });
 type FormValues = z.infer<typeof schema>;
 
-/** Create Project for Client Servicing: pick a handed-over order whose codes are confirmed, complete the details, assign it to Operations. */
+/** Create Project for Client Servicing: the same wizard BD had (client + optional project code typed by hand). With ?order= it is built from a handed-over order whose codes are confirmed. */
 export function CreateProject() {
   const orderId = useSearchParams().get("order") ?? "";
-  return orderId ? <OrderProject orderId={orderId} /> : <OrderPicker />;
-}
-
-function OrderPicker() {
-  const q = useCodeOrders({ bucket: "DONE", limit: 50 });
-  const rows = (q.data?.data ?? []).filter((o) => !o.hasProject);
-  return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-5">
-      <PageHeader
-        icon={FolderPlus}
-        title="Create Project"
-        subtitle="Choose an order whose client code and project code are both confirmed. The project is created from the BD handover."
-      />
-      <Card className="overflow-hidden">
-        <GradientHeader
-          title="Orders ready for a project"
-          right={
-            <span className="text-xs text-white/80">{rows.length} ready</span>
-          }
-        />
-        {q.isPending ? (
-          <RowsSkeleton />
-        ) : q.isError ? (
-          <ErrorState error={q.error} onRetry={() => q.refetch()} />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            icon={FolderPlus}
-            title="No order is ready yet"
-            description="An order appears here when both codes are confirmed and it has no project. Confirm the pending codes first."
-            action={
-              <Button asChild variant="brand">
-                <Link href="/client-servicing/codes">Open Code Requests</Link>
-              </Button>
-            }
-          />
-        ) : (
-          <ul className="divide-y divide-border">
-            {rows.map((o) => (
-              <li
-                key={o.orderId}
-                className="flex flex-wrap items-center gap-3 px-4 py-3"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">{o.client.name}</span>
-                  <span className="font-mono text-xs text-brand">
-                    {o.orderNo}
-                  </span>
-                  <span className="ml-3 font-mono text-xs text-finance">
-                    {o.codes.CLIENT_CODE.code} · {o.codes.PROJECT_CODE.code}
-                  </span>
-                </span>
-                <Button size="sm" variant="brand" asChild>
-                  <Link
-                    href={`/client-servicing/projects/new?order=${o.orderId}`}
-                  >
-                    Create Project <ArrowRight className="size-4" aria-hidden />
-                  </Link>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </div>
-  );
+  return orderId ? <OrderProject orderId={orderId} /> : <ProjectWizard as="cs" />;
 }
 
 function OrderProject({ orderId }: { orderId: string }) {
@@ -340,7 +276,7 @@ function ProjectForm({ orderId, d }: { orderId: string; d: ProjectDraft }) {
     >
       <Button variant="ghost" size="sm" asChild className="w-fit">
         <Link href="/client-servicing/projects/new">
-          <ArrowLeft className="size-4" aria-hidden /> Other orders
+          <ArrowLeft className="size-4" aria-hidden /> Back
         </Link>
       </Button>
       <PageHeader

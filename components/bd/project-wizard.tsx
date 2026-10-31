@@ -101,7 +101,14 @@ const STEP_FIELDS: FieldPath<FormValues>[][] = [
  * The form's identity follows the address. A draft created by this form moves the address to ?edit=<id> without remounting it,
  * and any other change of address (Create Project, another draft) starts a clean form, so a saved draft never leaks into a new project.
  */
-export function ProjectWizard() {
+const WIZARD_PATHS = {
+  bd: { form: "/bd/projects/new", dashboard: "/bd/dashboard", view: (id: string) => `/bd/dashboard?view=${id}`, assigned: (id: string) => `/bd/projects/${id}/assigned`, subtitle: "BD / Client Servicing" },
+  cs: { form: "/client-servicing/projects/new", dashboard: "/client-servicing/dashboard", view: (id: string) => `/client-servicing/projects/${id}/assigned`, assigned: (id: string) => `/client-servicing/projects/${id}/assigned`, subtitle: "Client Servicing" },
+};
+type WizardPaths = (typeof WIZARD_PATHS)[keyof typeof WIZARD_PATHS];
+
+export function ProjectWizard({ as = "bd" }: { as?: keyof typeof WIZARD_PATHS }) {
+  const paths = WIZARD_PATHS[as];
   const editId = useSearchParams().get("edit");
   const [session, setSession] = useState({ n: 0, editId, adopted: null as string | null });
   if (session.editId !== editId) setSession({ n: session.n + (editId && editId === session.adopted ? 0 : 1), editId, adopted: session.adopted });
@@ -109,16 +116,16 @@ export function ProjectWizard() {
   const project = useProject(editId && !mine ? editId : "");
   const onCreated = (id: string) => {
     setSession((x) => ({ ...x, adopted: id }));
-    window.history.replaceState(null, "", `/bd/projects/new?edit=${id}`);
+    window.history.replaceState(null, "", `${paths.form}?edit=${id}`);
   };
   if (editId && !mine) {
     if (project.isPending) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading project…</p>;
     if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} title="Could not load the project" />;
   }
-  return <WizardForm key={session.n} existing={mine ? undefined : project.data} onCreated={onCreated} />;
+  return <WizardForm key={session.n} existing={mine ? undefined : project.data} onCreated={onCreated} paths={paths} />;
 }
 
-function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (id: string) => void }) {
+function WizardForm({ existing, onCreated, paths }: { existing?: Project; onCreated?: (id: string) => void; paths: WizardPaths }) {
   const router = useRouter();
   const toast = useToast();
   const assignees = useAssignees();
@@ -245,7 +252,7 @@ function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (
       const id = await persist({ ...x, contacts: x.contacts.filter((c) => c.name.trim() || c.email.trim() || c.phone.trim()) } as FormValues, true);
       const filesOk = await flushFiles(id);
       toast(filesOk ? "Draft saved" : "Draft saved, but some files were not uploaded", filesOk ? "success" : "error");
-      if (filesOk) router.push("/bd/dashboard");
+      if (filesOk) router.push(paths.dashboard);
     } catch (e) {
       applyServerError(e);
     } finally {
@@ -272,11 +279,11 @@ function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (
       if (!(await flushFiles(id))) return; // stay here: the project is saved, failed files remain in the list
       if (editing && wasAssigned && x.assigneeId === existing.assignedTo?._id) {
         toast(`Project ${existing.code} updated`);
-        router.push(`/bd/dashboard?view=${id}`);
+        router.push(paths.view(id));
         return;
       }
       await assignProject.mutateAsync({ id, assigneeId: x.assigneeId });
-      router.push(`/bd/projects/${id}/assigned`);
+      router.push(paths.assigned(id));
     } catch (e) {
       applyServerError(e);
     } finally {
@@ -289,7 +296,7 @@ function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (
       <EmptyState
         title={`This project is ${existing!.status.toLowerCase().replace("_", " ")}`}
         description="It can no longer be edited from the assignment form."
-        action={<Button asChild><Link href="/bd/dashboard">Back to dashboard</Link></Button>}
+        action={<Button asChild><Link href={paths.dashboard}>Back to dashboard</Link></Button>}
       />
     );
   }
@@ -300,10 +307,10 @@ function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (
         <GradientHeader
           code="A2"
           title={editing ? `Edit Project ${existing.code}` : "Create & Assign Project to Operations"}
-          subtitle="BD / Client Servicing"
+          subtitle={paths.subtitle}
           right={
             <Button asChild variant="ghost" size="sm" className="text-white hover:bg-white/15 hover:text-white">
-              <Link href="/bd/dashboard"><ArrowLeft className="size-4" aria-hidden /> Dashboard</Link>
+              <Link href={paths.dashboard}><ArrowLeft className="size-4" aria-hidden /> Dashboard</Link>
             </Button>
           }
         />
@@ -523,7 +530,7 @@ function WizardForm({ existing, onCreated }: { existing?: Project; onCreated?: (
 
           <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface/95 px-5 py-3 backdrop-blur lg:col-span-2">
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => (step === 0 ? router.push("/bd/dashboard") : setStep(step - 1))}>
+              <Button type="button" variant="outline" onClick={() => (step === 0 ? router.push(paths.dashboard) : setStep(step - 1))}>
                 <ArrowLeft className="size-4" aria-hidden /> {step === 0 ? "Cancel" : "Back"}
               </Button>
               {!(editing && wasAssigned) && (
