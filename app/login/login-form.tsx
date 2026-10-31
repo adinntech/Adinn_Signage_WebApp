@@ -68,6 +68,7 @@ export function LoginForm() {
     setError,
     setValue,
     clearErrors,
+    getValues,
     control,
     formState: { errors, isSubmitting },
   } = form;
@@ -227,9 +228,10 @@ export function LoginForm() {
                       <input type="checkbox" className="size-4 rounded border-border accent-[var(--accent)] 2xl:size-5" {...register("remember")} />
                       Remember me
                     </label>
-                    <button type="button" onClick={() => toast("Password reset by email is coming soon. Please ask your administrator to reset your credential.", "info")} className="text-sm font-medium text-[var(--accent)] hover:underline 2xl:text-base">
-                      Forgot password?
-                    </button>
+                    {/* Carries the typed ID and whether "Use MPIN" is on, so a password user resets a password and an MPIN user an MPIN. */}
+                    <Link href={`/forgot-password?method=${getValues("authMethod") === "MPIN" ? "mpin" : "password"}${getValues("identifier") ? `&id=${encodeURIComponent(getValues("identifier"))}` : ""}`} className="text-sm font-medium text-[var(--accent)] hover:underline 2xl:text-base">
+                      Forgot MPIN / password?
+                    </Link>
                   </div>
 
                   <motion.div whileTap={{ scale: 0.98 }}>

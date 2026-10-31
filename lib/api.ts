@@ -251,6 +251,17 @@ export async function registerAccount({ credential, ...rest }: RegisterInput): P
   return p;
 }
 
+/** Emails a 6-digit reset code. The reply is always the same, whether or not the account exists. */
+export function requestResetCode(identifier: string): Promise<{ message: string; expiresInMinutes: number; resendAfterSeconds: number }> {
+  return raw("/auth/forgot", { method: "POST", body: JSON.stringify({ identifier }), auth: false });
+}
+
+/** Checks the emailed code and sets the new MPIN or password. The user signs in again afterwards. */
+export function confirmReset(identifier: string, code: string, credential: Credential): Promise<{ authMethod: AuthMethod }> {
+  const newSecret = credential.authMethod === "MPIN" ? credential.mpin : credential.password;
+  return raw("/auth/forgot/confirm", { method: "POST", body: JSON.stringify({ identifier, code, authMethod: credential.authMethod, newSecret }), auth: false });
+}
+
 export async function logout(): Promise<void> {
   try {
     await raw<unknown>("/auth/logout", { method: "POST", body: "{}" });
