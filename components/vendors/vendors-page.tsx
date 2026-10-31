@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Eye, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { Eye, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -19,7 +19,9 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { STATUS_TONE, VendorDrawer } from "./vendor-drawer";
 import { VendorForm } from "./vendor-form";
+import { ExportMenu } from "./export-menu";
 import { VendorImport } from "./vendor-import";
+import { ZohoVendors } from "./zoho-vendors";
 
 type Tab = "ALL" | VendorStatus;
 const TABS: { key: Tab; label: string }[] = [
@@ -36,9 +38,11 @@ export function VendorsPage() {
   const dq = useDebounced(q.trim());
   const [type, setType] = useState<VendorType | "">("");
   const [page, setPage] = useState(1);
-  const list = useVendors({ page, limit: 12, q: dq || undefined, status: tab === "ALL" ? "" : tab, type, sort: "name" });
+  const [limit, setLimit] = useState(10);
+  const list = useVendors({ page, limit, q: dq || undefined, status: tab === "ALL" ? "" : tab, type, sort: "name" });
   const del = useDeleteVendor();
-  const [form, setForm] = useState<{ open: boolean; vendor?: Vendor }>({ open: false });
+  const [mode, setMode] = useState<"REGISTERED" | "ZOHO">("REGISTERED");
+  const [form, setForm] = useState<{ open: boolean; vendor?: Vendor; zohoContact?: string }>({ open: false });
   const [importing, setImporting] = useState(false);
   const [view, setView] = useState<Vendor | null>(null);
   const [toDelete, setToDelete] = useState<Vendor | null>(null);
@@ -66,6 +70,17 @@ export function VendorsPage() {
         </div>
       </div>
 
+      <div role="tablist" aria-label="Vendor lists" className="inline-flex rounded-xl border border-border bg-surface p-1 shadow-soft">
+        {([["REGISTERED", "Registered vendors"], ["ZOHO", "Zoho vendors"]] as const).map(([k, label]) => (
+          <button key={k} role="tab" type="button" aria-selected={mode === k} onClick={() => setMode(k)} className={cn("rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-ring", mode === k ? "bg-royal text-white" : "text-muted-foreground hover:bg-muted")}>{label}</button>
+        ))}
+      </div>
+
+      {mode === "ZOHO" && (
+        <ZohoVendors canWrite={canWrite} />
+      )}
+
+      {mode === "REGISTERED" && (
       <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
         <Tabs label="Vendor status" className="border-b border-border pt-2" value={tab} onChange={(k) => { setTab(k as Tab); setPage(1); }} tabs={TABS.map((t) => ({ ...t, count: s ? (t.key === "ALL" ? s.ALL : s[t.key]) : undefined }))} />
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -74,7 +89,7 @@ export function VendorsPage() {
             <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search vendor name, code, mobile, city…" className="pl-9" aria-label="Search vendors" />
           </div>
           <div className="w-44"><Select value={type} onChange={(e) => { setType(e.target.value as VendorType | ""); setPage(1); }} aria-label="Vendor type"><option value="">All types</option><option value="ONE_MAN">One-man</option><option value="ORGANIZATION">Organization</option></Select></div>
-          <Button variant="outline" size="sm" onClick={() => downloadVendors().catch((e) => toast(errorMessage(e), "error"))}><Download className="size-4" aria-hidden /> Export</Button>
+          <ExportMenu onExport={(format) => downloadVendors(format, { q: dq || undefined, status: tab === "ALL" ? "" : tab, type })} />
         </div>
 
         <div className={cn("overflow-x-auto transition-opacity", list.isFetching && !list.isPending && "opacity-60")}>
@@ -112,12 +127,13 @@ export function VendorsPage() {
             </table>
           )}
         </div>
-        <Pagination meta={list.data?.meta} onPage={setPage} />
+        <Pagination meta={list.data?.meta} onPage={setPage} onLimit={(n) => { setLimit(n); setPage(1); }} />
       </section>
+      )}
 
-      {form.open && <VendorForm key={form.vendor?._id ?? "new"} open vendor={form.vendor} onClose={() => setForm({ open: false })} />}
+      {form.open && <VendorForm key={form.vendor?._id ?? form.zohoContact ?? "new"} open vendor={form.vendor} fromZohoContact={form.zohoContact} onClose={() => setForm({ open: false })} />}
       {importing && <VendorImport open onClose={() => setImporting(false)} />}
-      <VendorDrawer vendor={view} onClose={() => setView(null)} onEdit={(v) => { setView(null); setForm({ open: true, vendor: v }); }} />
+      <VendorDrawer vendor={view ? (rows.find((r) => r._id === view._id) ?? view) : null} onClose={() => setView(null)} onEdit={(v) => { setView(null); setForm({ open: true, vendor: v }); }} />
       <ConfirmDialog
         autoClose
         open={!!toDelete}

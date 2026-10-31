@@ -19,7 +19,7 @@ interface SignedUrl {
  * project file store), so their link is asked from that record: an order serves its comment, approval, rate card and
  * sent email files plus the Company Profile PDF; a template serves its own PDF; a client serves its GST certificates.
  */
-export type FileSource = { orderId: string } | { templateSlug: string } | { clientId: string } | { projectId: string };
+export type FileSource = { orderId: string } | { templateSlug: string } | { clientId: string } | { projectId: string } | { vendorId: string };
 
 /** Short-lived signed link for a stored file (files are private). */
 export const fileUrl = (fileId: string, src: FileSource) =>
@@ -28,7 +28,9 @@ export const fileUrl = (fileId: string, src: FileSource) =>
       ? `/sales/orders/${src.orderId}/files/${fileId}/url`
       : "clientId" in src
         ? `/clients/${src.clientId}/files/${fileId}/url`
-        : "projectId" in src
+        : "vendorId" in src
+          ? `/vendors/${src.vendorId}/kyc-files/${fileId}/url`
+          : "projectId" in src
           ? `/projects/${src.projectId}/bd-handover/files/${fileId}/url`
           : `/email-templates/${src.templateSlug}/pdf/url`,
   );

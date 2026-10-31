@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, CheckCircle2, Mail, MapPin, Pencil, Phone, Power, ShieldCheck } from "lucide-react";
+import { Ban, CheckCircle2, FileUp, Mail, MapPin, Pencil, Phone, Power, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -9,7 +9,8 @@ import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { KYC_ITEMS, VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, useSetKyc, useSetVendorStatus, type KycKey, type Vendor } from "@/lib/api/vendors";
+import { KYC_ITEMS, VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, useKycFiles, useSetKyc, useSetVendorStatus, type KycKey, type Vendor } from "@/lib/api/vendors";
+import { KycDocuments } from "./kyc-documents";
 import { formatDate } from "@/lib/format";
 import { VendorLogins } from "./vendor-logins";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,8 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
   const toast = useToast();
   const kyc = useSetKyc();
   const status = useSetVendorStatus();
+  const { upload } = useKycFiles();
+  const [uploading, setUploading] = useState<KycKey | null>(null);
   const [ask, setAsk] = useState<"INACTIVE" | "BLACKLISTED" | null>(null);
   const [why, setWhy] = useState("");
   const v = vendor;
@@ -35,11 +38,12 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
     v && status.mutate({ id: v._id, status: s, reason }, { onSuccess: () => { toast(`${v.name}: ${VENDOR_STATUS_LABEL[s]}`); setAsk(null); setWhy(""); onClose(); }, onError: (e) => toast(errorMessage(e), "error") });
 
   return (
-    <Modal open={!!v} onOpenChange={(o) => !o && onClose()} title={v?.name ?? "Vendor"} description={v ? `${v.code} · ${VENDOR_TYPE_LABEL[v.type]}` : undefined} variant="drawer" className="max-w-md">
+    <Modal open={!!v} onOpenChange={(o) => !o && onClose()} title={v?.name ?? "Vendor"} description={v ? `${v.code} · ${VENDOR_TYPE_LABEL[v.type]}` : undefined} variant="drawer" className="max-w-xl">
       {v && (
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={STATUS_TONE[v.status]}>{VENDOR_STATUS_LABEL[v.status]}</Badge>
+            {v.zohoVendorNo && <Badge tone="info">Zoho {v.zohoVendorNo}</Badge>}
             {v.statusReason && <span className="text-xs text-muted-foreground">{v.statusReason}</span>}
             <Button size="sm" variant="outline" className="ml-auto" onClick={() => onEdit(v)}><Pencil className="size-3.5" aria-hidden /> Edit</Button>
           </div>
@@ -58,6 +62,21 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
             <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">GST</p><p className="break-all font-medium">{v.gstin ?? "-"}</p></div>
             <div className="col-span-2 rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Bank</p><p className="font-medium">{v.bank?.accountNo ? `${v.bank.accountName ?? ""} · ${v.bank.accountNo} · ${v.bank.ifsc ?? ""}` : "-"}</p></div>
           </div>
+
+          <section aria-label="KYC documents" className="rounded-xl border border-border p-3">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy"><FileUp className="size-4 text-vendor" aria-hidden /> KYC documents</h3>
+            <KycDocuments
+              type={v.type}
+              vendorId={v._id}
+              saved={v.kycFiles ?? []}
+              busy={uploading}
+              readOnly={v.status === "BLACKLISTED"}
+              onAdd={(docType, files) => {
+                setUploading(docType);
+                upload.mutate({ id: v._id, docType, files }, { onSuccess: () => toast("Document uploaded. View it, then tick it in the checklist below"), onError: (e) => toast(errorMessage(e), "error"), onSettled: () => setUploading(null) });
+              }}
+            />
+          </section>
 
           <section aria-label="KYC checklist" className="rounded-xl border border-border p-3">
             <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><ShieldCheck className={cn("size-4", done ? "text-finance" : "text-approval")} aria-hidden /> KYC checklist {done && <Badge tone="success">Complete</Badge>}</h3>
