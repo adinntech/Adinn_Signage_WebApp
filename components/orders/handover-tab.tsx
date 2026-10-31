@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertTriangle,
   ListPlus,
   Pencil,
   BadgeCheck,
@@ -287,6 +288,15 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
   );
 }
 
+/** Shared with the step footers: the gap message of a missing SO contact, and a jump to the section. */
+export const SO_CONTACT_GAP = "Add at least one SO Contact with name and phone number";
+export function goToSoContacts() {
+  const el = document.getElementById("ho-so-contacts");
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
+}
+
 type SoRow = { key: string; name: string; phone: string; email: string; isPrimary: boolean };
 const blankSo = (): SoRow => ({ key: Math.random().toString(36).slice(2), name: "", phone: "", email: "", isPrimary: false });
 const soRowsOf = (list: SoContact[]): SoRow[] => list.map((k, i) => ({ key: k._id ?? String(i), name: k.name, phone: k.phone, email: k.email ?? "", isPrimary: k.isPrimary }));
@@ -335,6 +345,8 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
     edit(next);
   };
   const kept = rows.filter((r) => !isBlankSo(r));
+  // ASO needs one saved SO contact with name and phone (what the server checks; blank rows do not count).
+  const savedValid = saved.some((k) => k.name.trim() && k.phone.trim());
   const errors = rows.map(soRowErrors);
   const invalid = errors.some((e) => Object.keys(e).length);
 
@@ -362,11 +374,11 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
   };
 
   return (
-    <Card className="p-5 sm:p-6">
+    <Card id="ho-so-contacts" className={cn("p-5 sm:p-6", editable && !savedValid && "border-warning/50")}>
       <SectionTitle
         icon={Contact}
         title="SO Contacts"
-        description={editable ? "Optional. The client's SO contacts for this ASO handover: name and mobile for each one you add, email if known." : "The client's SO contacts for this ASO handover."}
+        description={editable ? "Required for ASO: at least one SO contact with name and mobile number; email optional. Add more if needed." : "The client's SO contacts for this ASO handover."}
         action={
           editable && (
             <Button variant="brand-outline" size="sm" onClick={() => edit([...rows, { ...blankSo(), isPrimary: !rows.some((r) => r.isPrimary) }])} disabled={rows.length >= 50}>
@@ -375,8 +387,13 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
           )
         }
       />
+      {editable && !savedValid && (
+        <p role="alert" className="mb-3 flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden /> {SO_CONTACT_GAP}{rows.some((r) => !isBlankSo(r)) ? ", then Save SO Contacts." : "."}
+        </p>
+      )}
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No SO contacts{editable ? " yet. They are optional." : "."}</p>
+        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No SO contacts{editable ? " yet. Add at least one with name and phone number." : "."}</p>
       ) : (
         <div className="max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
           <table className="w-full min-w-[720px] text-left text-sm">
@@ -495,7 +512,14 @@ function AssignSection({ orderId, data, order, onAssigned }: { orderId: string; 
         <ul className="mb-4 space-y-1 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm">
           {data.missing.map((m) => (
             <li key={m} className="flex items-center gap-2">
-              <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden /> {m}
+              <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden />
+              {m === SO_CONTACT_GAP ? (
+                <button type="button" onClick={goToSoContacts} className="font-medium underline underline-offset-2 hover:text-primary">
+                  {m}
+                </button>
+              ) : (
+                m
+              )}
             </li>
           ))}
         </ul>
@@ -575,7 +599,7 @@ function StatusBanner({ data }: { data: HandoverState }) {
         <Info className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
         {data.full ? (
           <p>
-            <b>Not handed over yet.</b> Choose the handover type, complete what it needs (a shop list for the shop types; SO contacts are optional for ASO), add
+            <b>Not handed over yet.</b> Choose the handover type, complete what it needs (a shop list for the shop types; at least one SO contact for ASO), add
             messages and documents, then assign the order to Client Servicing.
           </p>
         ) : (

@@ -247,7 +247,7 @@ Assignment needs an empty gap list.
 |---|---|
 | Toggle OFF | Nothing (contacts are optional) |
 | No type chosen | "Choose the handover type: ASO, Shop Details Only or Shop + Measurement" |
-| `ASO` | Nothing (no shop list; the shop types' datasets stay stored and are not cleared). Contacts and SO contacts are optional. |
+| `ASO` | At least one saved SO contact with name and phone (`SO_CONTACT_GAP`: "Add at least one SO Contact with name and phone number"); email optional, blank rows ignored. No shop list (the shop types' datasets stay stored). Client contact persons stay optional. Applies to BD → CS with the toggle ON, BD → Recce and CS → Recce; toggle OFF never requires it (CS adds them later if they choose ASO). The step footers / assignment gaps link to the SO Contacts section. |
 | `SHOP_DETAILS` / `SHOP_MEASUREMENT` | At least one shop row, and **no row in state `ERROR`** |
 
 ### Shop table

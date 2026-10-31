@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2, CircleAlert, Info, LockKeyhole, UserRoundCheck } from "lucide-react";
+import { goToSoContacts, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
@@ -58,7 +59,21 @@ export function StepFooter({ orderId, next, onContinue, missing: given }: { orde
   return (
     <div className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>
       {ready ? <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden /> : <CircleAlert className="size-5 shrink-0 text-warning" aria-hidden />}
-      <p className="min-w-0 flex-1 text-sm">{ready ? <b>Handover details complete.</b> : <>To continue: {missing[0]}</>}</p>
+      <p className="min-w-0 flex-1 text-sm">
+        {ready ? (
+          <b>Handover details complete.</b>
+        ) : missing[0] === SO_CONTACT_GAP ? (
+          // ASO without an SO contact: say so and take the user to the section.
+          <>
+            To continue:{" "}
+            <button type="button" onClick={goToSoContacts} className="font-medium underline underline-offset-2 hover:text-primary">
+              {missing[0]}
+            </button>
+          </>
+        ) : (
+          <>To continue: {missing[0]}</>
+        )}
+      </p>
       <Button variant="brand" disabled={!ready} loading={busy} onClick={() => void go()}>
         Continue: {next} <ArrowRight className="size-4" aria-hidden />
       </Button>

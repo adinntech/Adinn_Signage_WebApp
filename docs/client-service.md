@@ -108,7 +108,7 @@
 
 | Type | What CS gets |
 |---|---|
-| `ASO` | Client + contact persons, plus the SO contacts the BD added (optional). No shop table; CS collects shop details from the client (business intent stated in the `HANDOVER_TYPES` comment in `sales.model.ts` and the hint in `lib/api/sales.ts`). |
+| `ASO` | Client + contact persons, plus the SO contacts the BD added (at least one with name and phone, required for an ASO handover sent with details). No shop table; CS collects shop details from the client (business intent stated in the `HANDOVER_TYPES` comment in `sales.model.ts` and the hint in `lib/api/sales.ts`). |
 | `SHOP_DETAILS` (Shop Details Only) | Shop table without sizes; Excel without Size |
 | `SHOP_MEASUREMENT` (Shop + Measurement) | Shop table with optional Size (W × H) + Unit, and up to 10 images per shop |
 | Toggle OFF | Client details and contact persons only (type and shops not required) |
