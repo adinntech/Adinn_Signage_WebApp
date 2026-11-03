@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, FileText, Minus, Plus, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -245,7 +245,11 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
   );
 }
 
-/** Live preview of the rate card from the current editor values, with page thumbnails, zoom and saved-PDF actions. */
+/**
+ * Live preview of the rate card from the current editor values, with page thumbnails, zoom and saved-PDF actions.
+ * `fitWidth` (Client Servicing Rate Card step): every page one below the other at the panel's full width, with no
+ * thumbnails, page or zoom controls (Download and Print only).
+ */
 export function QuotationPreview({
   orderId,
   values,
@@ -254,6 +258,7 @@ export function QuotationPreview({
   company,
   latest,
   dirty,
+  fitWidth = false,
 }: {
   orderId: string;
   values: QuotationValues;
@@ -262,10 +267,22 @@ export function QuotationPreview({
   company: CompanyInfo;
   latest: Revision | null;
   dirty: boolean;
+  fitWidth?: boolean;
 }) {
   const toast = useToast();
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(0.8);
+  // Fit width: the page area's inner width / the A4 width, kept current as the panel resizes.
+  const [areaW, setAreaW] = useState(0);
+  const areaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!fitWidth || !el) return;
+    const ro = new ResizeObserver(([e]) => setAreaW(e!.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitWidth]);
+  const scale = fitWidth && areaW ? Math.max(0.3, areaW / W) : zoom;
   const terms = useMemo(() => termsList(values.terms), [values.terms]);
   const pages = useMemo(() => paginate(values.items ?? [], terms), [values.items, terms]);
   const current = Math.min(page, pages.length - 1);
@@ -289,24 +306,28 @@ export function QuotationPreview({
         <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold", dirty || !latest ? "bg-warning-soft text-warning" : "bg-success-soft text-success")}>{label}</span>
       </div>
       <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-2">
-        <Button variant="ghost" size="icon" aria-label="Previous page" disabled={current === 0} onClick={() => setPage(current - 1)}>
-          <ChevronLeft className="size-4" aria-hidden />
-        </Button>
-        <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
-          {current + 1} / {pages.length}
-        </span>
-        <Button variant="ghost" size="icon" aria-label="Next page" disabled={current >= pages.length - 1} onClick={() => setPage(current + 1)}>
-          <ChevronRight className="size-4" aria-hidden />
-        </Button>
-        <span className="mx-1 h-5 w-px bg-border" />
-        <Button variant="ghost" size="icon" aria-label="Zoom out" disabled={zoom <= 0.5} onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(1)))}>
-          <Minus className="size-4" aria-hidden />
-        </Button>
-        <span className="w-10 text-center text-xs tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
-        <Button variant="ghost" size="icon" aria-label="Zoom in" disabled={zoom >= 1.5} onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(1)))}>
-          <Plus className="size-4" aria-hidden />
-        </Button>
-        <div className="ml-auto flex gap-1.5">
+        {!fitWidth && (
+          <>
+            <Button variant="ghost" size="icon" aria-label="Previous page" disabled={current === 0} onClick={() => setPage(current - 1)}>
+              <ChevronLeft className="size-4" aria-hidden />
+            </Button>
+            <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
+              {current + 1} / {pages.length}
+            </span>
+            <Button variant="ghost" size="icon" aria-label="Next page" disabled={current >= pages.length - 1} onClick={() => setPage(current + 1)}>
+              <ChevronRight className="size-4" aria-hidden />
+            </Button>
+            <span className="mx-1 h-5 w-px bg-border" />
+            <Button variant="ghost" size="icon" aria-label="Zoom out" disabled={zoom <= 0.5} onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(1)))}>
+              <Minus className="size-4" aria-hidden />
+            </Button>
+            <span className="w-10 text-center text-xs tabular-nums text-muted-foreground">{Math.round(zoom * 100)}%</span>
+            <Button variant="ghost" size="icon" aria-label="Zoom in" disabled={zoom >= 1.5} onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(1)))}>
+              <Plus className="size-4" aria-hidden />
+            </Button>
+          </>
+        )}
+        <div className="ml-auto flex flex-wrap gap-1.5">
           <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, { orderId }, `${quotationRef.replace(/\//g, "-")}_${latest?.label ?? ""}.pdf`))}>
             <Download className="size-4" aria-hidden /> Download
           </Button>
@@ -317,7 +338,7 @@ export function QuotationPreview({
       </div>
       {dirty && latest && <p className="border-b border-border bg-warning-soft px-4 py-1.5 text-xs text-warning">Unsaved changes. Download and Print use saved revision {latest.label}; save to generate a new PDF.</p>}
       <div className="flex min-h-0 flex-1">
-        <div className="hidden w-24 shrink-0 space-y-3 overflow-y-auto border-r border-border bg-muted/50 p-2.5 sm:block" aria-label="Page thumbnails">
+        <div className={cn("hidden w-24 shrink-0 space-y-3 overflow-y-auto border-r border-border bg-muted/50 p-2.5", !fitWidth && "sm:block")} aria-label="Page thumbnails">
           {pages.map((p, i) => (
             <button key={i} type="button" onClick={() => setPage(i)} aria-label={`Page ${i + 1}`} aria-current={i === current} className="block w-full text-center">
               <span className={cn("block overflow-hidden rounded border-2 bg-white shadow-soft", i === current ? "border-brand" : "border-transparent")} style={{ height: H * 0.115 }}>
@@ -329,12 +350,15 @@ export function QuotationPreview({
             </button>
           ))}
         </div>
-        <div className="min-w-0 flex-1 overflow-auto bg-[#e9edf4] p-4">
-          <div className="mx-auto overflow-hidden shadow-card" style={{ width: W * zoom, height: H * zoom }}>
-            <div className="origin-top-left" style={{ transform: `scale(${zoom})`, width: W, height: H }}>
-              <Page {...pageProps} spec={pages[current]!} n={current + 1} />
+        {/* Stable gutter: the scrollbar does not change the fitted width (and so the page height) back and forth. */}
+        <div ref={areaRef} className={cn("min-w-0 flex-1 overflow-auto bg-[#e9edf4]", fitWidth ? "p-3 [scrollbar-gutter:stable]" : "p-4")}>
+          {(fitWidth ? pages.map((p, i) => ({ p, i })) : [{ p: pages[current]!, i: current }]).map(({ p, i }) => (
+            <div key={i} className="mx-auto mb-3 overflow-hidden shadow-card last:mb-0" style={{ width: W * scale, height: H * scale }}>
+              <div className="origin-top-left" style={{ transform: `scale(${scale})`, width: W, height: H }}>
+                <Page {...pageProps} spec={p} n={i + 1} />
+              </div>
             </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

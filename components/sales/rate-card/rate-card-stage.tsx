@@ -154,11 +154,57 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     toast(`${items.length} item${items.length === 1 ? "" : "s"} copied from the master rate card`);
   };
 
+  // Editor actions: below the editor, or (Client Servicing Rate Card step) in a sticky bar under its heading.
+  const actions = (
+    <>
+      {editable && (
+        <Button variant="brand" onClick={onSave} loading={save.isPending}>
+          <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
+        </Button>
+      )}
+      <Button
+        variant="brand-outline"
+        disabled={!data.latest?.pdf?.fileId}
+        title={dirty ? "Downloads the last saved revision; save to include your changes" : undefined}
+        onClick={() =>
+          data.latest?.pdf?.fileId &&
+          downloadFile(data.latest.pdf.fileId, { orderId }, `${data.orderNo}_Rate_Card_${data.latest.label}.pdf`).catch((err) => toast(errorMessage(err), "error"))
+        }
+      >
+        <Download className="size-4" aria-hidden /> Download PDF
+      </Button>
+      <Button
+        variant="outline"
+        disabled={!data.latest?.pdf?.fileId}
+        title={dirty ? "Opens the last saved PDF; save to include your changes" : undefined}
+        onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId, { orderId }).catch((err) => toast(errorMessage(err), "error"))}
+      >
+        <Eye className="size-4" aria-hidden /> Preview PDF
+      </Button>
+      <Button variant="outline" onClick={() => setCompareOpen(true)} disabled={!watched.items?.length}>
+        <BarChart3 className="size-4" aria-hidden /> Compare Rates
+      </Button>
+      {withEmail && can("sales:write") && (
+        <Button variant="outline" onClick={() => goBottom("send")} disabled={!data.latest}>
+          <Send className="size-4" aria-hidden /> Send Email
+        </Button>
+      )}
+      <Button variant="outline" onClick={() => goBottom("history")}>
+        <History className="size-4" aria-hidden /> View Edit History
+      </Button>
+      {withEmail && (
+        <Button variant="outline" onClick={() => goBottom("emails")}>
+          <MailCheck className="size-4" aria-hidden /> View Email History
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="xl:sticky xl:top-0 xl:h-[max(600px,calc(100dvh-17rem))]">
-          <QuotationPreview orderId={orderId} values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} company={data.company} latest={data.latest} dirty={dirty} />
+          <QuotationPreview orderId={orderId} values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} company={data.company} latest={data.latest} dirty={dirty} fitWidth={!!step} />
         </div>
 
         <Card className="min-w-0 p-5 sm:p-6">
@@ -180,6 +226,12 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
             )}
           </div>
 
+          {step && (
+            // Stays at the top of the drawer while the fields scroll (opaque, so fields pass under it, not through it).
+            <div role="toolbar" aria-label="Rate card actions" className="sticky top-0 z-10 -mx-5 -mt-2 mb-5 flex flex-wrap gap-2 border-b border-border bg-surface px-5 py-3 sm:-mx-6 sm:px-6">
+              {actions}
+            </div>
+          )}
           {data.lockedReason && <p className="-mt-2 mb-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">{data.lockedReason}</p>}
           {/* min-w-0: a fieldset is min-content wide by default, which pushed the fields past the card edge. */}
           <fieldset disabled={!editable} className="min-w-0 space-y-6">
@@ -367,48 +419,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
             </div>
           </fieldset>
 
-          <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">
-            {editable && (
-              <Button variant="brand" onClick={onSave} loading={save.isPending}>
-                <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
-              </Button>
-            )}
-            <Button
-              variant="brand-outline"
-              disabled={!data.latest?.pdf?.fileId}
-              title={dirty ? "Downloads the last saved revision; save to include your changes" : undefined}
-              onClick={() =>
-                data.latest?.pdf?.fileId &&
-                downloadFile(data.latest.pdf.fileId, { orderId }, `${data.orderNo}_Rate_Card_${data.latest.label}.pdf`).catch((err) => toast(errorMessage(err), "error"))
-              }
-            >
-              <Download className="size-4" aria-hidden /> Download PDF
-            </Button>
-            <Button
-              variant="outline"
-              disabled={!data.latest?.pdf?.fileId}
-              title={dirty ? "Opens the last saved PDF; save to include your changes" : undefined}
-              onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId, { orderId }).catch((err) => toast(errorMessage(err), "error"))}
-            >
-              <Eye className="size-4" aria-hidden /> Preview PDF
-            </Button>
-            <Button variant="outline" onClick={() => setCompareOpen(true)} disabled={!watched.items?.length}>
-              <BarChart3 className="size-4" aria-hidden /> Compare Rates
-            </Button>
-            {withEmail && can("sales:write") && (
-              <Button variant="outline" onClick={() => goBottom("send")} disabled={!data.latest}>
-                <Send className="size-4" aria-hidden /> Send Email
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => goBottom("history")}>
-              <History className="size-4" aria-hidden /> View Edit History
-            </Button>
-            {withEmail && (
-              <Button variant="outline" onClick={() => goBottom("emails")}>
-                <MailCheck className="size-4" aria-hidden /> View Email History
-              </Button>
-            )}
-          </div>
+          {!step && <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">{actions}</div>}
         </Card>
       </div>
 
