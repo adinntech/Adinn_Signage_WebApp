@@ -112,7 +112,7 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
           <p className="text-xs text-muted-foreground">{v.allocatedShops ? `${v.allocatedShops} shop(s) currently allocated.` : "No shops allocated."}</p>
 
           <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-            {v.status !== "ACTIVE" && v.status !== "BLACKLISTED" && <Button className="bg-finance hover:bg-finance/90" disabled={!done || awaitingId} loading={status.isPending && !ask} title={awaitingId ? "Enter the vendor ID from Accounts first" : done ? "" : "Complete the KYC checklist first"} onClick={() => change("ACTIVE")}><CheckCircle2 className="size-4" aria-hidden /> Activate</Button>}
+            {v.status !== "ACTIVE" && v.status !== "BLACKLISTED" && <Button className="bg-finance hover:bg-finance/90" disabled={!done || awaitingId} loading={status.isPending && !ask} title={awaitingId ? "Enter the vendor ID from Accounts: it activates the vendor" : done ? "" : "Complete the KYC checklist first"} onClick={() => change("ACTIVE")}><CheckCircle2 className="size-4" aria-hidden /> Activate</Button>}
             {v.status === "BLACKLISTED" && <Button variant="outline" disabled={!done} onClick={() => change("ACTIVE")}>Remove from blacklist</Button>}
             {v.status === "ACTIVE" && <Button variant="outline" onClick={() => { setWhy(""); setAsk("INACTIVE"); }}><Power className="size-4" aria-hidden /> Make inactive</Button>}
             {v.status !== "BLACKLISTED" && <Button variant="outline" className="text-loss" onClick={() => { setWhy(""); setAsk("BLACKLISTED"); }}><Ban className="size-4" aria-hidden /> Blacklist</Button>}

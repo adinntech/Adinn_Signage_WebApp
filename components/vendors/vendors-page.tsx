@@ -17,7 +17,11 @@ import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
 import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoSyncStatus, type Vendor, type VendorStatus, type VendorType } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/** " · Name" for a populated user reference, or nothing. */
+const who = (u: Vendor["createdBy"]) => (u && typeof u === "object" && u.name ? ` · ${u.name}` : "");
 import { STATUS_TONE, VendorDrawer } from "./vendor-drawer";
 import { VendorForm } from "./vendor-form";
 import { ExportMenu } from "./export-menu";
@@ -116,9 +120,9 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
           ) : rows.length === 0 ? (
             <EmptyState title="No vendors found" description={canWrite ? "Register a vendor or upload your vendor list." : "No vendor matches the filters."} />
           ) : (
-            <table className="w-full min-w-[960px] text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead className="bg-[#eef4ff] text-left text-xs uppercase tracking-wide text-navy">
-                <tr><th className="px-4 py-3">Vendor</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Service area</th><th className="px-4 py-3 text-right">Rate / shop</th><th className="px-4 py-3 text-right">Shops</th><th className="px-4 py-3">Registration</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                <tr><th className="px-4 py-3">Vendor</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Service area</th><th className="px-4 py-3 text-right">Rate / shop</th><th className="px-4 py-3 text-right">Shops</th><th className="px-4 py-3">Registration</th><th className="px-4 py-3">Created / updated</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.map((v) => (
@@ -134,6 +138,10 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
                         : v.registration?.mailSentAt ? <><span className="block text-xs text-approval">Mail sent · waiting for ID</span>{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> Enter vendor ID</button>}</>
                         : v.source === "ZOHO" ? <span className="text-xs text-muted-foreground">From Zoho</span>
                         : <><span className="block text-xs text-muted-foreground">{v.registration?.draft?.savedAt ? "Mail draft saved" : "Mail not sent"}</span>{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setMailing(v)}><Mail className="size-3" aria-hidden /> {v.registration?.draft?.savedAt ? "Continue mail" : "Send mail"}</button>}</>}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs">
+                      <span className="block">Created {formatDate(v.createdAt)}{who(v.createdBy)}</span>
+                      <span className="block text-muted-foreground">Updated {formatDate(v.updatedAt ?? v.createdAt)}{who(v.updatedBy)}</span>
                     </td>
                     <td className="px-4 py-3"><Badge tone={STATUS_TONE[v.status]}>{VENDOR_STATUS_LABEL[v.status]}</Badge></td>
                     <td className="px-4 py-3">

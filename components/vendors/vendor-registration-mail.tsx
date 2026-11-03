@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckCircle2, Clock, Hourglass, KeyRound, Paperclip, RefreshCw, UploadCloud, X } from "lucide-react";
+import { CheckCircle2, Clock, FileEdit, Hourglass, KeyRound, Paperclip, RefreshCw, Trash2, UploadCloud, X } from "lucide-react";
 import { MailCompose } from "@/components/mail/mail-compose";
 import { AttachmentChip } from "@/components/sales/order-comments";
 import { Badge } from "@/components/ui/badge";
@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
+import { RichTextView } from "@/components/ui/rich-text-editor";
+import { ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import type { FileRef } from "@/lib/api/files";
 import { newRequestKey } from "@/lib/api/sales";
-import { useKycFiles, useRegistrationMail, useSaveRegistrationDraft, useSendRegistrationMail, useSetVendorId, type KycDocKey, type RegistrationMailDraft, type Vendor } from "@/lib/api/vendors";
+import { useKycFiles, useRegistrationMail, useDiscardRegistrationDraft, useSaveRegistrationDraft, useSendRegistrationMail, useSetVendorId, type KycDocKey, type RegistrationMailDraft, type Vendor } from "@/lib/api/vendors";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +23,6 @@ const ACCEPT = [".pdf", ".jpg", ".jpeg", ".png", ".webp"];
 const MAX_MB = 10;
 const MAX_PER_TYPE = 3;
 const MAX_OTHER = 5;
-type Tab = "new" | "history";
 type VendorRef = Pick<Vendor, "_id" | "name" | "code">;
 type Attached = RegistrationMailDraft["attachments"][number];
 
@@ -46,9 +46,12 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
   const q = useRegistrationMail(vendor._id);
   const send = useSendRegistrationMail(vendor._id);
   const draft = useSaveRegistrationDraft(vendor._id);
+  const discard = useDiscardRegistrationDraft(vendor._id);
+  const [discarding, setDiscarding] = useState(false);
+  /** Bumped when the draft is discarded so the mail form starts again from the default text (not on every autosave, which would drop the cursor). */
+  const [fresh, setFresh] = useState(0);
   const setId = useSetVendorId();
   const { upload, remove } = useKycFiles();
-  const [tab, setTab] = useState<Tab>("new");
   const [resend, setResend] = useState(false);
   const [no, setNo] = useState("");
   const [noError, setNoError] = useState("");
@@ -64,7 +67,7 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
 
   const saveId = () => {
     if (!/^\d{2,8}$/.test(no)) return setNoError("Enter the vendor ID Accounts sent (2 to 8 digits)");
-    setId.mutate({ id: vendor._id, vendorNo: no }, { onSuccess: () => toast(`Vendor ID ${no} saved. Check the documents and activate the vendor`), onError: (e) => setNoError(errorMessage(e)) });
+    setId.mutate({ id: vendor._id, vendorNo: no }, { onSuccess: () => toast(`Vendor ID ${no} saved. The vendor is now active`), onError: (e) => setNoError(errorMessage(e)) });
   };
 
   const pick = (docType: KycDocKey, replace?: Attached) => {
@@ -122,8 +125,8 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
                   <div className="mt-1 flex items-center justify-between gap-1 px-1 text-xs text-muted-foreground">
                     <span>{formatBytes(a.size)}</span>
                     <span className="flex gap-0.5">
-                      <button type="button" disabled={busy === slot.key} onClick={() => pick(slot.key, a)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-royal hover:bg-[#eef4ff] disabled:opacity-50" aria-label={`Replace ${a.name}`}><RefreshCw className="size-3" aria-hidden /> Replace</button>
-                      <button type="button" onClick={() => setDeleting(a)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-loss hover:bg-[#fff5f5]" aria-label={`Delete ${a.name}`}><X className="size-3" aria-hidden /> Delete</button>
+                      <button type="button" title='Replace' disabled={busy === slot.key} onClick={() => pick(slot.key, a)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-royal hover:bg-[#eef4ff] disabled:opacity-50" aria-label={`Replace ${a.name}`}><RefreshCw className="size-3" aria-hidden /> </button>
+                      <button type="button" title='Delete' onClick={() => setDeleting(a)} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-loss hover:bg-[#fff5f5]" aria-label={`Delete ${a.name}`}><X className="size-3" aria-hidden /> </button>
                     </span>
                   </div>
                 </div>
@@ -144,7 +147,67 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
     </aside>
   );
 
-  const tabs: { key: Tab; label: string }[] = [{ key: "new", label: "New Mail" }, { key: "history", label: `Mail History (${d.history.length})` }];
+  /** Draft and sent mails stay on the right of the mail screen, under the attachments (no separate tab). */
+  const historyCard = (
+    <aside className="flex min-w-0 flex-col rounded-xl border border-border bg-background" aria-label="Mail history">
+      <div className="border-b border-border px-4 py-3">
+        <h3 className="text-sm font-semibold">Mail history</h3>
+        <p className="text-xs text-muted-foreground">The draft and every mail sent for this vendor.</p>
+      </div>
+      <div className="max-h-[30rem] space-y-3 overflow-auto p-3">
+        <section aria-label="Draft">
+          <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Draft</h4>
+          {d.draft ? (
+            <div className="rounded-lg border border-[#ffd8a8] bg-[#fff8ee] px-3 py-2.5 text-sm">
+              <p className="flex items-center gap-1.5 font-medium text-navy"><FileEdit className="size-4 shrink-0 text-approval" aria-hidden /><span className="truncate" title={d.draft.subject}>{d.draft.subject}</span></p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Created {formatDateTime(d.draft.createdAt)}{d.draft.createdBy ? ` by ${d.draft.createdBy}` : ""}<br />Last updated {formatDateTime(d.draft.updatedAt)}{d.draft.updatedBy ? ` by ${d.draft.updatedBy}` : ""}</p>
+              <div className="mt-2 flex gap-2">
+                {sent && !resend && <Button size="sm" variant="outline" onClick={() => setResend(true)}>Continue writing</Button>}
+                <Button size="sm" variant="ghost" className="text-loss" onClick={() => setDiscarding(true)}><Trash2 className="size-4" aria-hidden /> Discard</Button>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">No draft saved.</p>
+          )}
+        </section>
+        <section aria-label="Sent mails">
+          <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sent mails ({d.history.length})</h4>
+          {d.history.length === 0 ? (
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Nothing sent yet. Every mail is recorded here with its content and attachments.</p>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border bg-surface text-sm">
+              {d.history.map((m) => (
+                <li key={m._id}>
+                  <details>
+                    <summary className="cursor-pointer list-none px-3 py-2 hover:bg-muted/40">
+                      <span className="flex items-center gap-2">
+                        <Badge tone={m.status === "SENT" ? "success" : m.status === "FAILED" ? "danger" : "warning"}>{m.status === "SENT" ? "Sent" : m.status === "FAILED" ? "Failed" : "Not sent"}</Badge>
+                        <span className="min-w-0 flex-1 truncate font-medium" title={m.subject}>{m.subject}</span>
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{formatDateTime(m.sentAt)}{m.sentBy ? ` · ${m.sentBy}` : ""} · {m.attachmentNames.length} file(s)</span>
+                    </summary>
+                    <div className="space-y-2 border-t border-border bg-muted/20 px-3 py-3">
+                      <p className="text-xs text-muted-foreground">Created {formatDateTime(m.writtenAt)}{m.writtenBy ? ` by ${m.writtenBy}` : ""}<br />Last edited {formatDateTime(m.lastEditedAt)}<br />{m.status === "SENT" ? "Sent" : "Tried"} {formatDateTime(m.sentAt)}{m.sentBy ? ` by ${m.sentBy}` : ""}</p>
+                      {m.error && <p className="text-xs text-loss">{m.error}</p>}
+                      <dl className="grid grid-cols-[3rem_1fr] gap-x-2 gap-y-0.5 text-xs">
+                        {m.from && <><dt className="text-muted-foreground">From</dt><dd className="break-words">{m.from}</dd></>}
+                        <dt className="text-muted-foreground">To</dt><dd className="break-words">{m.to.join(", ")}</dd>
+                        {m.cc.length > 0 && <><dt className="text-muted-foreground">Cc</dt><dd className="break-words">{m.cc.join(", ")}</dd></>}
+                        {m.bcc.length > 0 && <><dt className="text-muted-foreground">Bcc</dt><dd className="break-words">{m.bcc.join(", ")}</dd></>}
+                        <dt className="text-muted-foreground">Files</dt><dd className="break-words">{m.attachmentNames.join(", ") || "None"}</dd>
+                      </dl>
+                      {m.body && <div className="max-h-60 overflow-auto rounded-lg border border-border bg-surface p-2 text-xs"><RichTextView html={m.body} /></div>}
+                    </div>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </aside>
+  );
+
   return (
     <div className="space-y-4">
       <ol className="grid gap-2 text-xs font-medium sm:grid-cols-3" aria-label="Progress">
@@ -157,7 +220,7 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
         <section aria-label="Vendor ID" className="rounded-xl border border-[#cfe0ff] bg-gradient-to-br from-[#eef4ff] to-[#f7f0ff] p-4">
           <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><KeyRound className="size-4 text-royal" aria-hidden /> Vendor ID from Accounts</h3>
           {saved ? (
-            <p className="mt-2 flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-finance" aria-hidden /> Vendor ID <span className="font-mono font-bold text-navy">{saved}</span> saved. You can activate the vendor once the KYC documents are checked.</p>
+            <p className="mt-2 flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-finance" aria-hidden /> Vendor ID <span className="font-mono font-bold text-navy">{saved}</span> saved. The vendor is now active.</p>
           ) : (
             <>
               <p className="mt-1 text-xs text-muted-foreground">When Accounts reply to the mail with the vendor ID, type it here and proceed.</p>
@@ -174,45 +237,27 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
         </section>
       )}
 
-      <div role="tablist" aria-label="Registration mail" className="flex gap-1 overflow-x-auto border-b border-border">
-        {tabs.map((t) => (
-          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={cn("-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold", tab === t.key ? "border-royal text-royal" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "history" &&
-        (d.history.length === 0 ? (
-          <EmptyState title="Nothing sent yet" description="The request mail is recorded here once it is sent." />
-        ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border text-sm">
-            {d.history.map((m) => (
-              <li key={m._id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-                <Badge tone={m.status === "SENT" ? "success" : m.status === "FAILED" ? "danger" : "warning"}>{m.status === "SENT" ? "Sent" : m.status === "FAILED" ? "Failed" : "Not sent"}</Badge>
-                <span className="min-w-0 flex-1 truncate" title={m.subject}>{m.subject} <span className="text-muted-foreground">→ {m.to.join(", ")}</span></span>
-                <span className="text-xs text-muted-foreground">{m.attachmentNames.length} file(s) · {formatDateTime(m.sentAt)}</span>
-                {m.error && <span className="w-full text-xs text-loss">{m.error}</span>}
-              </li>
-            ))}
-          </ul>
-        ))}
-
-      {tab === "new" && sent && !resend && (
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">
+      {sent && !resend && (
+        <div className="grid gap-4 lg:grid-cols-[1fr_25rem]">
+          <div className="flex items-start justify-between gap-2 self-start rounded-lg bg-muted/50 px-3 py-2 text-sm">
           <span className="flex items-center gap-2 text-muted-foreground"><Hourglass className="size-4" aria-hidden /> {saved ? "Request sent and answered." : "Waiting for Accounts to reply with the vendor ID."}</span>
           <Button size="sm" variant="outline" onClick={() => setResend(true)}>Send again</Button>
+          </div>
+          {historyCard}
         </div>
       )}
-      {tab === "new" && (!sent || resend) && (
+      {(!sent || resend) && d.draft && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground"><FileEdit className="size-3.5 text-approval" aria-hidden /> Draft restored · created {formatDateTime(d.draft.createdAt)}{d.draft.createdBy ? ` by ${d.draft.createdBy}` : ""} · last updated {formatDateTime(d.draft.updatedAt)}{d.draft.updatedBy ? ` by ${d.draft.updatedBy}` : ""}</p>
+      )}
+      {(!sent || resend) && (
         <MailCompose
           // Only a changed mail history remounts the form; uploading or deleting a document must not throw away what is being typed.
-          key={`${vendor._id}-${d.history.length}`}
+          key={`${vendor._id}-${d.history.length}-${fresh}`}
           initial={{ to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body }}
           identities={d.mail.identities}
           mailEnabled={d.mail.enabled}
           variables={[["Vendor name", vendor.name], ["Vendor code", vendor.code]]}
-          attachments={attachments}
+          attachments={<div className="space-y-4">{attachments}{historyCard}</div>}
           wideAside
           footerNote="Adinn Advertising Services Ltd. The logo and company line are added at the end of the registration request email."
           busy={send.isPending}
@@ -234,6 +279,16 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
         />
       )}
 
+      <ConfirmDialog
+        autoClose
+        open={discarding}
+        onOpenChange={setDiscarding}
+        title="Discard the draft?"
+        description="The mail text you saved will be thrown away and the default text comes back. Sent mails are not affected."
+        confirmLabel="Discard draft"
+        destructive
+        onConfirm={() => discard.mutate(undefined, { onSuccess: () => { setResend(false); setFresh((n) => n + 1); toast("Draft discarded"); }, onError: (e) => toast(errorMessage(e), "error") })}
+      />
       <ConfirmDialog
         autoClose
         open={!!deleting}

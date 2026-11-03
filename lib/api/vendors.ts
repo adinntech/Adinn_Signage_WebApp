@@ -43,6 +43,9 @@ export interface Vendor {
   ratePerShop?: number;
   farRatePerShop?: number;
   registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string } };
+  createdBy?: { name?: string } | string | null;
+  updatedBy?: { name?: string } | string | null;
+  updatedAt?: string;
   status: VendorStatus;
   statusReason?: string;
   kyc?: Partial<Record<KycKey, boolean>> & { verifiedAt?: string };
@@ -200,7 +203,12 @@ export interface RegistrationMailDraft {
   attachments: { fileId: string; name: string; size: number; docType: KycDocKey }[];
   registration: { mailSentAt?: string; vendorIdAt?: string } | null;
   zohoVendorNo: string | null;
-  history: { _id: string; to: string[]; cc: string[]; subject: string; status: "SENT" | "FAILED" | "SKIPPED"; error?: string; attachmentNames: string[]; sentAt: string }[];
+  /** The mail being written: who first saved it and who saved it last. Null when there is no draft. */
+  draft: { subject: string; createdAt: string; createdBy: string | null; updatedAt: string; updatedBy: string | null } | null;
+  history: {
+    _id: string; from?: string; to: string[]; cc: string[]; bcc: string[]; subject: string; body?: string; status: "SENT" | "FAILED" | "SKIPPED"; error?: string; attachmentNames: string[];
+    writtenAt: string; writtenBy: string | null; lastEditedAt: string; sentAt: string; sentBy: string | null;
+  }[];
 }
 export const useRegistrationMail = (vendorId: string | undefined) =>
   useQuery({ queryKey: [...key, "mail", vendorId], // gcTime 0: closing the mail drops the copy, so opening it again always reads the latest saved draft from the server.
@@ -229,10 +237,18 @@ export function useSaveRegistrationDraft(vendorId: string) {
   return useMutation({
     mutationFn: (b: { to: string[]; cc: string[]; bcc: string[]; subject: string; body: string }) => api<{ savedAt: string }>(`/vendors/${vendorId}/registration-mail/draft`, { method: "PUT", body: JSON.stringify(b) }),
     // Keep the open copy and the vendor list in step with what was just saved (switching tabs must not show an older draft).
-    onSuccess: (_r, b) => {
-      qc.setQueryData<RegistrationMailDraft>([...key, "mail", vendorId], (old) => (old ? { ...old, ...b, hasDraft: true } : old));
+    onSuccess: (r, b) => {
+      qc.setQueryData<RegistrationMailDraft>([...key, "mail", vendorId], (old) => (old ? { ...old, ...b, hasDraft: true, draft: { subject: b.subject, createdAt: old.draft?.createdAt ?? r.savedAt, createdBy: old.draft?.createdBy ?? null, updatedAt: r.savedAt, updatedBy: old.draft?.updatedBy ?? null } } : old));
       void qc.invalidateQueries({ queryKey: [...key, "list"] });
     },
+  });
+}
+/** Throws the draft away; the mail returns to the default text. */
+export function useDiscardRegistrationDraft(vendorId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<RegistrationMailDraft>(`/vendors/${vendorId}/registration-mail/draft`, { method: "DELETE" }),
+    onSuccess: (r) => { qc.setQueryData([...key, "mail", vendorId], r); void qc.invalidateQueries({ queryKey: [...key, "list"] }); },
   });
 }
 /** Accounts replied with the vendor ID: type it to proceed. */

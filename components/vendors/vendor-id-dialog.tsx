@@ -18,7 +18,7 @@ export function VendorIdDialog({ vendor, onClose }: { vendor: Pick<Vendor, "_id"
 
   function submit() {
     if (!/^\d{2,8}$/.test(no)) return setError("Enter the vendor ID Accounts sent (2 to 8 digits)");
-    setId.mutate({ id: vendor._id, vendorNo: no }, { onSuccess: () => { toast(`${vendor.name}: vendor ID ${no} saved`); onClose(); }, onError: (e) => setError(errorMessage(e)) });
+    setId.mutate({ id: vendor._id, vendorNo: no }, { onSuccess: () => { toast(`${vendor.name}: vendor ID ${no} saved, the vendor is now active`); onClose(); }, onError: (e) => setError(errorMessage(e)) });
   }
 
   return (
