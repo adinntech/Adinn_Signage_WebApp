@@ -40,6 +40,7 @@ export type Permission =
   | "sales:write"
   | "templates:manage"
   | "ratecards:manage"
+  | "ratecards:create"
   | "approvals:client"
   | "zoho:sync";
 
@@ -172,13 +173,13 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
 };
 
 // Client Servicing (active flow): Create Project (the Lead Management screens at /create-project) and Rate Card
-// Management (the master rates page, ratecards:manage). My Orders (/orders) and Settings stay implemented, not listed;
-// to show them again add
+// Creation (rate cards without an order, priced from the master rates; master rates stay with Rate Card Management).
+// My Orders (/orders) and Settings stay implemented, not listed; to show them again add
 // { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" } and
 // { label: "Settings", icon: Settings, href: "/settings" } back here.
 ROLE_NAV.CLIENT_SERVICING = [
   { label: "Create Project", icon: FolderKanban, href: "/create-project", permission: "sales:read" },
-  { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
+  { label: "Rate Card Creation", icon: ReceiptIndianRupee, href: "/rate-card-creation", permission: "ratecards:create" },
 ];
 
 export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {

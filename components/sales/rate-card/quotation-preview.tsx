@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Download, FileText, Minus, Plus, Printer } f
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { downloadFile, printFile } from "@/lib/api/files";
+import { downloadFile, printFile, type FileSource } from "@/lib/api/files";
 import { rateText, termsList, type CompanyInfo, type QuotationValues, type Revision } from "@/lib/api/ratecards";
 import { cn } from "@/lib/utils";
 
@@ -255,6 +255,7 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
  */
 export function QuotationPreview({
   orderId,
+  source,
   values,
   quotationRef,
   clientName,
@@ -264,6 +265,8 @@ export function QuotationPreview({
   fitWidth = false,
 }: {
   orderId: string;
+  /** Where the saved PDFs are read from (default: the order). */
+  source?: FileSource;
   values: QuotationValues;
   quotationRef: string;
   clientName: string;
@@ -293,6 +296,7 @@ export function QuotationPreview({
   const current = Math.min(page, pages.length - 1);
   const label = dirty || !latest ? `${latest ? latest.label + " + unsaved" : "Draft"}` : latest.label;
   const pdfId = latest?.pdf?.fileId;
+  const src = source ?? { orderId };
   const run = (fn: () => Promise<void>) => fn().catch((e) => toast(errorMessage(e), "error"));
   const pageProps = { v: values, total: pages.length, clientName, company, terms };
 
@@ -333,10 +337,10 @@ export function QuotationPreview({
           </>
         )}
         <div className="ml-auto flex flex-wrap gap-1.5">
-          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, { orderId }, `${quotationRef.replace(/\//g, "-")}_${latest?.label ?? ""}.pdf`))}>
+          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, src, `${quotationRef.replace(/\//g, "-")}_${latest?.label ?? ""}.pdf`))}>
             <Download className="size-4" aria-hidden /> Download
           </Button>
-          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Prints the last saved revision" : undefined} onClick={() => pdfId && run(() => printFile(pdfId, { orderId }))}>
+          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Prints the last saved revision" : undefined} onClick={() => pdfId && run(() => printFile(pdfId, src))}>
             <Printer className="size-4" aria-hidden /> Print
           </Button>
         </div>

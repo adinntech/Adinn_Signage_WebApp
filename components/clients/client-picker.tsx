@@ -105,11 +105,16 @@ export function CrmClientCard({ client: c, onEdit }: { client: ClientDetails; on
   );
 }
 
+/** A Zoho customer's full address: the street, then city / state / PIN not already in it (Zoho's street often ends with them). */
+export function zohoAddress(z: Pick<ZohoClientOption, "address" | "city" | "state" | "pincode">) {
+  const street = z.address ?? "";
+  return [z.address, ...[z.city, z.state, z.pincode].filter((p) => p && !street.toLowerCase().includes(p.toLowerCase()))].filter(Boolean).join(", ");
+}
+
 /** Existing Client (Zoho) preview: everything Zoho has, read-only (edits happen in Zoho, not here). */
 export function ZohoClientCard({ zoho: z, loadingContacts }: { zoho: ZohoClientOption; loadingContacts?: boolean }) {
   // Zoho's street often already ends with the city / PIN ("…,Madurai-625010"): parts already in it are not repeated.
-  const street = z.address ?? "";
-  const address = [z.address, ...[z.city, z.state, z.pincode].filter((p) => p && !street.toLowerCase().includes(p.toLowerCase()))].filter(Boolean).join(", ");
+  const address = zohoAddress(z);
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-2">

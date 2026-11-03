@@ -177,3 +177,38 @@ export function useSaveQuotation(orderId: string, path: "rate-card" | "recce/rat
     },
   });
 }
+
+/* ---------------------------- Rate Card Creation ---------------------------- */
+
+/** A rate card made without an order (Client Servicing > Rate Card Creation). */
+export interface RateCardRow {
+  _id: string;
+  quotationRef: string;
+  client: { name: string; zohoCustomerNo?: string | null } | null;
+  /** Latest version (v1.x). */
+  label: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+/** Editor state (same shape as an order's rate card) plus the selected Zoho client. */
+export type RateCardCreationState = QuotationState & { client: { zohoId: string; name: string } | null };
+
+export function useRateCardList(params: { page?: number; limit?: number; q?: string }) {
+  return useQuery({ queryKey: ["rate-card-creation", "list", params], queryFn: () => apiPage<RateCardRow>(`/rate-card-creation${qs(params)}`), placeholderData: keepPreviousData });
+}
+
+/** A saved rate card, or (id null) the blank one a new rate card starts from. */
+export function useRateCardCreation(id: string | null) {
+  return useQuery({ queryKey: ["rate-card-creation", id ?? "new"], queryFn: () => api<RateCardCreationState>(`/rate-card-creation/${id ?? "new"}`) });
+}
+
+/** Save: creates the rate card (id null) or adds a version; every version gets its PDF. */
+export function useSaveRateCardCreation(id: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: QuotationValues & { zohoId: string; requestKey?: string }) =>
+      api<{ saved: boolean; id: string; revision: Revision }>(id ? `/rate-card-creation/${id}` : "/rate-card-creation", { method: id ? "PUT" : "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rate-card-creation"] }),
+  });
+}

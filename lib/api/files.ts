@@ -19,13 +19,15 @@ interface SignedUrl {
  * project file store), so their link is asked from that record: an order serves its comment, approval, rate card and
  * sent email files plus the Company Profile PDF; a template serves its own PDF; a client serves its GST certificates.
  */
-export type FileSource = { orderId: string } | { templateSlug: string } | { clientId: string } | { projectId: string };
+export type FileSource = { orderId: string } | { templateSlug: string } | { clientId: string } | { projectId: string } | { rateCardId: string };
 
 /** Short-lived signed link for a stored file (files are private). */
 export const fileUrl = (fileId: string, src: FileSource) =>
   api<SignedUrl>(
     "orderId" in src
       ? `/sales/orders/${src.orderId}/files/${fileId}/url`
+      : "rateCardId" in src
+        ? `/rate-card-creation/${src.rateCardId}/files/${fileId}/url`
       : "clientId" in src
         ? `/clients/${src.clientId}/files/${fileId}/url`
         : "projectId" in src

@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { openFile } from "@/lib/api/files";
+import { openFile, type FileSource } from "@/lib/api/files";
 import { RATE_UNITS, type Revision, type RevisionChange } from "@/lib/api/ratecards";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -45,12 +45,12 @@ function changesOf(r: Revision): RevisionChange[] {
 }
 
 /** Edit History tab: revisions on the left, field-level changes of the selected revision on the right. */
-export function EditHistory({ orderId, revisions }: { orderId: string; revisions: Revision[] }) {
+export function EditHistory({ orderId, source, revisions }: { orderId: string; source?: FileSource; revisions: Revision[] }) {
   const toast = useToast();
   const [selected, setSelected] = useState<string>("all");
   if (!revisions.length) return <EmptyState icon={FileClock} title="No revisions yet" description="Each Save Changes creates a numbered revision with its own PDF." />;
   const shown = selected === "all" ? revisions : revisions.filter((r) => r._id === selected);
-  const view = (r: Revision) => r.pdf?.fileId && openFile(r.pdf.fileId, { orderId }).catch((e) => toast(errorMessage(e), "error"));
+  const view = (r: Revision) => r.pdf?.fileId && openFile(r.pdf.fileId, source ?? { orderId }).catch((e) => toast(errorMessage(e), "error"));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">

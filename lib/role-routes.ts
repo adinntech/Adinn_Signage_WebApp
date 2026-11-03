@@ -8,6 +8,9 @@ export const ROLE_AREAS: { prefix: string; label: string; roles: string[] }[] = 
   { prefix: "/leads", label: "Lead Management", roles: ["BD", "CLIENT_SERVICING", "SUPER_ADMIN"] },
   { prefix: "/create-project", label: "Create Project", roles: ["CLIENT_SERVICING", "SUPER_ADMIN"] },
   { prefix: "/client-servicing", label: "Client Servicing", roles: ["CLIENT_SERVICING", "SUPER_ADMIN"] },
+  { prefix: "/rate-card-creation", label: "Rate Card Creation", roles: ["CLIENT_SERVICING", "SUPER_ADMIN"] },
+  // Master rates: Super Admin and BD (ratecards:manage); Client Servicing only reads them in their rate cards.
+  { prefix: "/rate-cards", label: "Rate Card Management", roles: ["BD", "SUPER_ADMIN"] },
   { prefix: "/operations", label: "Operations", roles: ["OPERATIONS", "RECCE_COORDINATOR", "SUPER_ADMIN"] },
   { prefix: "/finance", label: "Accounts", roles: ["FINANCE", "SUPER_ADMIN"] },
   { prefix: "/admin", label: "Admin", roles: ["SUPER_ADMIN", "MANAGEMENT"] },

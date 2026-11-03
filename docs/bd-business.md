@@ -76,7 +76,7 @@ Order pipeline details:
 - Company profile email: `…/company-profile/draft` and `…/send`.
 - The Order Management workspace shows only the **Client Details / Comments / History** tabs (Client Servicing also gets **Handover Details**). `orders-view.tsx` states that "Rate cards and the Client Servicing handover are handled in Lead Management".
 
-**Rate Card Management:** `/rate-cards` (`ratecards:manage`) is a separate module and was not reviewed. Client Servicing also has it (sidebar + `ratecards:manage`), and its Create Project flow reuses the order rate card as the **Rate Card** step (see `client-service.md`). The BD sidebar also has a separate **Create Project** item at `/bd/projects/new`, which belongs to the projects module and is **not** the Lead Management "Create Project".
+**Rate Card Management:** `/rate-cards` (`ratecards:manage`) is a separate module and was not reviewed. Client Servicing does not manage master rates; it reads them in its Create Project **Rate Card** step and in **Rate Card Creation** (`/rate-card-creation`, see `client-service.md`). The BD sidebar also has a separate **Create Project** item at `/bd/projects/new`, which belongs to the projects module and is **not** the Lead Management "Create Project".
 
 ## 3. Clients (Client Management)
 

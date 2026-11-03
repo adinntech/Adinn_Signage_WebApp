@@ -20,8 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { downloadFile, openFile } from "@/lib/api/files";
-import { RATE_UNITS, useQuotation, useRateItems, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit } from "@/lib/api/ratecards";
+import { downloadFile, openFile, type FileSource } from "@/lib/api/files";
+import { RATE_UNITS, useQuotation, useRateItems, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit, type Revision } from "@/lib/api/ratecards";
 import { useSendEmail } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, toDateInput } from "@/lib/format";
@@ -117,6 +117,9 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   // Rate Card step: saved through the Client Servicing flow (the server checks who may save).
   const editable = data.editable && (!!step || can("sales:write"));
   const save = useSaveQuotation(orderId, step ? "recce/rate-card" : "rate-card");
+  // Rate Card Creation: its own PDFs and save; an order's rate card otherwise.
+  const source: FileSource = step?.source ?? { orderId };
+  const [saving, setSaving] = useState(false);
   const send = useSendEmail(orderId, "RATE_CARD");
   const [copyOpen, setCopyOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -139,16 +142,17 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
 
   // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
   // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).
+  // Seeded from a fresh read (not an older cached list), so the latest master prices are used.
   const master = useRateItems({ limit: 500 }, !!step && !data.latest);
   const seeded = useRef(false);
   useEffect(() => {
-    if (!step || data.latest || seeded.current || !master.data || form.getValues("items").length) return;
+    if (!step || data.latest || seeded.current || !master.data || !master.isFetchedAfterMount || form.getValues("items").length) return;
     seeded.current = true;
     reset({
       ...form.getValues(),
       items: master.data.data.map((r) => ({ masterItemId: r._id, particulars: r.particulars, specifications: r.specifications ?? "", unit: r.unit, masterRate: r.rate, quotedRate: r.rate, overrideReason: "" })),
     });
-  }, [step, data.latest, master.data, form, reset]);
+  }, [step, data.latest, master.data, master.isFetchedAfterMount, form, reset]);
 
   // Rate Card step: a new version is dated today (IST); the saved one shows its own date.
   const previewValues = useMemo(() => {
@@ -165,8 +169,10 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
 
   const onSave = handleSubmit(
     async (v) => {
+      if (saving) return;
+      setSaving(true);
       try {
-        const r = await save.mutateAsync(toApi(v));
+        const r = step?.save ? await step.save(toApi(v)) : await save.mutateAsync(toApi(v));
         if (r.saved) toast(`Rate card saved as ${r.revision.label}. PDF generated.`);
         else toast("No changes since the last saved revision.", "info");
         step?.onContinue?.();
@@ -174,6 +180,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
         const fe = fieldErrorsOf(err);
         for (const [path, message] of Object.entries(fe)) setError(path as FieldPath<FormValues>, { message });
         toast(errorMessage(err), "error");
+      } finally {
+        setSaving(false);
       }
     },
     () => toast("Fix the highlighted fields before saving.", "error"),
@@ -188,7 +196,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   const actions = (
     <>
       {editable && (
-        <Button variant="brand" onClick={onSave} loading={save.isPending}>
+        <Button variant="brand" onClick={onSave} loading={saving}>
           <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
         </Button>
       )}
@@ -198,7 +206,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
         title={dirty ? "Downloads the last saved revision; save to include your changes" : undefined}
         onClick={() =>
           data.latest?.pdf?.fileId &&
-          downloadFile(data.latest.pdf.fileId, { orderId }, `${data.orderNo}_Rate_Card_${data.latest.label}.pdf`).catch((err) => toast(errorMessage(err), "error"))
+          downloadFile(data.latest.pdf.fileId, source, `${data.orderNo.replace(/\//g, "-")}_Rate_Card_${data.latest.label}.pdf`).catch((err) => toast(errorMessage(err), "error"))
         }
       >
         <Download className="size-4" aria-hidden /> Download PDF
@@ -207,7 +215,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
         variant="outline"
         disabled={!data.latest?.pdf?.fileId}
         title={dirty ? "Opens the last saved PDF; save to include your changes" : undefined}
-        onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId, { orderId }).catch((err) => toast(errorMessage(err), "error"))}
+        onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId, source).catch((err) => toast(errorMessage(err), "error"))}
       >
         <Eye className="size-4" aria-hidden /> Preview PDF
       </Button>
@@ -234,7 +242,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="xl:sticky xl:top-0 xl:h-[max(600px,calc(100dvh-17rem))]">
-          <QuotationPreview orderId={orderId} values={previewValues} quotationRef={data.quotationRef} clientName={data.clientName} company={data.company} latest={data.latest} dirty={dirty} fitWidth={!!step} />
+          <QuotationPreview orderId={orderId} source={source} values={previewValues} quotationRef={data.quotationRef} clientName={step?.clientName ?? data.clientName} company={data.company} latest={data.latest} dirty={dirty} fitWidth={!!step} />
         </div>
 
         <Card className="min-w-0 p-5 sm:p-6">
@@ -247,7 +255,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
               <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground" title={data.lockedReason ?? undefined}>
                 <Lock className="size-3.5" aria-hidden /> Locked
               </span>
-            ) : data.latest && data.leadStage !== "RATE_CARD" ? (
+            ) : data.latest && !step && data.leadStage !== "RATE_CARD" ? (
               <span className="rounded-full bg-warning-soft px-3 py-1 text-xs font-semibold text-warning">Negotiation in progress · {data.latest.label}</span>
             ) : data.latest ? (
               <span className="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand">Saved · {data.latest.label}</span>
@@ -268,12 +276,20 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
             <section>
               <SectionTitle icon={ClipboardList} title="Client & Quotation Details" />
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+                {step?.company ? (
+                  // Rate Card Creation: the Zoho company picker; choosing fills the contact person and address (editable).
+                  step.company((d) => {
+                    setValue("contact.name", d?.contactName ?? "", { shouldDirty: true, shouldValidate: !!d });
+                    setValue("clientAddress", d?.address ?? "", { shouldDirty: true });
+                  })
+                ) : (
                 <Field label={step ? "Company Name" : "Client Name"} htmlFor="rc-client" hint="Auto-filled">
                   <div className="relative">
                     <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     <Input id="rc-client" value={data.clientName} readOnly className="pl-9" />
                   </div>
                 </Field>
+                )}
                 <Field label="Contact Person" htmlFor="rc-contact" required error={e("contact.name")}>
                   <div className="relative">
                     <UserRound className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -482,7 +498,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
             ]}
           />
           <div id="rc-bottom-panel" role="tabpanel">
-            {tab === "history" && <EditHistory orderId={orderId} revisions={data.revisions} />}
+            {tab === "history" && <EditHistory orderId={orderId} source={source} revisions={data.revisions} />}
             {tab === "send" &&
               (data.latest && data.emailDraft ? (
                 <>
@@ -524,12 +540,23 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
  */
 export interface RateCardStepProps {
   onContinue?: () => void;
+  /** Rate Card Creation (no order): where its PDFs are read from, and its own save. */
+  source?: FileSource;
+  save?: (v: QuotationValues) => Promise<{ saved: boolean; revision: Revision }>;
+  /** Rate Card Creation: the selected company (preview), and its picker in place of the read-only Company Name. */
+  clientName?: string;
+  company?: (fill: (d: { contactName: string; address: string } | null) => void) => React.ReactNode;
 }
 
 /**
  * Rate card for an order: left live PDF preview, right editor, bottom edit history (previous vs updated values).
  * `withEmail` adds the email composer / history tabs (old Sales Handling screen); Order Management only downloads the PDF.
  */
+/** The editor for a rate card state loaded elsewhere (Rate Card Creation). */
+export function RateCardEditor({ data, step }: { data: QuotationState; step: RateCardStepProps }) {
+  return <Editor data={data} orderId={data.orderId} withEmail={false} step={step} />;
+}
+
 export function RateCardStage({ orderId, withEmail = false, step }: { orderId: string; withEmail?: boolean; step?: RateCardStepProps }) {
   const q = useQuotation(orderId);
   if (q.isPending)
