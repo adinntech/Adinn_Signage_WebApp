@@ -75,18 +75,23 @@ export function OrderClientForm({
   const [requestKey] = useState(newRequestKey);
   const dq = useDebounced(query);
   const crm = useClients({ q: dq, status: "ACTIVE", source: "CRM", limit: 20, sort: "name" }, flag === "NEW");
-  const zoho = useZohoClients(dq, flag === "EXISTING");
+  // Create Project (Client Servicing): nothing is listed until something is typed; then the matches of what is typed.
+  const typed = query.trim();
+  const mustType = zohoOnly && !typed;
+  const zoho = useZohoClients(dq, flag === "EXISTING" && (!zohoOnly || !!dq.trim()));
+  // Rows of an earlier search (still typing, or the previous answer shown while the new one loads) are not offered.
+  const stale = zohoOnly && (dq.trim() !== typed || zoho.isPlaceholderData);
   const details = useClient(flag === "NEW" ? picked?.value : undefined);
   const zohoDetail = useZohoClient(flag === "EXISTING" ? picked?.value : undefined);
   const create = useCreateOrder();
 
-  const zohoRows = zoho.data?.items ?? [];
+  const zohoRows = mustType || stale ? [] : (zoho.data?.items ?? []);
   const opts: SearchOption[] =
     flag === "NEW"
       ? (crm.data?.data ?? []).map((c) => ({ value: c._id, label: c.name, sublabel: [c.clientNo, c.clientName, c.phone].filter(Boolean).join(" · ") }))
       : zohoRows.map((z) => ({ value: z.zohoId, label: z.name, sublabel: [z.clientNo ? `In CRM as ${z.clientNo}` : null, z.clientName, z.gstin, z.city].filter(Boolean).join(" · ") }));
 
-  const zohoPick = flag === "EXISTING" ? zohoRows.find((z) => z.zohoId === picked?.value) : undefined;
+  const zohoPick = flag === "EXISTING" ? (zoho.data?.items ?? []).find((z) => z.zohoId === picked?.value) : undefined;
   const crmPick = flag === "NEW" && details.data?._id === picked?.value ? details.data : undefined;
   // The full read carries the contact persons; the search row shows meanwhile. Only the selected customer's detail is used.
   const zohoView = (zohoDetail.data?.zohoId === picked?.value ? zohoDetail.data : undefined) ?? zohoPick;
@@ -208,10 +213,10 @@ export function OrderClientForm({
                     setZohoClash(null);
                   }}
                   onClear={() => setPicked(null)}
-                  loading={flag === "NEW" ? crm.isFetching : zoho.isFetching}
+                  loading={flag === "NEW" ? crm.isFetching : !mustType && (zoho.isFetching || stale)}
                   invalid={!picked && !!error}
                   placeholder={flag === "NEW" ? "Search company name or Client ID..." : "Search Zoho customer name, Client ID or GST number..."}
-                  emptyText={flag === "NEW" ? "No client in Client Management matches. Use Add New Client above." : zoho.isError ? errorMessage(zoho.error) : "No Zoho customer matches."}
+                  emptyText={flag === "NEW" ? "No client in Client Management matches. Use Add New Client above." : mustType ? "Type to search Zoho clients" : zoho.isError ? errorMessage(zoho.error) : "No Zoho customer matches."}
                   actionPlacement="top"
                   action={
                     flag === "NEW"

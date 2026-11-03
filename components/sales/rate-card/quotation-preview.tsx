@@ -48,10 +48,13 @@ const rowHeight = (it: Item, i: number) =>
   Math.max(30, Math.max(lines(String(i + 1), 5), lines(it.particulars || "-", 34), lines(it.specifications || "-", 48), lines(rateText(it.quotedRate || 0, it.unit), 12)) * 10.8 + 16);
 const termHeight = (t: string) => Math.max(18, lines(t, 108) * 10.2 + 8);
 
-/** Splits the rate card into A4 pages the same way the PDF flows: table rows, then the terms card (continued if long). */
-function paginate(items: Item[], terms: string[]): PageSpec[] {
+/**
+ * Splits the rate card into A4 pages the same way the PDF flows: table rows, then the terms card (continued if long).
+ * `top`: how much taller than its 132pt minimum the Bill To card is (a long address), as the PDF sizes it.
+ */
+function paginate(items: Item[], terms: string[], top = 0): PageSpec[] {
   const pages: PageSpec[] = [{ first: true, start: 0, items: [], terms: null }];
-  let y = 315; // first-page table body starts below the Bill To / Quote cards and the subject bar
+  let y = 315 + top; // first-page table body starts below the Bill To / Quote cards and the subject bar
   items.forEach((it, i) => {
     const h = rowHeight(it, i);
     if (y + h > BOTTOM && pages[pages.length - 1]!.items.length) {
@@ -120,7 +123,7 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
                 <div className="mt-[4px] border-b" style={{ borderColor: LINE }} />
                 <p className="mt-[9px] break-words text-[10.5px] font-bold">{clientName}</p>
                 {v.clientAddress && (
-                  <p className="mt-[4px] break-words text-[8.5px]" style={{ color: MUTED }}>
+                  <p className="mt-[4px] whitespace-pre-line break-words text-[8.5px]" style={{ color: MUTED }}>
                     {v.clientAddress}
                   </p>
                 )}
@@ -284,7 +287,9 @@ export function QuotationPreview({
   }, [fitWidth]);
   const scale = fitWidth && areaW ? Math.max(0.3, areaW / W) : zoom;
   const terms = useMemo(() => termsList(values.terms), [values.terms]);
-  const pages = useMemo(() => paginate(values.items ?? [], terms), [values.items, terms]);
+  // Bill To card height as in the PDF (40 + name + address + Kind Attn + 24, at least 132).
+  const addrTop = Math.max(0, 88 + (values.clientAddress?.trim() ? lines(values.clientAddress, 50) * 10.5 : 0) - 132);
+  const pages = useMemo(() => paginate(values.items ?? [], terms, addrTop), [values.items, terms, addrTop]);
   const current = Math.min(page, pages.length - 1);
   const label = dirty || !latest ? `${latest ? latest.label + " + unsaved" : "Draft"}` : latest.label;
   const pdfId = latest?.pdf?.fileId;

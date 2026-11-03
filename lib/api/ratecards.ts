@@ -123,6 +123,8 @@ export interface QuotationState {
   quotationRef: string;
   company: CompanyInfo;
   clientName: string;
+  /** Client Servicing Rate Card step: the client's full address and its city (null elsewhere). */
+  billTo?: { full: string | null; city: string | null } | null;
   contacts: ClientContact[];
   latest: Revision | null;
   draft: (Omit<QuotationValues, "quotationDate"> & { clientName: string; quotationDate: string }) | null;

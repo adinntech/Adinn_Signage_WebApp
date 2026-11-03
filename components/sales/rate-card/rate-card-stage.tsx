@@ -16,11 +16,12 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { Tabs } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile, openFile } from "@/lib/api/files";
-import { RATE_UNITS, useQuotation, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit } from "@/lib/api/ratecards";
+import { RATE_UNITS, useQuotation, useRateItems, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit } from "@/lib/api/ratecards";
 import { useSendEmail } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, toDateInput } from "@/lib/format";
@@ -65,11 +66,20 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
-function toForm(d: QuotationState): FormValues {
+/**
+ * `typedContact` (Rate Card step): the contact is typed, so a new rate card starts blank (no Zoho contact prefill).
+ * Same step: a saved Bill To that is empty or only the city (the earlier default) starts as the full address instead;
+ * an address typed by the user is kept.
+ */
+function toForm(d: QuotationState, typedContact = false): FormValues {
   const src = d.latest ?? d.draft!;
+  const contact = typedContact && !d.latest ? null : src.contact;
+  const saved = (src.clientAddress ?? "").trim();
+  const full = d.billTo?.full;
+  const cityOnly = !saved || saved.toLowerCase() === (d.billTo?.city ?? "").trim().toLowerCase();
   return {
-    clientAddress: src.clientAddress ?? "",
-    contact: { name: src.contact?.name ?? "", designation: src.contact?.designation ?? "", phone: src.contact?.phone ?? "", email: src.contact?.email ?? "" },
+    clientAddress: full && cityOnly ? full : (src.clientAddress ?? ""),
+    contact: { name: contact?.name ?? "", designation: contact?.designation ?? "", phone: contact?.phone ?? "", email: contact?.email ?? "" },
     quotationDate: toDateInput(src.quotationDate) || toDateInput(new Date().toISOString()),
     subject: src.subject ?? "",
     items: (src.items ?? []).map((i) => ({
@@ -96,6 +106,9 @@ const toApi = (v: FormValues): QuotationValues => ({
   regards: { ...v.regards, mobile: normalizeMobile(v.regards.mobile) },
 });
 
+/** Today in India (Asia/Kolkata), YYYY-MM-DD: the date a new Rate Card step version gets (set on the server). */
+const todayIst = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+
 type BottomTab = "history" | "send" | "emails";
 
 function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orderId: string; withEmail: boolean; step?: RateCardStepProps }) {
@@ -110,7 +123,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   const [tab, setTab] = useState<BottomTab>("history");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: toForm(data), mode: "onTouched" });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: toForm(data, !!step), mode: "onTouched" });
   const { register, control, handleSubmit, reset, setValue, setError, formState } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "items" });
   const watched = useWatch({ control }) as FormValues;
@@ -119,12 +132,29 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
 
   const latestId = data.latest?._id;
   useEffect(() => {
-    reset(toForm(data));
+    reset(toForm(data, !!step));
     // Reset only when a new revision arrives, not on every refetch of the same data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestId, reset]);
 
-  const previewValues = useMemo(() => toApi({ ...watched, items: (watched.items ?? []).map((i) => ({ ...i, quotedRate: Number(i?.quotedRate) || 0 })) } as FormValues), [watched]);
+  // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
+  // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).
+  const master = useRateItems({ limit: 500 }, !!step && !data.latest);
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!step || data.latest || seeded.current || !master.data || form.getValues("items").length) return;
+    seeded.current = true;
+    reset({
+      ...form.getValues(),
+      items: master.data.data.map((r) => ({ masterItemId: r._id, particulars: r.particulars, specifications: r.specifications ?? "", unit: r.unit, masterRate: r.rate, quotedRate: r.rate, overrideReason: "" })),
+    });
+  }, [step, data.latest, master.data, form, reset]);
+
+  // Rate Card step: a new version is dated today (IST); the saved one shows its own date.
+  const previewValues = useMemo(() => {
+    const v = toApi({ ...watched, items: (watched.items ?? []).map((i) => ({ ...i, quotedRate: Number(i?.quotedRate) || 0 })) } as FormValues);
+    return step && (dirty || !data.latest) ? { ...v, quotationDate: todayIst() } : v;
+  }, [watched, step, dirty, data.latest]);
   const e = (p: string) =>
     (p.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], formState.errors) as { message?: string } | undefined)?.message;
 
@@ -238,7 +268,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
             <section>
               <SectionTitle icon={ClipboardList} title="Client & Quotation Details" />
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-                <Field label="Client Name" htmlFor="rc-client" hint="Auto-filled">
+                <Field label={step ? "Company Name" : "Client Name"} htmlFor="rc-client" hint="Auto-filled">
                   <div className="relative">
                     <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     <Input id="rc-client" value={data.clientName} readOnly className="pl-9" />
@@ -247,6 +277,10 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                 <Field label="Contact Person" htmlFor="rc-contact" required error={e("contact.name")}>
                   <div className="relative">
                     <UserRound className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                    {/* Rate Card step: typed (saved with this rate card for "Kind Attn"; not a Zoho contact). */}
+                    {step ? (
+                      <Input id="rc-contact" className="pl-9" placeholder="Enter the contact person's name" aria-invalid={!!e("contact.name")} {...register("contact.name")} />
+                    ) : (
                     <Select
                       id="rc-contact"
                       className="pl-9"
@@ -266,18 +300,27 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                       ))}
                       {watched.contact?.name && !data.contacts.some((c) => c.name === watched.contact?.name) && <option value={watched.contact.name}>{watched.contact.name} (saved)</option>}
                     </Select>
+                    )}
                   </div>
                 </Field>
+                {/* Rate Card step: no date input; each new version is dated today (IST) when it is saved. */}
+                {!step && (
                 <Field label="Quotation Date" htmlFor="rc-date" required error={e("quotationDate")}>
                   <div className="relative">
                     <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     <Input id="rc-date" type="date" className="pl-9" aria-invalid={!!e("quotationDate")} {...register("quotationDate")} />
                   </div>
                 </Field>
-                <Field label="Bill To (City / Address)" htmlFor="rc-address" error={e("clientAddress")}>
+                )}
+                <Field label="Bill To (City / Address)" htmlFor="rc-address" error={e("clientAddress")} className={step ? "md:col-span-2" : undefined}>
                   <div className="relative">
-                    <MapPin className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                    <Input id="rc-address" className="pl-9" {...register("clientAddress")} />
+                    <MapPin className={cn("pointer-events-none absolute left-3 size-4 text-muted-foreground", step ? "top-3" : "top-1/2 -translate-y-1/2")} aria-hidden />
+                    {/* Rate Card step: the full address, wrapping. */}
+                    {step ? (
+                      <Textarea id="rc-address" rows={3} maxLength={500} className="min-h-20 pl-9" aria-invalid={!!e("clientAddress")} {...register("clientAddress")} />
+                    ) : (
+                      <Input id="rc-address" className="pl-9" {...register("clientAddress")} />
+                    )}
                   </div>
                 </Field>
                 <Field label="Subject" htmlFor="rc-subject" required error={e("subject")} className="md:col-span-2 2xl:col-span-4">
@@ -290,11 +333,13 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
               <SectionTitle
                 icon={ListChecks}
                 title="Signage Items & Pricing"
-                description="Copy from the master rate card and adjust quoted rates. A reason is required when the quoted rate differs from the master rate."
+                description={step ? undefined : "Copy from the master rate card and adjust quoted rates. A reason is required when the quoted rate differs from the master rate."}
                 action={
-                  <Button type="button" variant="brand-outline" size="sm" onClick={() => setCopyOpen(true)}>
-                    <Copy className="size-4" aria-hidden /> Copy From Master Rate Card
-                  </Button>
+                  step ? undefined : (
+                    <Button type="button" variant="brand-outline" size="sm" onClick={() => setCopyOpen(true)}>
+                      <Copy className="size-4" aria-hidden /> Copy From Master Rate Card
+                    </Button>
+                  )
                 }
               />
               {typeof formState.errors.items?.message === "string" && (
@@ -322,7 +367,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     {fields.length === 0 && (
                       <tr>
                         <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                          No items yet. Copy from the master rate card or add a custom item.
+                          {step ? (master.isFetching ? "Loading the rates from Rate Card Management…" : "No items yet. Add a custom item.") : "No items yet. Copy from the master rate card or add a custom item."}
                         </td>
                       </tr>
                     )}
