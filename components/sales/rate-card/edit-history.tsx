@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { openFile, type FileSource } from "@/lib/api/files";
 import { RATE_UNITS, type Revision, type RevisionChange } from "@/lib/api/ratecards";
-import { formatDateTime } from "@/lib/format";
+import { formatCurrency, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const TYPE: Record<RevisionChange["changeType"], { tone: Tone; label: string }> = {
@@ -19,6 +19,8 @@ const TYPE: Record<RevisionChange["changeType"], { tone: Tone; label: string }> 
   REMOVED: { tone: "danger", label: "Removed" },
 };
 const show = (v: unknown) => (v === null || v === undefined || v === "" ? "-" : String(v));
+/** Rate fields (quoted / master rate) read as rupees, e.g. Previous ₹300 -> Updated ₹250. */
+const showValue = (field: string, v: unknown) => (typeof v === "number" && /^(Quoted|Master) Rate/.test(field) ? formatCurrency(v) : show(v));
 const plain = (html?: string) => (html ?? "").replace(/<li>/gi, "\n• ").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
 
 /**
@@ -111,8 +113,8 @@ export function EditHistory({ orderId, source, revisions }: { orderId: string; s
                     <td className="px-3 py-2.5">{r.editedBy?.name}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{formatDateTime(r.createdAt)}</td>
                     <td className="px-3 py-2.5 font-medium">{c.field}</td>
-                    <td className="max-w-56 whitespace-pre-line px-3 py-2.5 text-muted-foreground">{show(c.oldValue)}</td>
-                    <td className="max-w-56 whitespace-pre-line px-3 py-2.5">{show(c.newValue)}</td>
+                    <td className="max-w-56 whitespace-pre-line px-3 py-2.5 text-muted-foreground">{showValue(c.field, c.oldValue)}</td>
+                    <td className="max-w-56 whitespace-pre-line px-3 py-2.5">{showValue(c.field, c.newValue)}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone={TYPE[c.changeType].tone}>{TYPE[c.changeType].label}</Badge>
                     </td>

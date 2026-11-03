@@ -65,6 +65,8 @@ const schema = z.object({
   }),
 });
 type FormValues = z.infer<typeof schema>;
+/** Client Servicing rate cards (Rate Card step, Rate Card Creation): the contact person is optional. */
+const csSchema = schema.extend({ contact: schema.shape.contact.extend({ name: z.string().trim().max(120) }) });
 
 /**
  * `typedContact` (Rate Card step): the contact is typed, so a new rate card starts blank (no Zoho contact prefill).
@@ -120,13 +122,28 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   // Rate Card Creation: its own PDFs and save; an order's rate card otherwise.
   const source: FileSource = step?.source ?? { orderId };
   const [saving, setSaving] = useState(false);
+  // Download / Preview of the saved PDF: which one is running, and what to say when there is nothing saved yet.
+  const [pdfBusy, setPdfBusy] = useState<"download" | "preview" | null>(null);
+  const savedPdf = data.latest?.pdf?.fileId ?? null;
+  const runPdf = async (kind: "download" | "preview") => {
+    if (!savedPdf || !data.latest) return toast("Save the rate card first: its PDF is generated when it is saved.", "info");
+    setPdfBusy(kind);
+    try {
+      if (kind === "download") await downloadFile(savedPdf, source, `${data.orderNo.replace(/\//g, "-")}_Rate_Card_${data.latest.label}.pdf`);
+      else await openFile(savedPdf, source);
+    } catch (err) {
+      toast(errorMessage(err), "error");
+    } finally {
+      setPdfBusy(null);
+    }
+  };
   const send = useSendEmail(orderId, "RATE_CARD");
   const [copyOpen, setCopyOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [tab, setTab] = useState<BottomTab>("history");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: toForm(data, !!step), mode: "onTouched" });
+  const form = useForm<FormValues>({ resolver: zodResolver(step ? csSchema : schema), defaultValues: toForm(data, !!step), mode: "onTouched" });
   const { register, control, handleSubmit, reset, setValue, setError, formState } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "items" });
   const watched = useWatch({ control }) as FormValues;
@@ -202,20 +219,17 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
       )}
       <Button
         variant="brand-outline"
-        disabled={!data.latest?.pdf?.fileId}
-        title={dirty ? "Downloads the last saved revision; save to include your changes" : undefined}
-        onClick={() =>
-          data.latest?.pdf?.fileId &&
-          downloadFile(data.latest.pdf.fileId, source, `${data.orderNo.replace(/\//g, "-")}_Rate_Card_${data.latest.label}.pdf`).catch((err) => toast(errorMessage(err), "error"))
-        }
+        loading={pdfBusy === "download"}
+        title={!savedPdf ? "Save the rate card first to generate its PDF" : dirty ? `Downloads saved version ${data.latest?.label}; save to include your changes` : undefined}
+        onClick={() => void runPdf("download")}
       >
         <Download className="size-4" aria-hidden /> Download PDF
       </Button>
       <Button
         variant="outline"
-        disabled={!data.latest?.pdf?.fileId}
-        title={dirty ? "Opens the last saved PDF; save to include your changes" : undefined}
-        onClick={() => data.latest?.pdf?.fileId && openFile(data.latest.pdf.fileId, source).catch((err) => toast(errorMessage(err), "error"))}
+        loading={pdfBusy === "preview"}
+        title={!savedPdf ? "Save the rate card first to generate its PDF" : dirty ? `Opens saved version ${data.latest?.label}; save to include your changes` : undefined}
+        onClick={() => void runPdf("preview")}
       >
         <Eye className="size-4" aria-hidden /> Preview PDF
       </Button>
@@ -290,12 +304,12 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                   </div>
                 </Field>
                 )}
-                <Field label="Contact Person" htmlFor="rc-contact" required error={e("contact.name")}>
+                <Field label="Contact Person" htmlFor="rc-contact" required={!step} hint={step ? "Optional: shown as Kind Attn on the PDF" : undefined} error={e("contact.name")}>
                   <div className="relative">
                     <UserRound className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     {/* Rate Card step: typed (saved with this rate card for "Kind Attn"; not a Zoho contact). */}
                     {step ? (
-                      <Input id="rc-contact" className="pl-9" placeholder="Enter the contact person's name" aria-invalid={!!e("contact.name")} {...register("contact.name")} />
+                      <Input id="rc-contact" className="pl-9" placeholder="Contact person's name (optional)" aria-invalid={!!e("contact.name")} {...register("contact.name")} />
                     ) : (
                     <Select
                       id="rc-contact"
