@@ -163,10 +163,11 @@ export function useQuotation(orderId: string) {
   return useQuery({ queryKey: ["sales", "order", orderId, "rate-card"], queryFn: () => api<QuotationState>(`/sales/orders/${orderId}/rate-card`) });
 }
 
-export function useSaveQuotation(orderId: string) {
+/** `path`: "recce/rate-card" saves through the Client Servicing Rate Card step (same save; completes the step). */
+export function useSaveQuotation(orderId: string, path: "rate-card" | "recce/rate-card" = "rate-card") {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: QuotationValues) => api<{ saved: boolean; revision: Revision }>(`/sales/orders/${orderId}/rate-card`, { method: "PUT", body: JSON.stringify(body) }),
+    mutationFn: (body: QuotationValues) => api<{ saved: boolean; revision: Revision }>(`/sales/orders/${orderId}/${path}`, { method: "PUT", body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sales", "order", orderId] });
       // The lead's checklist, rate card badge and negotiation rounds change with every save.

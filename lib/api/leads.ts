@@ -17,6 +17,16 @@ interface UserRef {
   role?: string;
 }
 
+/**
+ * Rate Card step of the Recce flow (Client Servicing orders created with it; null for older orders): done with the
+ * first Save & Continue, the latest saved version and when it was saved. The rate card stays editable.
+ */
+export interface RateCardStep {
+  doneAt: string | null;
+  label: string | null;
+  updatedAt: string | null;
+}
+
 export interface LeadInfo {
   stage: LeadStage;
   stageChangedAt?: string;
@@ -99,6 +109,7 @@ export interface LeadDetail {
     handoverReady?: boolean;
     /** Recce step 1 (Handover Type & Details) confirmed with Continue. */
     handoverDone?: boolean;
+    rateCard?: RateCardStep | null;
     missing?: string | null;
   };
   summary: { notes: number; documents: number; rateCardLabel: string | null; negotiationRounds: number; approvalDocuments: number };

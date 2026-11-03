@@ -8,6 +8,7 @@ import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
 import { EmailHistory } from "@/components/sales/email-history";
+import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
@@ -77,6 +78,15 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
           <li className="flex items-center gap-3 px-3 py-2.5 text-sm">
             <UserRound className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Client details and contact persons (in the message)
           </li>
+          {a?.rateCard && (
+            <AttachmentRow
+              icon={FileText}
+              name={a.rateCard.name ?? `Rate Card ${a.rateCard.label}.pdf`}
+              meta={`Rate Card ${a.rateCard.label} · the latest saved version goes with the email`}
+              onPreview={() => setPreview({ saved: a.rateCard!, source })}
+              onDownload={() => void downloadFile(a.rateCard!.fileId, source, a.rateCard!.name ?? "Rate_Card.pdf").catch(fail)}
+            />
+          )}
           {a?.shopExcel && (
             <AttachmentRow
               icon={FileSpreadsheet}
@@ -434,7 +444,7 @@ export function AssignedBanner({ r, projectLink = false }: { r: RecceState; proj
   );
 }
 
-export type RecceStep = "email" | "history" | "codes" | "handover" | "assign";
+export type RecceStep = "email" | "history" | "codes" | "handover" | "ratecard" | "assign";
 
 /**
  * Project Assign > Assign to Recce Team, one step at a time (opened from the mind map): the handover (same details as
@@ -480,16 +490,18 @@ export function RecceBranchPanel({
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
       {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked && !r.csFlow && !csUser} />}
       {step === "codes" && <CodesStep r={r} locked={locked} onSaved={onDone} />}
+      {/* Rate Card: never locked (updated at any time, also after the assignment); the first save moves on. */}
+      {step === "ratecard" && <RateCardStage orderId={r.orderId} step={{ onContinue: r.rateCard?.doneAt ? undefined : onDone }} />}
       {step === "handover" && (
         <>
           <HandoverTab order={detail.order} mode="recce" locked={locked} csEdit={!!r.csFlow || csUser} />
           {!locked && <StepFooter
               orderId={r.orderId}
-              next="Project Code Request Email"
+              next={r.rateCard ? "Rate Card" : "Project Code Request Email"}
               // The Recce route always takes the full handover of the selected type: its gaps come from the server
               // (handoverGaps with the full handover), never from the Client Servicing toggle.
               missing={r.handoverMissing ?? []}
-              // Saves step 1 as done (server-checked), then opens the email drawer.
+              // Saves step 1 as done (server-checked), then opens the next step (Rate Card, or the email on older orders).
               onContinue={async () => {
                 await confirm.mutateAsync(undefined);
                 onDone();

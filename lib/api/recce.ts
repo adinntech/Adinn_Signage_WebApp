@@ -3,6 +3,7 @@ import { api, apiBlob, apiPage, saveBlob } from "@/lib/api";
 import type { ClientContact, ClientFile, CustomField } from "./clients";
 import { qs } from "./common";
 import type { FileRef } from "./files";
+import type { RateCardStep } from "./leads";
 import type { HandoverDoc, HandoverMessage, HandoverShop, HandoverType, SentEmail, ShopListSummary } from "./sales";
 
 interface UserRef {
@@ -27,6 +28,7 @@ export interface RecceState {
   handoverReady?: boolean;
   /** Handover Type & Details confirmed with "Continue" (step 1 done): unlocks the request email. */
   handoverDone?: boolean;
+  rateCard?: (RateCardStep & { items: number }) | null;
   /** Gaps of the full handover (step 1). */
   handoverMissing?: string[];
   handoverType?: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
@@ -41,7 +43,8 @@ export interface RecceState {
   zohoClientId?: { value: string | null; fromZoho: boolean };
   /** Sent automatically with every request email (besides the client details and contacts in the message). */
   /** documents: chat files and (SO) Additional Documents (`so`), one copy of each. */
-  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; documents: (FileRef & { so?: boolean })[]; /** New Client only. */ gstCertificates?: FileRef[] };
+  /** rateCard: the latest saved Rate Card PDF (orders with the Rate Card step). */
+  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; rateCard?: (FileRef & { label: string }) | null; documents: (FileRef & { so?: boolean })[]; /** New Client only. */ gstCertificates?: FileRef[] };
   /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
   route: "HANDOVER" | "RECCE" | null;
   /** Client contacts with both a mobile number and an email (they go on the operations project). */

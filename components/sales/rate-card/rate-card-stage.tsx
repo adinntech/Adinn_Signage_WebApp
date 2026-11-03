@@ -98,11 +98,12 @@ const toApi = (v: FormValues): QuotationValues => ({
 
 type BottomTab = "history" | "send" | "emails";
 
-function Editor({ data, orderId, withEmail }: { data: QuotationState; orderId: string; withEmail: boolean }) {
+function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orderId: string; withEmail: boolean; step?: RateCardStepProps }) {
   const toast = useToast();
   const { can } = useAuth();
-  const editable = data.editable && can("sales:write");
-  const save = useSaveQuotation(orderId);
+  // Rate Card step: saved through the Client Servicing flow (the server checks who may save).
+  const editable = data.editable && (!!step || can("sales:write"));
+  const save = useSaveQuotation(orderId, step ? "recce/rate-card" : "rate-card");
   const send = useSendEmail(orderId, "RATE_CARD");
   const [copyOpen, setCopyOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -138,6 +139,7 @@ function Editor({ data, orderId, withEmail }: { data: QuotationState; orderId: s
         const r = await save.mutateAsync(toApi(v));
         if (r.saved) toast(`Rate card saved as ${r.revision.label}. PDF generated.`);
         else toast("No changes since the last saved revision.", "info");
+        step?.onContinue?.();
       } catch (err) {
         const fe = fieldErrorsOf(err);
         for (const [path, message] of Object.entries(fe)) setError(path as FieldPath<FormValues>, { message });
@@ -368,7 +370,7 @@ function Editor({ data, orderId, withEmail }: { data: QuotationState; orderId: s
           <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">
             {editable && (
               <Button variant="brand" onClick={onSave} loading={save.isPending}>
-                <Save className="size-4" aria-hidden /> Save Changes
+                <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
               </Button>
             )}
             <Button
@@ -461,10 +463,18 @@ function Editor({ data, orderId, withEmail }: { data: QuotationState; orderId: s
 }
 
 /**
+ * Client Servicing Rate Card step (Create Project): saves through the step's API. `onContinue`: the step is not done
+ * yet, so the button reads Save & Continue and a successful save (PDF generated) moves on. Afterwards: Save Changes.
+ */
+export interface RateCardStepProps {
+  onContinue?: () => void;
+}
+
+/**
  * Rate card for an order: left live PDF preview, right editor, bottom edit history (previous vs updated values).
  * `withEmail` adds the email composer / history tabs (old Sales Handling screen); Order Management only downloads the PDF.
  */
-export function RateCardStage({ orderId, withEmail = false }: { orderId: string; withEmail?: boolean }) {
+export function RateCardStage({ orderId, withEmail = false, step }: { orderId: string; withEmail?: boolean; step?: RateCardStepProps }) {
   const q = useQuotation(orderId);
   if (q.isPending)
     return (
@@ -474,5 +484,5 @@ export function RateCardStage({ orderId, withEmail = false }: { orderId: string;
       </div>
     );
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
-  return <Editor data={q.data} orderId={orderId} withEmail={withEmail} />;
+  return <Editor data={q.data} orderId={orderId} withEmail={withEmail} step={step} />;
 }

@@ -552,6 +552,8 @@ export function NewLeadWorkspace() {
    */
   const [created, setCreated] = useState<Order | null>(null);
   const lead = useLead(created?._id);
+  /** Step shown in that drawer: Assign Type & Details, then (orders with the step) the Rate Card. */
+  const [createdStep, setCreatedStep] = useState<"handover" | "ratecard">("handover");
 
   // Next keeps visited routes mounted (React Activity): start again from the client choice on every visit.
   useLayoutEffect(
@@ -559,6 +561,7 @@ export function NewLeadWorkspace() {
       setDrawer(true);
       setFlag(null);
       setCreated(null);
+      setCreatedStep("handover");
     },
     [],
   );
@@ -594,11 +597,13 @@ export function NewLeadWorkspace() {
         // Client Servicing: closes only with Close / Cancel (not Escape or a click outside), so nothing typed is lost.
         dismissible={!zohoOnly}
         variant="drawer"
-        className={created ? "max-w-6xl" : "max-w-3xl"}
-        title={created ? "Recce Team · Assign Type & Details" : zohoOnly ? "1. Create Project" : flag ? `1. Create Project · ${CLIENT_META[flag].label}` : "1. Create Project"}
+        className={created ? (createdStep === "ratecard" ? "max-w-[min(1500px,100vw)]" : "max-w-6xl") : "max-w-3xl"}
+        title={created ? (createdStep === "ratecard" ? "Recce Team · Rate Card" : "Recce Team · Assign Type & Details") : zohoOnly ? "1. Create Project" : flag ? `1. Create Project · ${CLIENT_META[flag].label}` : "1. Create Project"}
         description={
           created
-            ? `${created.orderNo} · assign type, client & contacts, shop list, communication`
+            ? createdStep === "ratecard"
+              ? `${created.orderNo} · signage items and rates with the live PDF preview; Save & Continue opens the Project Code Request Email`
+              : `${created.orderNo} · assign type, client & contacts, shop list, communication`
             : zohoOnly
               ? "Select the client company from Zoho. Saving creates the order and opens Recce Team · Assign Type & Details here."
               : flag
@@ -617,10 +622,18 @@ export function NewLeadWorkspace() {
             <ErrorState error={lead.error} onRetry={() => lead.refetch()} title={`Order ${created.orderNo} is created, but its lead could not be loaded`} />
           ) : (
             <RecceBranchPanel
+              key={createdStep}
               detail={lead.data}
-              step="handover"
-              // Continue confirms step 1; the request email opens on the lead page.
-              onDone={() => router.replace(leadUrl(created._id, "?stage=RECCE&step=email"))}
+              step={createdStep}
+              // Continue confirms step 1 and opens the Rate Card in this drawer (orders with the step); Save & Continue
+              // there (or Continue on older orders) opens the request email on the lead page.
+              onDone={() => {
+                if (createdStep === "handover" && lead.data.recce.rateCard) {
+                  setCreatedStep("ratecard");
+                  window.history.replaceState(null, "", leadUrl(created._id, "?stage=RECCE&step=ratecard"));
+                  void lead.refetch();
+                } else router.replace(leadUrl(created._id, "?stage=RECCE&step=email"));
+              }}
               onAssigned={() => router.replace(leadUrl(created._id))}
             />
           )
@@ -785,7 +798,7 @@ export function LeadWorkspace() {
 
   const stageState = selected && !isBranch(selected) ? d.stages.find((s) => s.key === selected) : undefined;
   const isCurrent = !!stageState && stageState.status === "CURRENT" && open;
-  const wide = selected === "RATE_CARD" || selected === "NEGOTIATION";
+  const wide = selected === "RATE_CARD" || selected === "NEGOTIATION" || (selected === "RECCE" && step === "ratecard");
   // A branch drawer shows one step: the one asked for when it may be opened, else why not.
   const branchStep = isBranch(selected) ? resolveStep(assignOf(d), selected, step) : null;
   const title =
@@ -815,7 +828,7 @@ export function LeadWorkspace() {
       if (branchStep.blocked) return <EmptyState icon={LockKeyhole} title="Not open yet" description={branchStep.blocked} />;
       if (selected === "RECCE") {
         const s = (branchStep.history ? "history" : branchStep.step.step) as RecceStep;
-        return <RecceBranchPanel key={s} detail={d} step={s} onDone={() => void finishStep("RECCE", s, s === "handover" || s === "email" || s === "codes")} onAssigned={assigned} />;
+        return <RecceBranchPanel key={s} detail={d} step={s} onDone={() => void finishStep("RECCE", s, s === "handover" || s === "ratecard" || s === "email" || s === "codes")} onAssigned={assigned} />;
       }
       return (
 <HandoverPanel key={branchStep.step.step} detail={d} onAssigned={assigned} />

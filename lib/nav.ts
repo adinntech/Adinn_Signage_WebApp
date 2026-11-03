@@ -171,11 +171,15 @@ export const ROLE_NAV: Record<string, NavItem[]> = {
   ],
 };
 
-// Client Servicing (active flow): Create Project only (the Lead Management screens at /create-project). My Orders
-// (/orders) and Settings stay implemented, not listed; to show them again add
+// Client Servicing (active flow): Create Project (the Lead Management screens at /create-project) and Rate Card
+// Management (the master rates page, ratecards:manage). My Orders (/orders) and Settings stay implemented, not listed;
+// to show them again add
 // { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" } and
 // { label: "Settings", icon: Settings, href: "/settings" } back here.
-ROLE_NAV.CLIENT_SERVICING = [{ label: "Create Project", icon: FolderKanban, href: "/create-project", permission: "sales:read" }];
+ROLE_NAV.CLIENT_SERVICING = [
+  { label: "Create Project", icon: FolderKanban, href: "/create-project", permission: "sales:read" },
+  { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
+];
 
 export function navFor(role: string | undefined, can: (p?: string) => boolean): NavItem[] {
   const own = role ? ROLE_NAV[role] : undefined;

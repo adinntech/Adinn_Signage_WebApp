@@ -2,18 +2,24 @@
 
 import { createContext, useContext, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronDown, CircleDashed, ClipboardList, Hash, Mail, Network, UserRoundCheck, Waypoints, type LucideIcon } from "lucide-react";
+import { ChevronDown, CircleDashed, ClipboardList, Download, Eye, Hash, Mail, Network, ReceiptIndianRupee, UserRoundCheck, Waypoints, type LucideIcon } from "lucide-react";
 import { CompanyDetailsCard, ContactsCard } from "@/components/clients/client-info";
 import { ClientTypeBadge } from "@/components/clients/client-type-badge";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { EmailHistory } from "@/components/sales/email-history";
+import { EditHistory } from "@/components/sales/rate-card/edit-history";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DetailItem } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
+import { useToast } from "@/components/ui/toast";
+import { errorMessage } from "@/lib/api";
 import { clientIdOf } from "@/lib/api/clients";
+import { downloadFile, openFile } from "@/lib/api/files";
 import type { LeadDetail } from "@/lib/api/leads";
+import { rateText, useQuotation } from "@/lib/api/ratecards";
 import { useRecce } from "@/lib/api/recce";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -90,6 +96,65 @@ const Pending = ({ text }: { text: string }) => (
     <CircleDashed className="size-4 shrink-0" aria-hidden /> {text}
   </p>
 );
+
+/** Rate Card step: the latest saved version (lines, who / when), its PDF, and every version with what changed. */
+function RateCardSaved({ orderId }: { orderId: string }) {
+  const q = useQuotation(orderId);
+  const toast = useToast();
+  if (q.isPending) return <Skeleton className="h-24" />;
+  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
+  const l = q.data.latest;
+  if (!l) return <Pending text="Not saved yet." />;
+  const pdf = l.pdf;
+  const fail = (e: unknown) => toast(errorMessage(e), "error");
+  return (
+    <>
+      <Card className="space-y-4 p-5">
+        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <DetailItem label="Version">{l.label}</DetailItem>
+          <DetailItem label="Quotation Ref">
+            <span className="font-mono">{l.quotationRef}</span>
+          </DetailItem>
+          <DetailItem label="Saved By">{`${l.editedBy?.name ?? "—"} · ${when(l.createdAt)}`}</DetailItem>
+          <DetailItem label="Contact Person">{l.contact?.name || "—"}</DetailItem>
+        </dl>
+        <div className="overflow-auto rounded-lg border border-border">
+          <table className="w-full min-w-[480px] text-sm">
+            <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th scope="col" className="px-3 py-2">#</th>
+                <th scope="col" className="px-3 py-2">Signage Particulars</th>
+                <th scope="col" className="px-3 py-2">Specifications</th>
+                <th scope="col" className="px-3 py-2 text-right">Rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {l.items.map((i, k) => (
+                <tr key={k}>
+                  <td className="px-3 py-2 text-muted-foreground">{k + 1}</td>
+                  <td className="px-3 py-2 font-medium">{i.particulars}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{i.specifications || "—"}</td>
+                  <td className="px-3 py-2 text-right font-semibold">₹ {rateText(i.quotedRate, i.unit)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {pdf?.fileId && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => void openFile(pdf.fileId, { orderId }).catch(fail)}>
+              <Eye className="size-4" aria-hidden /> Preview PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void downloadFile(pdf.fileId, { orderId }, pdf.name ?? `${q.data.orderNo}_Rate_Card_${l.label}.pdf`).catch(fail)}>
+              <Download className="size-4" aria-hidden /> Download PDF
+            </Button>
+          </div>
+        )}
+      </Card>
+      <EditHistory orderId={orderId} revisions={q.data.revisions} />
+    </>
+  );
+}
 
 /**
  * Lead Management > Full Details: everything saved on the lead, read-only, in workflow order (Project created ->
@@ -177,6 +242,12 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
           <Pending text="Saved once a Project Assign route is started." />
         )}
       </Section>
+
+      {d.recce.rateCard && (
+        <Section n={++n} icon={ReceiptIndianRupee} title={`Rate Card${by}`} state={d.recce.rateCard.doneAt ? "done" : "pending"} meta={d.recce.rateCard.label ? `${d.recce.rateCard.label} · last saved ${when(d.recce.rateCard.updatedAt)}` : null}>
+          <RateCardSaved orderId={o._id} />
+        </Section>
+      )}
 
       {recceUsed ? (
         <>

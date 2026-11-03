@@ -1,5 +1,5 @@
-import { ClipboardList, Hash, Mail, UserRoundCheck, type LucideIcon } from "lucide-react";
-import type { LeadShops } from "@/lib/api/leads";
+import { ClipboardList, Hash, Mail, ReceiptIndianRupee, UserRoundCheck, type LucideIcon } from "lucide-react";
+import type { LeadShops, RateCardStep } from "@/lib/api/leads";
 import type { RecceState } from "@/lib/api/recce";
 import { ASSIGN_META, EMAIL_COLOR } from "./stage-meta";
 
@@ -43,6 +43,8 @@ export interface AssignState {
     handoverDone?: boolean;
     /** Client Servicing with the handover details received from the BD: no Handover Type & Details step. */
     skipHandover?: boolean;
+    /** Rate Card step (orders created with it; older orders have none). */
+    rateCard?: RateCardStep | null;
     missing?: string | null;
   };
 }
@@ -135,51 +137,68 @@ function csSteps(a: AssignState): ChainStep[] {
 }
 
 /**
- * Recce route: Handover Type & Details first (shared with Client Servicing), then the project code request email (it
- * carries the handover), the codes (+ Client ID for a New client), and the Recce / Operations person.
+ * Recce route: Handover Type & Details first (shared with Client Servicing), then the Rate Card (Client Servicing orders
+ * created with it), the project code request email (it carries the handover and the rate card PDF), the codes (+ Client
+ * ID for a New client), and the Recce / Operations person. Steps an order does not have are left out before the
+ * sequence, so Now / Next follow the steps shown.
  */
 function recceSteps(a: AssignState): ChainStep[] {
   const r = a.recce;
+  const rc = r.rateCard ?? null;
   const sent = r.emails?.count ?? 0;
-  const labels = ["Assign Type & Details", "Project Code Request Email", "Project Code & Estimation Code", "Assign to Recce / Operations"];
-  const s = sequence([!!r.skipHandover || !!r.handoverDone || sent > 0, !!r.emails?.done, !!r.projectCode, !!r.assignee], labels, gateOf(a, "RECCE"));
   const last = r.emails?.lastStatus === "SKIPPED" ? "not sent (mail off)" : r.emails?.lastStatus === "FAILED" ? "failed" : "sent";
-  return [
+  const all: (Omit<ChainStep, "state" | "blocked"> & { done: boolean })[] = [
     {
       step: "handover",
-      label: labels[0]!,
+      label: "Assign Type & Details",
       desc: "Type, client & contacts, shop list, communication",
       icon: ClipboardList,
-      ...s[0]!,
-      info: typeInfo(a) ?? (s[0]!.state === "CURRENT" ? r.missing : null),
-      at: s[0]!.state === "DISABLED" ? null : a.cs.updatedAt,
+      done: !!r.skipHandover || !!r.handoverDone || sent > 0,
+      at: a.cs.updatedAt,
       atLabel: "Updated",
       types: a.cs.type ?? null,
     },
     {
+      step: "ratecard",
+      label: "Rate Card",
+      desc: "Signage items and rates with the live PDF preview; the PDF goes with the request email",
+      icon: ReceiptIndianRupee,
+      done: !!rc?.doneAt,
+      info: rc?.label ? `${rc.label} saved` : null,
+      at: rc?.updatedAt ?? rc?.doneAt ?? null,
+      atLabel: "Updated",
+    },
+    {
       step: "email",
-      label: labels[1]!,
-      desc: "Client, contacts, shop Excel and documents go automatically",
+      label: "Project Code Request Email",
+      desc: rc ? "Client, contacts, rate card PDF, shop Excel and documents go automatically" : "Client, contacts, shop Excel and documents go automatically",
       icon: Mail,
       color: EMAIL_COLOR,
-      ...s[1]!,
+      done: !!r.emails?.done,
       info: sent ? `${sent} email${sent === 1 ? "" : "s"} · last ${last}` : null,
       at: r.emails?.lastSentAt ?? null,
       atLabel: "Last",
-      history: { info: sent ? `${sent} recorded` : "Opens after the first email", enabled: sent > 0 && s[1]!.state !== "DISABLED" },
     },
     {
       step: "codes",
-      label: labels[2]!,
+      label: "Project Code & Estimation Code",
       desc: "Project code, EST- code and the Client ID (new clients)",
       icon: Hash,
-      ...s[2]!,
+      done: !!r.projectCode,
       info: r.projectCode ? [r.projectCode, r.estimationCode, r.clientId ? `Client ID ${r.clientId}` : null].filter(Boolean).join(" · ") : null,
       at: r.codesSavedAt,
       atLabel: "Saved",
     },
-    { step: "assign", label: labels[3]!, desc: "Person, dates, location and notes", icon: UserRoundCheck, ...s[3]!, info: who(r), at: r.assignedAt, atLabel: "Assigned" },
-  ].filter((x) => !(r.skipHandover && x.step === "handover"));
+    { step: "assign", label: "Assign to Recce / Operations", desc: "Person, dates, location and notes", icon: UserRoundCheck, done: !!r.assignee, info: who(r), at: r.assignedAt, atLabel: "Assigned" },
+  ];
+  const shown = all.filter((x) => !(r.skipHandover && x.step === "handover") && !(!rc && x.step === "ratecard"));
+  const s = sequence(shown.map((x) => x.done), shown.map((x) => x.label), gateOf(a, "RECCE"));
+  return shown.map((x, i) => {
+    const st = s[i]!;
+    if (x.step === "handover") return { ...x, ...st, info: typeInfo(a) ?? (st.state === "CURRENT" ? r.missing : null), at: st.state === "DISABLED" ? null : x.at };
+    if (x.step === "email") return { ...x, ...st, history: { info: sent ? `${sent} recorded` : "Opens after the first email", enabled: sent > 0 && st.state !== "DISABLED" } };
+    return { ...x, ...st };
+  });
 }
 
 /**
@@ -213,6 +232,7 @@ export const csRecceAssign = (r: RecceState): AssignState => ({
     handoverReady: r.handoverReady,
     handoverDone: r.handoverDone,
     skipHandover: !!r.csFlow?.handoverSent,
+    rateCard: r.rateCard ?? null,
     missing: r.missing[0] ?? null,
   },
 });
