@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, printFile, type FileSource } from "@/lib/api/files";
-import { rateText, termsList, type CompanyInfo, type QuotationValues, type Revision } from "@/lib/api/ratecards";
+import { rateCardFileName, rateText, termsList, type CompanyInfo, type QuotationValues, type Revision } from "@/lib/api/ratecards";
 import { cn } from "@/lib/utils";
 
 /* Same A4 geometry (points) as the generated PDF (backend ratecards/quotation.pdf.ts). */
@@ -46,7 +46,8 @@ function lines(text: string, cap: number) {
 }
 const rowHeight = (it: Item, i: number) =>
   Math.max(30, Math.max(lines(String(i + 1), 5), lines(it.particulars || "-", 34), lines(it.specifications || "-", 48), lines(rateText(it.quotedRate || 0, it.unit), 12)) * 10.8 + 16);
-const termHeight = (t: string) => Math.max(18, lines(t, 108) * 10.2 + 8);
+// Terms rows as in the PDF: 7pt above / below the text, 11.5pt lines (7.5pt text + 3pt gap), at least 24pt.
+const termHeight = (t: string) => Math.max(24, lines(t, 104) * 11.5 + 14);
 
 /**
  * Splits the rate card into A4 pages the same way the PDF flows: table rows, then the terms card (continued if long).
@@ -67,16 +68,16 @@ function paginate(items: Item[], terms: string[], top = 0): PageSpec[] {
   y += 19;
   let k = 0;
   while (k < terms.length) {
-    if (y + 44 + termHeight(terms[k]!) + 10 > BOTTOM) {
+    if (y + 48 + termHeight(terms[k]!) + 14 > BOTTOM) {
       pages.push({ first: false, start: items.length, items: [], terms: null });
       y = 126;
     }
     let fit = k;
-    let h = 44;
-    while (fit < terms.length && y + h + termHeight(terms[fit]!) + 10 <= BOTTOM) h += termHeight(terms[fit++]!) + 5;
+    let h = 48;
+    while (fit < terms.length && y + h + termHeight(terms[fit]!) + 14 <= BOTTOM) h += termHeight(terms[fit++]!) + 6;
     if (fit === k) fit = k + 1; // a single very long term still goes somewhere
     pages[pages.length - 1]!.terms = { from: k, to: fit };
-    y += h + 15;
+    y += h + 14;
     k = fit;
   }
   return pages;
@@ -205,20 +206,17 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
         )}
 
         {spec.terms && (
-          <div className="rounded-[10px] border px-[11px] pb-[10px]" style={{ borderColor: LINE, marginTop: spec.items.length || spec.first ? 19 : 4 }}>
-            <div className="flex h-[35px] items-center justify-between border-b px-[4px]" style={{ borderColor: LINE }}>
+          <div className="rounded-[10px] border px-[16px] pb-[14px]" style={{ borderColor: LINE, marginTop: spec.items.length || spec.first ? 19 : 4 }}>
+            <div className="-mx-[2px] flex h-[35px] items-center justify-between border-b" style={{ borderColor: LINE }}>
               <span className="text-[11px] font-bold">{spec.terms.from === 0 ? "Terms & Conditions" : "Terms & Conditions (continued)"}</span>
-              <span className="rounded-full border px-[9px] py-[3px] text-[7.5px] font-bold" style={{ color: RED, background: "#FDF0F0", borderColor: "#F4CFCF" }}>
-                Subject To Availability
-              </span>
             </div>
-            <ol className="mt-[9px] space-y-[5px]">
+            <ol className="mt-[13px] space-y-[6px]">
               {terms.slice(spec.terms.from, spec.terms.to).map((t, i) => (
-                <li key={i} className="flex min-h-[18px] items-center gap-[10px] rounded-[4px] border px-[8px] py-[3px] text-[7.5px]" style={{ background: "#F7F7F8", borderColor: "#ECEDEF" }}>
+                <li key={i} className="flex min-h-[24px] items-center gap-[14px] rounded-[4px] border px-[10px] py-[7px] text-[7.5px]" style={{ background: "#F7F7F8", borderColor: "#ECEDEF" }}>
                   <span className="flex h-[11px] w-[23px] shrink-0 items-center justify-center rounded-[3px] text-[6.5px] font-bold text-white" style={{ background: "#1F2433" }}>
                     {String(spec.terms!.from + i + 1).padStart(2, "0")}
                   </span>
-                  <span className="leading-[10px]">{t}</span>
+                  <span className="leading-[11.5px]">{t}</span>
                 </li>
               ))}
             </ol>
@@ -257,7 +255,6 @@ export function QuotationPreview({
   orderId,
   source,
   values,
-  quotationRef,
   clientName,
   company,
   latest,
@@ -268,7 +265,8 @@ export function QuotationPreview({
   /** Where the saved PDFs are read from (default: the order). */
   source?: FileSource;
   values: QuotationValues;
-  quotationRef: string;
+  /** Kept for callers; the download name is the company and today's date (rateCardFileName). */
+  quotationRef?: string;
   clientName: string;
   company: CompanyInfo;
   latest: Revision | null;
@@ -337,7 +335,7 @@ export function QuotationPreview({
           </>
         )}
         <div className="ml-auto flex flex-wrap gap-1.5">
-          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, src, `${quotationRef.replace(/\//g, "-")}_${latest?.label ?? ""}.pdf`))}>
+          <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Downloads the last saved revision" : undefined} onClick={() => pdfId && run(() => downloadFile(pdfId, src, rateCardFileName(clientName), rateCardFileName(clientName)))}>
             <Download className="size-4" aria-hidden /> Download
           </Button>
           <Button variant="outline" size="sm" disabled={!pdfId} title={dirty ? "Prints the last saved revision" : undefined} onClick={() => pdfId && run(() => printFile(pdfId, src))}>

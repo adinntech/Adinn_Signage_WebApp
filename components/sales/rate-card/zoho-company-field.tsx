@@ -62,9 +62,12 @@ export function ZohoCompanyField({
   };
 
   return (
-    <Field label="Client Company (Zoho)" htmlFor="rcc-company" required error={error ?? readError} className="md:col-span-2" hint={reading ? "Reading the company's contact and address…" : undefined}>
+    <Field label="Client Company (Zoho)" htmlFor="rcc-zoho-search" required error={error ?? readError} className="md:col-span-2" hint={reading ? "Reading the company's contact and address…" : undefined}>
       <SearchSelect
-        id="rcc-company"
+        // Search-specific id / name / type: the browser does not offer saved addresses or companies here.
+        id="rcc-zoho-search"
+        name="zoho_client_search"
+        inputType="search"
         value={value}
         options={options}
         query={query}

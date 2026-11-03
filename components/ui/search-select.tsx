@@ -27,6 +27,8 @@ export function SearchSelect({
   action,
   actionPlacement = "bottom",
   disabled,
+  name,
+  inputType = "text",
 }: {
   id: string;
   value: SearchOption | null;
@@ -46,6 +48,12 @@ export function SearchSelect({
   /** "top": the action is the first row, shown whatever the search finds (e.g. "+ Add New Client"). */
   actionPlacement?: "top" | "bottom";
   disabled?: boolean;
+  /**
+   * `name` / `inputType: "search"`: for a field whose label the browser reads as an address or company (it then offers
+   * its saved addresses over this list); a search-specific name and type keep browser autofill off.
+   */
+  name?: string;
+  inputType?: "text" | "search";
 }) {
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(0);
@@ -103,6 +111,8 @@ export function SearchSelect({
         role="combobox"
         aria-expanded={open}
         aria-controls={listId}
+        type={inputType}
+        name={name}
         aria-autocomplete="list"
         aria-invalid={invalid || undefined}
         aria-activedescendant={open ? (activeOption ? `${id}-opt-${active - shift}` : onAction ? `${id}-action` : undefined) : undefined}
@@ -135,6 +145,8 @@ export function SearchSelect({
         className={cn(
           "flex h-11 w-full rounded-lg border border-border bg-surface pl-9 pr-9 text-sm shadow-soft placeholder:text-muted-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-[invalid=true]:border-danger",
           onClear && value && "pr-16",
+          // No native clear (×) of a search input: the field has its own.
+          inputType === "search" && "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none",
           inputClassName,
         )}
       />

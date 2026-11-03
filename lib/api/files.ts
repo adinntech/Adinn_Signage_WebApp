@@ -57,8 +57,8 @@ async function fetchBlob(url: string): Promise<Blob | null> {
   }
 }
 
-/** Download a stored file under its original name. */
-export async function downloadFile(fileId: string, src: FileSource, fallbackName = "file") {
+/** Download a stored file under its original name, or under `saveAs` when given (e.g. the rate card PDF name). */
+export async function downloadFile(fileId: string, src: FileSource, fallbackName = "file", saveAs?: string) {
   const { url, name } = await fileUrl(fileId, src);
   const blob = await fetchBlob(url);
   if (!blob) {
@@ -68,7 +68,7 @@ export async function downloadFile(fileId: string, src: FileSource, fallbackName
   const href = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = href;
-  a.download = name || fallbackName;
+  a.download = saveAs || name || fallbackName;
   document.body.appendChild(a);
   a.click();
   a.remove();

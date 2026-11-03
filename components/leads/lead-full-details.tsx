@@ -19,7 +19,7 @@ import { errorMessage } from "@/lib/api";
 import { clientIdOf } from "@/lib/api/clients";
 import { downloadFile, openFile } from "@/lib/api/files";
 import type { LeadDetail } from "@/lib/api/leads";
-import { rateText, useQuotation } from "@/lib/api/ratecards";
+import { rateCardFileName, rateText, useQuotation } from "@/lib/api/ratecards";
 import { useRecce } from "@/lib/api/recce";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -145,7 +145,7 @@ function RateCardSaved({ orderId }: { orderId: string }) {
             <Button variant="outline" size="sm" onClick={() => void openFile(pdf.fileId, { orderId }).catch(fail)}>
               <Eye className="size-4" aria-hidden /> Preview PDF
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void downloadFile(pdf.fileId, { orderId }, pdf.name ?? `${q.data.orderNo}_Rate_Card_${l.label}.pdf`).catch(fail)}>
+            <Button variant="outline" size="sm" onClick={() => void downloadFile(pdf.fileId, { orderId }, rateCardFileName(q.data.clientName), rateCardFileName(q.data.clientName)).catch(fail)}>
               <Download className="size-4" aria-hidden /> Download PDF
             </Button>
           </div>

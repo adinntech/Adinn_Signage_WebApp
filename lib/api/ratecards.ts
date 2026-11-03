@@ -134,6 +134,19 @@ export interface QuotationState {
   mailEnabled: boolean;
 }
 
+/**
+ * Downloaded rate card PDF name: "<Company Name> - Rate Card - 03-NOV-2026.pdf", today's date in India (Asia/Kolkata),
+ * without characters a file name cannot have.
+ */
+export function rateCardFileName(company: string | null | undefined) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }).formatToParts(new Date());
+  const part = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const date = `${part("day")}-${part("month").slice(0, 3).toUpperCase()}-${part("year")}`;
+  // eslint-disable-next-line no-control-regex -- control characters are not allowed in file names
+  const name = (company ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/, "");
+  return `${name || "Client"} - Rate Card - ${date}.pdf`;
+}
+
 /* Same text rules as the PDF (backend ratecards/quotation.pdf.ts). */
 
 const num = (n: number) => String(Math.round(n * 100) / 100);

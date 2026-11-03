@@ -21,7 +21,7 @@ import { useToast } from "@/components/ui/toast";
 import { useUnsavedWarning } from "@/hooks/use-unsaved-warning";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile, openFile, type FileSource } from "@/lib/api/files";
-import { RATE_UNITS, useQuotation, useRateItems, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit, type Revision } from "@/lib/api/ratecards";
+import { RATE_UNITS, rateCardFileName, useQuotation, useRateItems, useSaveQuotation, type QuotationState, type QuotationValues, type RateItem, type RateUnit, type Revision } from "@/lib/api/ratecards";
 import { useSendEmail } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, toDateInput } from "@/lib/format";
@@ -129,7 +129,10 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     if (!savedPdf || !data.latest) return toast("Save the rate card first: its PDF is generated when it is saved.", "info");
     setPdfBusy(kind);
     try {
-      if (kind === "download") await downloadFile(savedPdf, source, `${data.orderNo.replace(/\//g, "-")}_Rate_Card_${data.latest.label}.pdf`);
+      if (kind === "download") {
+        const file = rateCardFileName(step?.clientName ?? data.clientName);
+        await downloadFile(savedPdf, source, file, file);
+      }
       else await openFile(savedPdf, source);
     } catch (err) {
       toast(errorMessage(err), "error");
