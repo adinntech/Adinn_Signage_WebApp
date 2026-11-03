@@ -1,15 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Eye, FilePlus2, Mail, Maximize2, Minimize2, Minus, Save, Send, X } from "lucide-react";
-import { AdinnLogo } from "@/components/shell/adinn-logo";
-import { Badge } from "@/components/ui/badge";
+import { useRef, useState } from "react";
+import { FilePlus2, X } from "lucide-react";
+import { MailCompose, type MailValues } from "@/components/mail/mail-compose";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Modal } from "@/components/ui/modal";
-import { RichTextEditor, RichTextView } from "@/components/ui/rich-text-editor";
-import { Select } from "@/components/ui/select";
-import { TagInput } from "@/components/ui/tag-input";
 import { useToast } from "@/components/ui/toast";
 import { FileTypeIcon, kindOfName } from "@/components/upload/file-drop";
 import { errorMessage } from "@/lib/api";
@@ -22,7 +16,6 @@ export type SendMode = "COMBINED" | "SEPARATE";
 const KINDS: CodeKind[] = ["CLIENT_CODE", "PROJECT_CODE"];
 const ACCEPT = [".pdf", ".jpg", ".jpeg", ".png", ".webp"];
 const MAX_MB = 25;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fp = (name: string, size: number) => `${name.trim().toLowerCase()}|${size}`;
 
 type TemplateKey = "COMBINED" | CodeKind;
@@ -36,7 +29,6 @@ function withEnclosures(body: string, docs: string[]) {
   const at = body.lastIndexOf("<p>Regards");
   return at < 0 ? body + list : body.slice(0, at) + list + body.slice(at);
 }
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 /**
  * Mail Center for code requests, all on one page: New Mail, Mail History, Templates and Recipient Groups. New Mail has
@@ -276,65 +268,19 @@ export function CodeMailComposer({ data: d, initialKinds, initialMode, enclosed,
   );
 }
 
-interface MailValues {
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  from?: string;
-  subject: string;
-  body: string;
-}
-
-/** One row of the mail header, Gmail style: a plain label, the field, an optional action at the right corner and a divider. */
-function Row({ label, required, error, htmlFor, children, aside }: { label?: string; required?: boolean; error?: string; htmlFor: string; children: React.ReactNode; aside?: React.ReactNode }) {
-  return (
-    <div className="border-b border-border px-4 py-1">
-      <div className="flex items-start gap-3">
-        {label && (
-          <label htmlFor={htmlFor} className="w-14 shrink-0 pt-2.5 text-sm text-muted-foreground">
-            {label}
-            {required && <span className="ml-0.5 text-danger">*</span>}
-          </label>
-        )}
-        <div className="min-w-0 flex-1">{children}</div>
-        {aside}
-      </div>
-      {error && (
-        <p role="alert" className={cn("pb-1 text-xs text-danger", label && "ml-[4.25rem]")}>
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** The mail itself. Remounted (by key) when the included codes, the template or the recipient group change. */
+/** The code request mail: the shared MailCompose, started from the saved draft or the chosen template. Remounted (by key) when the included codes, the template or the recipient group change. */
 function MailForm({ data: d, kinds, templateKey, enclosed, toOverride, busy, attachments, onSend, onSaveDraft }: { data: CodesOverview; kinds: CodeKind[]; templateKey: TemplateKey; enclosed: string[]; toOverride: string[] | null; busy: boolean; attachments: React.ReactNode; onSend: (m: MailValues) => Promise<void>; onSaveDraft: (m: MailValues) => Promise<void> }) {
-  const toast = useToast();
   const saved = d.drafts.find((x) => kinds.includes(x.kind));
   const base = d.defaults[templateKey];
   const group = [...new Set(kinds.flatMap((k) => d.mail.groups[k]))];
   const useSaved = !!saved && templateKey === (kinds.length === 2 ? "COMBINED" : kinds[0]);
-  const [v, setV] = useState<MailValues>({
+  const initial: MailValues = {
     to: toOverride ?? (useSaved ? saved.to : group),
     cc: useSaved ? saved.cc : [],
     bcc: useSaved ? saved.bcc : [],
     subject: useSaved && saved.subject ? saved.subject : base.subject,
     body: useSaved && saved.body ? saved.body : withEnclosures(base.body, enclosed),
-  });
-  const [from, setFrom] = useState(d.mail.identities[0] ?? "");
-  const [showCc, setShowCc] = useState(v.cc.length > 0);
-  const [showBcc, setShowBcc] = useState(v.bcc.length > 0);
-  const [expanded, setExpanded] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const [auto, setAuto] = useState<"idle" | "saving" | "saved" | "failed">("idle");
-  const dirty = useRef(false);
-  const save = useRef(onSaveDraft);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [previewing, setPreviewing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [vars, setVars] = useState(false);
-
+  };
   const variables: [string, string | null][] = [
     ["Client name", d.client.name],
     ["Client ID", d.client.clientNo],
@@ -342,185 +288,17 @@ function MailForm({ data: d, kinds, templateKey, enclosed, toOverride, busy, att
     ["PAN", d.client.pan],
     ["Order no", d.order.orderNo],
   ];
-  const insertVar = (label: string, value: string | null) => {
-    setVars(false);
-    setV((x) => ({ ...x, body: `${x.body}<p><strong>${esc(label)}:</strong> ${esc(value ?? "-")}</p>` }));
-  };
-
-  const validate = () => {
-    const e: Record<string, string> = {};
-    for (const f of ["to", "cc", "bcc"] as const) {
-      const bad = v[f].find((x) => !EMAIL_RE.test(x));
-      if (bad) e[f] = `Invalid email: ${bad}`;
-    }
-    if (!v.to.length) e.to = "Enter at least one recipient";
-    if (!v.subject.trim()) e.subject = "Enter the email subject";
-    if (!v.body.replace(/<[^>]+>/g, "").trim()) e.body = "Enter the email content";
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-  const values = (): MailValues => ({ ...v, subject: v.subject.trim(), ...(d.mail.identities.length > 1 && from ? { from } : {}) });
-
-  useEffect(() => {
-    save.current = onSaveDraft;
-  });
-  const identities = d.mail.identities.length;
-
-  // Autosave: the draft is kept a moment after the last change (not for the untouched form).
-  useEffect(() => {
-    if (!dirty.current) {
-      dirty.current = true;
-      return;
-    }
-    setAuto("saving");
-    const t = setTimeout(() => {
-      save.current({ ...v, subject: v.subject.trim(), ...(identities > 1 && from ? { from } : {}) }).then(
-        () => setAuto("saved"),
-        () => setAuto("failed"),
-      );
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [v, from, identities]);
-
-  const status = auto === "saving" ? "Saving draft..." : auto === "saved" ? "Draft saved" : auto === "failed" ? "Draft not saved" : "";
   return (
-    <>
-      {expanded && <div className="fixed inset-0 z-40 bg-black/40" aria-hidden onClick={() => setExpanded(false)} />}
-      <div className={cn("overflow-hidden rounded-xl border border-border bg-surface shadow-soft", expanded && "fixed inset-4 z-50 overflow-auto shadow-card md:inset-x-[8%] md:inset-y-6")}>
-        <div className="flex items-center gap-2 bg-muted px-4 py-2.5">
-          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-primary">{v.subject.trim() || "New Message"}</h3>
-          {status && <span className={cn("text-xs", auto === "failed" ? "text-danger" : "text-muted-foreground")}>{status}</span>}
-          <button type="button" aria-label={minimized ? "Restore" : "Minimize"} title={minimized ? "Restore" : "Minimize"} onClick={() => setMinimized(!minimized)} className="rounded-md p-1 text-muted-foreground hover:bg-surface">
-            <Minus className="size-4" aria-hidden />
-          </button>
-          <button type="button" aria-label={expanded ? "Exit full screen" : "Full screen"} title={expanded ? "Exit full screen" : "Full screen"} onClick={() => (setExpanded(!expanded), setMinimized(false))} className="rounded-md p-1 text-muted-foreground hover:bg-surface">
-            {expanded ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
-          </button>
-        </div>
-        <div className={cn("space-y-3 pb-4", minimized && "hidden")}>
-          {!d.mail.enabled && (
-            <p className="mx-4 mt-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-warning">Email is not configured on the server. Sending will be recorded as &quot;Not sent&quot; until SMTP is set up.</p>
-          )}
-          <div>
-            {d.mail.identities.length > 1 && (
-              <Row label="From" htmlFor="cm-from">
-                <Select id="cm-from" value={from} onChange={(e) => setFrom(e.target.value)} className="bare-field border-0 shadow-none">
-                  {d.mail.identities.map((i) => (
-                    <option key={i} value={i}>
-                      {i}
-                    </option>
-                  ))}
-                </Select>
-              </Row>
-            )}
-            <Row
-              label="To"
-              required
-              htmlFor="cm-to"
-              error={errors.to}
-              aside={
-                (!showCc || !showBcc) && (
-                  <span className="flex gap-2 pt-2.5 text-sm text-muted-foreground">
-                    {!showCc && (
-                      <button type="button" className="hover:text-foreground hover:underline" onClick={() => setShowCc(true)}>
-                        Cc
-                      </button>
-                    )}
-                    {!showBcc && (
-                      <button type="button" className="hover:text-foreground hover:underline" onClick={() => setShowBcc(true)}>
-                        Bcc
-                      </button>
-                    )}
-                  </span>
-                )
-              }
-            >
-              <TagInput id="cm-to" value={v.to} onChange={(to) => setV({ ...v, to })} placeholder="Type an email and press Enter" max={20} />
-            </Row>
-            {showCc && (
-              <Row label="Cc" htmlFor="cm-cc" error={errors.cc}>
-                <TagInput id="cm-cc" value={v.cc} onChange={(cc) => setV({ ...v, cc })} placeholder="Optional" max={20} />
-              </Row>
-            )}
-            {showBcc && (
-              <Row label="Bcc" htmlFor="cm-bcc" error={errors.bcc}>
-                <TagInput id="cm-bcc" value={v.bcc} onChange={(bcc) => setV({ ...v, bcc })} placeholder="Hidden from the other recipients" max={20} />
-              </Row>
-            )}
-            <Row label="Subject" required htmlFor="cm-subject" error={errors.subject}>
-              <Input id="cm-subject" placeholder="Email subject" value={v.subject} maxLength={250} aria-invalid={!!errors.subject} onChange={(e) => setV({ ...v, subject: e.target.value })} className="bare-field border-0 px-0 shadow-none" />
-            </Row>
-          </div>
-          <div className="space-y-3 px-4">
-      <div className="grid gap-4 lg:grid-cols-[1fr_19rem]">
-        <div className="min-w-0 space-y-2">
-          <div className="flex items-center justify-end">
-            <span className="relative">
-              <Button size="sm" variant="outline" aria-expanded={vars} onClick={() => setVars(!vars)}>
-                Variables <ChevronDown className="size-4" aria-hidden />
-              </Button>
-              {vars && (
-                <ul role="menu" className="absolute right-0 top-full z-20 mt-1 w-60 overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-card">
-                  {variables.map(([label, value]) => (
-                    <li key={label} role="none">
-                      <button role="menuitem" type="button" onClick={() => insertVar(label, value)} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-1.5 text-left text-sm hover:bg-muted">
-                        <span className="font-medium">{label}</span>
-                        <span className="max-w-28 truncate text-xs text-muted-foreground">{value ?? "-"}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </span>
-          </div>
-          <RichTextEditor id="cm-body" ariaLabel="Email body" value={v.body} onChange={(body) => setV({ ...v, body })} invalid={!!errors.body} minHeight={260} />
-          {errors.body && (
-            <p role="alert" className="text-xs text-danger">
-              {errors.body}
-            </p>
-          )}
-          <div className="flex items-center gap-3 rounded-lg border border-dashed border-border px-3 py-2.5">
-            <AdinnLogo className="h-10 w-28 shadow-none ring-1 ring-border" />
-            <p className="text-xs text-muted-foreground">Adinn Advertising Services Ltd. The logo and company line are added at the end of every code request email.</p>
-          </div>
-        </div>
-        {attachments}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-        <Button variant="outline" onClick={() => setPreviewing(true)}>
-          <Eye className="size-4" aria-hidden /> Preview
-        </Button>
-        <Button
-          variant="outline"
-          loading={saving}
-          onClick={async () => {
-            setSaving(true);
-            try {
-              await onSaveDraft(values());
-              toast("Draft saved");
-            } catch (e) {
-              toast(errorMessage(e), "error");
-            } finally {
-              setSaving(false);
-            }
-          }}
-        >
-          <Save className="size-4" aria-hidden /> Save as Draft
-        </Button>
-        <Button variant="destructive" loading={busy} onClick={() => validate() && onSend(values())}>
-          {busy ? <Mail className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />} Send Mail
-        </Button>
-      </div>
-          </div>
-        </div>
-      </div>
-      <Modal open={previewing} onOpenChange={setPreviewing} title={v.subject || "Preview"} description={`To: ${v.to.join(", ") || "-"}`}>
-        <RichTextView html={v.body} />
-        <Badge tone="neutral" className="mt-3">
-          Footer is added when sent
-        </Badge>
-      </Modal>
-    </>
+    <MailCompose
+      initial={initial}
+      identities={d.mail.identities}
+      mailEnabled={d.mail.enabled}
+      variables={variables}
+      attachments={attachments}
+      footerNote="Adinn Advertising Services Ltd. The logo and company line are added at the end of every code request email."
+      busy={busy}
+      onSend={onSend}
+      onSaveDraft={onSaveDraft}
+    />
   );
 }

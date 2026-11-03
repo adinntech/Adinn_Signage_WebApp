@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AUTH_ERROR_MESSAGES, CREDENTIAL_DEFAULTS, checkCredential, credentialShape, toCredential } from "@/lib/auth-rules";
-import { LOGIN_ROLES, readLoginPref, writeLoginPref, type LoginRoleKey } from "@/lib/login-roles";
+import { LOGIN_ROLES, readLoginPref, useLastMethod, writeLoginPref, type LoginRoleKey } from "@/lib/login-roles";
 import { cn, safeNext } from "@/lib/utils";
 import { RoleCards } from "./role-cards";
 
@@ -58,9 +58,10 @@ export function LoginForm() {
   const { status, user, login } = useAuth();
   const toast = useToast();
 
+  const lastUsed = useLastMethod();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { idType: "email", identifier: "", remember: false, ...CREDENTIAL_DEFAULTS },
+    defaultValues: { idType: "email", identifier: "", remember: false, ...CREDENTIAL_DEFAULTS, authMethod: "MPIN" },
   });
   const {
     register,
@@ -90,6 +91,7 @@ export function LoginForm() {
   useEffect(() => {
     const pref = readLoginPref();
     if (pref.role) setValue("role", pref.role);
+    if (pref.lastMethod) setValue("authMethod", pref.lastMethod);
     if (pref.identifier) {
       setValue("idType", pref.identifier.includes("@") ? "email" : "employeeId");
       setValue("identifier", pref.identifier);
@@ -111,7 +113,7 @@ export function LoginForm() {
   async function onSubmit(values: FormValues) {
     try {
       const me = await login(values.identifier, toCredential(values), values.remember, values.role);
-      writeLoginPref({ role: values.role, identifier: values.remember ? values.identifier : undefined });
+      writeLoginPref({ role: values.role, identifier: values.remember ? values.identifier : undefined, lastMethod: values.authMethod });
       router.replace(next || me.home || "/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {
@@ -221,7 +223,7 @@ export function LoginForm() {
                     )}
                   </div>
 
-                  <CredentialFields mode="login" switchLabel="Use MPIN" disabled={isSubmitting} />
+                  <CredentialFields mode="login" switchLabel="Use MPIN" disabled={isSubmitting} lastUsed={lastUsed} />
 
                   <div className="flex items-center justify-between gap-3">
                     <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground 2xl:text-base">

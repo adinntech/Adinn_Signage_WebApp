@@ -1,22 +1,31 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckCircle2, IdCard, Landmark, MapPinned, Paperclip, Receipt, UploadCloud, X } from "lucide-react";
+import { CheckCircle2, FilePlus2, IdCard, Landmark, MapPinned, Paperclip, Receipt, UploadCloud, X } from "lucide-react";
 import { AttachmentChip } from "@/components/sales/order-comments";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { KYC_ITEMS, useKycFiles, type KycFile, type KycKey, type VendorType } from "@/lib/api/vendors";
+import { KYC_ITEMS, useKycFiles, type KycDocKey, type KycFile, type VendorType } from "@/lib/api/vendors";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export type PendingKyc = Partial<Record<KycKey, File[]>>;
+export type PendingKyc = Partial<Record<KycDocKey, File[]>>;
 
 const ACCEPT = [".pdf", ".jpg", ".jpeg", ".png", ".webp"];
 const MAX_MB = 10;
 const MAX_PER_ITEM = 3;
-const ICON: Record<KycKey, typeof IdCard> = { pan: IdCard, gst: Receipt, bank: Landmark, address: MapPinned };
-const HINT: Record<KycKey, string> = { pan: "PAN card scan", gst: "GST registration certificate", bank: "Cancelled cheque or passbook first page", address: "Aadhaar, electricity bill or rent agreement" };
+const MAX_OTHER = 5;
+const maxOf = (k: KycDocKey) => (k === "other" ? MAX_OTHER : MAX_PER_ITEM);
+const ICON: Record<KycDocKey, typeof IdCard> = { pan: IdCard, gst: Receipt, bank: Landmark, address: MapPinned, other: FilePlus2 };
+const HINT: Record<KycDocKey, string> = { pan: "PAN card scan", gst: "GST registration certificate", bank: "Cancelled cheque or passbook first page", address: "Aadhaar, electricity bill or rent agreement", other: "Any document missed above (agreement, visiting card, licence…)" };
+/** The four checklist documents plus a tile for any extra document that was missed. */
+const TILES: { key: KycDocKey; label: string }[] = [...KYC_ITEMS.map((i) => ({ key: i.key as KycDocKey, label: i.label })), { key: "other", label: "Other documents" }];
+
+/** Documents still to be uploaded before the registration mail can go: PAN, bank proof, and GST for an organization (address proof is optional). */
+export function missingDocs(type: VendorType, saved: KycFile[] = [], pending: PendingKyc = {}) {
+  return KYC_ITEMS.filter((i) => i.key !== "address" && (i.key !== "gst" || type === "ORGANIZATION")).filter((i) => !saved.some((f) => f.docType === i.key) && !(pending[i.key]?.length));
+}
 
 /**
  * The four KYC document tiles (PAN, GST, bank proof, address proof). One component for both places it is used:
@@ -24,47 +33,52 @@ const HINT: Record<KycKey, string> = { pan: "PAN card scan", gst: "GST registrat
  * - vendor drawer: pass `vendorId`, files are uploaded the moment they are picked.
  * A scan never ticks the KYC checklist; Operations ticks it after viewing the document.
  */
-export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, onRemovePending, busy, readOnly }: {
+export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, onRemovePending, busy, missing = [], typed = {}, readOnly }: {
   type: VendorType;
   vendorId?: string | undefined;
   saved?: KycFile[];
   pending?: PendingKyc;
-  onAdd: (docType: KycKey, files: File[]) => void;
-  onRemovePending?: (docType: KycKey, index: number) => void;
+  onAdd: (docType: KycDocKey, files: File[]) => void;
+  onRemovePending?: (docType: KycDocKey, index: number) => void;
   /** Document type being uploaded right now. */
-  busy?: KycKey | null;
+  busy?: KycDocKey | null;
+  /** Per document: a toggle that opens fields to type its number (PAN, GST, bank). `locked` keeps it open (required). */
+  typed?: Partial<Record<KycDocKey, { label: string; open: boolean; locked?: boolean; onToggle: (open: boolean) => void; children: React.ReactNode }>>;
+  /** Document types to mark as missing (red) after a failed Next / Register. */
+  missing?: KycDocKey[];
   readOnly?: boolean;
 }) {
   const toast = useToast();
   const { remove } = useKycFiles();
   const [removing, setRemoving] = useState<KycFile | null>(null);
-  const inputs = useRef<Partial<Record<KycKey, HTMLInputElement | null>>>({});
+  const inputs = useRef<Partial<Record<KycDocKey, HTMLInputElement | null>>>({});
 
-  function pick(k: KycKey, list: FileList | null) {
+  function pick(k: KycDocKey, list: FileList | null) {
     if (!list?.length) return;
-    const room = MAX_PER_ITEM - saved.filter((f) => f.docType === k).length - (pending[k]?.length ?? 0);
+    const room = maxOf(k) - saved.filter((f) => f.docType === k).length - (pending[k]?.length ?? 0);
     const files = Array.from(list);
     const bad = files.find((f) => !ACCEPT.some((x) => f.name.toLowerCase().endsWith(x)));
     if (bad) return toast(`${bad.name}: only PDF, JPG, PNG or WEBP files are allowed`, "error");
     const big = files.find((f) => f.size > MAX_MB * 1048576);
     if (big) return toast(`${big.name} is ${formatBytes(big.size)}. The limit is ${MAX_MB} MB`, "error");
-    if (files.length > room) return toast(`Up to ${MAX_PER_ITEM} files per document. You can add ${Math.max(room, 0)} more here`, "error");
+    if (files.length > room) return toast(`Up to ${maxOf(k)} files per document. You can add ${Math.max(room, 0)} more here`, "error");
     onAdd(k, files);
   }
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {KYC_ITEMS.map((item) => {
+      <div className="grid items-start gap-3 sm:grid-cols-2">
+        {TILES.map((item) => {
           const k = item.key;
           const Icon = ICON[k];
           const mine = saved.filter((f) => f.docType === k);
           const waiting = pending[k] ?? [];
           const count = mine.length + waiting.length;
-          const required = k !== "gst" || type === "ORGANIZATION";
-          const full = count >= MAX_PER_ITEM;
+          const required = k !== "other" && k !== "address" && (k !== "gst" || type === "ORGANIZATION");
+          const full = count >= maxOf(k);
+          const lacking = missing.includes(k) && count === 0;
           return (
-            <section key={k} aria-label={item.label} className={cn("flex flex-col rounded-xl border p-3", count ? "border-[#bbf0d3] bg-[#f4fcf7]" : "border-border bg-surface")}>
+            <section key={k} aria-label={item.label} className={cn("flex flex-col rounded-xl border p-3", count ? "border-[#bbf0d3] bg-[#f4fcf7]" : lacking ? "border-loss bg-[#fff5f5]" : "border-border bg-surface", k === "other" && "sm:col-span-2")}>
               <div className="flex items-start gap-3">
                 <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", count ? "bg-[#e2f8ea] text-finance" : "bg-[#f1e6ff] text-vendor")}><Icon className="size-4" aria-hidden /></span>
                 <div className="min-w-0 flex-1">
@@ -72,6 +86,7 @@ export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, 
                   <p className="text-xs text-muted-foreground">{HINT[k]}</p>
                 </div>
                 <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", required ? "bg-[#fff0e0] text-approval" : "bg-muted text-muted-foreground")}>{required ? "Required" : "Optional"}</span>
+              {lacking && <span role="alert" className="sr-only">{item.label} is required</span>}
               </div>
 
               {(mine.length > 0 || waiting.length > 0) && (
@@ -100,7 +115,7 @@ export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, 
                     onClick={() => inputs.current[k]?.click()}
                     className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-3 py-2 text-sm font-medium text-royal transition-colors hover:border-royal/50 hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <UploadCloud className={cn("size-4", busy === k && "animate-pulse")} aria-hidden /> {busy === k ? "Uploading…" : full ? `${MAX_PER_ITEM} files added` : count ? "Add another file" : "Upload document"}
+                    <UploadCloud className={cn("size-4", busy === k && "animate-pulse")} aria-hidden /> {busy === k ? "Uploading…" : full ? `${maxOf(k)} files added` : count ? "Add another file" : k === "other" ? "Upload extra document" : "Upload document"}
                   </button>
                   <input
                     ref={(el) => { inputs.current[k] = el; }}
@@ -113,11 +128,24 @@ export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, 
                   />
                 </>
               )}
+              {typed[k] && (
+                <div className="mt-3 border-t border-dashed border-border pt-2.5">
+                  {typed[k].locked ? (
+                    <p className="text-xs font-semibold text-navy">{typed[k].label} <span className="font-normal text-muted-foreground">· required</span></p>
+                  ) : (
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-navy">
+                      <input type="checkbox" className="size-4" checked={typed[k].open} onChange={(e) => typed[k]?.onToggle(e.target.checked)} />
+                      {typed[k].label}
+                    </label>
+                  )}
+                  {typed[k].open && <div className="mt-2.5 grid gap-3">{typed[k].children}</div>}
+                </div>
+              )}
             </section>
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">PDF, JPG, PNG or WEBP · up to {MAX_MB} MB each · {MAX_PER_ITEM} files per document. Uploaded scans are private and only Operations and Finance can open them.</p>
+      <p className="mt-2 text-xs text-muted-foreground">PDF, JPG, PNG or WEBP · up to {MAX_MB} MB each · {MAX_PER_ITEM} files per document ({MAX_OTHER} under Other). Uploaded scans are private and only Operations and Finance can open them.</p>
 
       <ConfirmDialog
         autoClose

@@ -18,6 +18,8 @@ export interface User {
   employeeId?: string | null;
   phone?: string | null;
   role: Role;
+  /** 0 Admin, 1 Operations, 2 BD, 3 Client Servicing, 4 Recce/Vendor; null for Finance. Derived from the role by the backend. */
+  userType?: 0 | 1 | 2 | 3 | 4 | null;
   isActive: boolean;
   authMethod?: AuthMethod;
   permissions: string[];
@@ -257,9 +259,9 @@ export function requestResetCode(identifier: string): Promise<{ message: string;
 }
 
 /** Checks the emailed code and sets the new MPIN or password. The user signs in again afterwards. */
-export function confirmReset(identifier: string, code: string, credential: Credential): Promise<{ authMethod: AuthMethod }> {
+export function confirmReset(identifier: string, code: string, credential: Credential, confirmReuse = false): Promise<{ authMethod: AuthMethod }> {
   const newSecret = credential.authMethod === "MPIN" ? credential.mpin : credential.password;
-  return raw("/auth/forgot/confirm", { method: "POST", body: JSON.stringify({ identifier, code, authMethod: credential.authMethod, newSecret }), auth: false });
+  return raw("/auth/forgot/confirm", { method: "POST", body: JSON.stringify({ identifier, code, authMethod: credential.authMethod, newSecret, confirmReuse }), auth: false });
 }
 
 export async function logout(): Promise<void> {

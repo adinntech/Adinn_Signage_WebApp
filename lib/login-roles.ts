@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { Briefcase, ScanSearch, ShieldCheck, Handshake, Store, Workflow, type LucideIcon } from "lucide-react";
 import type { Role } from "@/lib/api";
 
@@ -38,11 +39,17 @@ const STORE_KEY = "adinn.login.pref";
 export interface LoginPref {
   identifier?: string;
   role?: LoginRoleKey;
+  /** How the person last signed in on this device; Forgot password shows it as "Last used". */
+  lastMethod?: "MPIN" | "PASSWORD";
 }
 export function readLoginPref(): LoginPref {
   try {
     const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}") as LoginPref;
-    return { identifier: typeof v.identifier === "string" ? v.identifier : undefined, role: LOGIN_ROLES.some((r) => r.key === v.role) ? v.role : undefined };
+    return {
+      identifier: typeof v.identifier === "string" ? v.identifier : undefined,
+      role: LOGIN_ROLES.some((r) => r.key === v.role) ? v.role : undefined,
+      lastMethod: v.lastMethod === "MPIN" || v.lastMethod === "PASSWORD" ? v.lastMethod : undefined,
+    };
   } catch {
     return {};
   }
@@ -55,6 +62,13 @@ export function writeLoginPref(pref: LoginPref | null) {
     /* storage unavailable */
   }
 }
+
+const subscribePref = (cb: () => void) => {
+  window.addEventListener("storage", cb);
+  return () => window.removeEventListener("storage", cb);
+};
+/** The method last used to sign in on this device; undefined on the server and before any sign-in. */
+export const useLastMethod = () => useSyncExternalStore(subscribePref, () => readLoginPref().lastMethod, () => undefined);
 
 /** Roles that can self-register from the web app (must match SELF_REGISTER_ROLES.web in the backend). */
 export const WEB_REGISTER_ROLES: { role: Role; key: LoginRoleKey; hint: string }[] = [

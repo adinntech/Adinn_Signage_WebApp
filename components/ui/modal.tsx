@@ -16,6 +16,7 @@ export function Modal({
   children,
   variant = "dialog",
   className,
+  persistent,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -25,6 +26,8 @@ export function Modal({
   children: React.ReactNode;
   variant?: "dialog" | "drawer";
   className?: string;
+  /** Forms: a click, toast or another popup outside must not close it and lose what was typed. Only Close / Cancel (and Esc) do. */
+  persistent?: boolean;
 }) {
   const drawer = variant === "drawer";
   return (
@@ -47,7 +50,7 @@ export function Modal({
                 drawer ? "justify-end" : "items-center justify-center p-4",
               )}
             >
-              <Dialog.Content asChild forceMount>
+              <Dialog.Content asChild forceMount {...(persistent ? { onInteractOutside: (e: Event) => e.preventDefault() } : {})}>
                 <motion.div
                   className={cn(
                     "pointer-events-auto flex max-h-full min-h-0 flex-col bg-surface shadow-card focus:outline-none",

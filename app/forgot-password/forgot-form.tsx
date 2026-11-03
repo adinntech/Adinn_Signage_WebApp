@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { ApiError, confirmReset, requestResetCode } from "@/lib/api";
 import { checkCredential, credentialShape, identifierRule, toCredential } from "@/lib/auth-rules";
+import { readLoginPref } from "@/lib/login-roles";
 
 const API_MESSAGES: Record<string, string> = {
   RATE_LIMITED: "Too many attempts. Please wait a few minutes and try again.",
@@ -46,12 +47,23 @@ export function ForgotForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState(0);
+  // Set when the server says the new value equals the one already in use; the person must agree to keep it.
+  const [reusePending, setReusePending] = useState(false);
   const inFlight = useRef(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { code: "", authMethod: params.get("method") === "mpin" ? "MPIN" : "PASSWORD", password: "", mpin: "", confirm: "" },
+    defaultValues: { code: "", authMethod: params.get("method") === "password" ? "PASSWORD" : "MPIN", password: "", mpin: "", confirm: "" },
   });
+  // "Last used" is remembered on this device at sign-in; it is a suggestion and never reveals whether an account exists.
+  const [lastUsed, setLastUsed] = useState<"MPIN" | "PASSWORD" | undefined>();
+  useEffect(() => {
+    const m = readLoginPref().lastMethod;
+    if (!m) return;
+    setLastUsed(m);
+    form.setValue("authMethod", m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const {
     register,
     handleSubmit,
@@ -64,6 +76,25 @@ export function ForgotForm() {
     const t = setTimeout(() => setWait((w) => w - 1), 1000);
     return () => clearTimeout(t);
   }, [wait]);
+
+  // After a successful reset the form stays "busy" while the page navigates to /login. If the browser later brings this page back
+  // from its back/forward cache (Back button), that frozen state, code and PIN come with it. Start clean whenever that happens.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      form.reset({ code: "", authMethod: form.getValues("authMethod"), password: "", mpin: "", confirm: "" });
+      setStep("request");
+      setIdentifier(params.get("id") ?? "");
+      setError(null);
+      setReusePending(false);
+      setWait(0);
+      inFlight.current = false;
+      setBusy(false);
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function send() {
     if (inFlight.current) return;
@@ -86,16 +117,22 @@ export function ForgotForm() {
     }
   }
 
-  async function submit(v: FormValues) {
+  async function submit(v: FormValues, confirmReuse = false) {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
-      const r = await confirmReset(identifier, v.code, toCredential(v));
-      toast(`${r.authMethod === "MPIN" ? "MPIN" : "Password"} updated. Please sign in.`, "success");
+      const r = await confirmReset(identifier, v.code, toCredential(v), confirmReuse);
+      toast(`${r.authMethod === "MPIN" ? "MPIN" : "Password"} updated. You can sign in with your MPIN or password.`, "success");
       router.replace("/login");
     } catch (err) {
+      if (err instanceof ApiError && err.code === "CREDENTIAL_REUSED") {
+        setReusePending(true);
+        inFlight.current = false;
+        setBusy(false);
+        return;
+      }
       setError(err instanceof ApiError ? (API_MESSAGES[err.code] ?? err.message) : "Something went wrong. Please try again.");
       inFlight.current = false;
       setBusy(false);
@@ -117,7 +154,7 @@ export function ForgotForm() {
           onSubmit={(e) => {
             e.preventDefault();
             if (step === "request") void send();
-            else void handleSubmit(submit, () => setError("Please check the highlighted fields."))(e);
+            else void handleSubmit((v) => submit(v), () => setError("Please check the highlighted fields."))(e);
           }}
         >
           {step === "request" ? (
@@ -141,7 +178,7 @@ export function ForgotForm() {
                   <Input
                     id="code"
                     inputMode="numeric"
-                    autoComplete="one-time-code"
+                    autoComplete="off"
                     maxLength={6}
                     placeholder="000000"
                     className="h-11 pl-10 tracking-[0.4em] 2xl:h-12 2xl:text-base"
@@ -157,7 +194,25 @@ export function ForgotForm() {
                   </p>
                 )}
               </div>
+              {lastUsed && (
+                <p className="rounded-lg bg-[#eaf2ff] px-3 py-2 text-sm text-[#1d4ed8]">
+                  Last used on this device: <strong>{lastUsed === "MPIN" ? "MPIN" : "Password"}</strong>. You can reset either one; afterwards you can sign in with your MPIN or password.
+                </p>
+              )}
               <CredentialFields mode="create" switchLabel="Use MPIN" disabled={busy} />
+              {reusePending && (
+                <FormAlert kind="info">
+                  <p className="font-medium">This is your already used {method}. Are you okay with keeping it?</p>
+                  <div className="mt-2 flex gap-2">
+                    <Button type="button" size="sm" disabled={busy} onClick={() => { setReusePending(false); void submit(form.getValues(), true); }}>
+                      Yes, keep it
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setReusePending(false)}>
+                      No, choose another
+                    </Button>
+                  </div>
+                </FormAlert>
+              )}
             </>
           )}
 
@@ -168,7 +223,13 @@ export function ForgotForm() {
 
           {step === "confirm" && (
             <div className="flex items-center justify-between text-sm 2xl:text-base">
-              <button type="button" className="font-medium text-[#2563EB] hover:underline" onClick={() => { setStep("request"); setError(null); }} disabled={busy}>
+              <button type="button" className="font-medium text-[#2563EB] hover:underline" onClick={() => {
+                  // A different email must not inherit the previous code or MPIN/password typed for the old one.
+                  form.reset({ code: "", authMethod: form.getValues("authMethod"), password: "", mpin: "", confirm: "" });
+                  setReusePending(false);
+                  setStep("request");
+                  setError(null);
+                }} disabled={busy}>
                 Change email
               </button>
               <button type="button" className="font-medium text-[#2563EB] hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline" onClick={() => void send()} disabled={busy || wait > 0}>

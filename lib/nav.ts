@@ -90,9 +90,9 @@ export const NAV: NavItem[] = [
     children: [
       { label: "Vendors", href: "/vendors/master", permission: "vendors:manage" },
       { label: "Registration", href: "/vendors/registration", permission: "vendors:manage" },
-      { label: "KYC", href: "/vendors/kyc", permission: "vendors:manage" },
-      { label: "Rate Cards", href: "/vendors/rate-cards", permission: "vendors:manage" },
-      { label: "Performance", href: "/vendors/performance", permission: "vendors:manage" },
+      // { label: "KYC", href: "/vendors/kyc", permission: "vendors:manage" },
+      // { label: "Rate Cards", href: "/vendors/rate-cards", permission: "vendors:manage" },
+      // { label: "Performance", href: "/vendors/performance", permission: "vendors:manage" },
     ],
   },
   {

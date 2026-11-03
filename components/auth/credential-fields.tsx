@@ -64,7 +64,7 @@ const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exi
  * off = password, on = 4-digit MPIN. Must live inside a react-hook-form <FormProvider> whose values include
  * authMethod/password/mpin/confirm. mode "login": single field. mode "create": strength hints plus a confirmation field.
  */
-export function CredentialFields({ mode, switchLabel, disabled }: { mode: "login" | "create"; switchLabel: string; disabled?: boolean }) {
+export function CredentialFields({ mode, switchLabel, disabled, lastUsed }: { mode: "login" | "create"; switchLabel: string; disabled?: boolean; lastUsed?: "MPIN" | "PASSWORD" | undefined }) {
   const { register, control, watch, setValue, clearErrors, formState } = useFormContext<CredentialValues>();
   const useMpin = watch("authMethod") === "MPIN";
   const password = watch("password");
@@ -79,9 +79,47 @@ export function CredentialFields({ mode, switchLabel, disabled }: { mode: "login
     clearErrors(["password", "mpin", "confirm"]);
   }
 
+  // When the device remembers how the person last signed in, show two options with a "Last used" tag instead of the switch.
+  const chooser = !!lastUsed;
+  const options = [
+    { key: "MPIN", label: "MPIN", hint: "Quick 4-digit PIN", icon: ShieldCheck },
+    { key: "PASSWORD", label: "Password", hint: "Your password", icon: Lock },
+  ] as const;
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5 shadow-soft">
+      {chooser && (
+        <div role="radiogroup" aria-label="Sign-in method" className="grid grid-cols-2 gap-3 pt-2">
+          {options.map((o) => {
+            const selected = (o.key === "MPIN") === useMpin;
+            return (
+              <button
+                key={o.key}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={disabled}
+                onClick={() => !selected && toggle(o.key === "MPIN")}
+                className={cn(
+                  "relative flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60",
+                  selected ? "border-[var(--accent,#2563EB)] bg-white shadow-soft" : "border-border bg-surface hover:bg-white",
+                )}
+              >
+                {lastUsed === o.key && (
+                  <span className="absolute -top-2.5 right-2 rounded-full border border-[var(--accent,#2563EB)] bg-white px-2 py-0.5 text-[11px] font-semibold leading-none text-[var(--accent,#2563EB)] shadow-sm">Last used</span>
+                )}
+                <o.icon className={cn("size-4 shrink-0", selected ? "text-[var(--accent,#2563EB)]" : "text-muted-foreground")} aria-hidden />
+                <span className="leading-tight">
+                  <span className="block text-sm font-semibold text-foreground 2xl:text-base">{o.label}</span>
+                  <span className="block text-xs text-muted-foreground 2xl:text-sm">{o.hint}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {!chooser && <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5 shadow-soft">
         <div className="flex items-center gap-2.5">
           <span className={cn("flex size-8 items-center justify-center rounded-lg transition", useMpin ? "bg-[var(--accent,#2563EB)] text-white" : "bg-secondary text-primary")}>
             <ShieldCheck className="size-4" aria-hidden />
@@ -107,9 +145,9 @@ export function CredentialFields({ mode, switchLabel, disabled }: { mode: "login
         >
           <motion.span aria-hidden className="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow" animate={{ x: useMpin ? 20 : 0 }} transition={{ type: "spring", stiffness: 500, damping: 32 }} />
         </button>
-      </div>
+      </div>}
 
-      {!create && (
+      {!create && !chooser && (
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-sm font-semibold text-[#102449] 2xl:text-base">Password / MPIN</span>
           <button type="button" disabled={disabled} onClick={() => toggle(!useMpin)} className="text-sm font-medium text-[var(--accent,#2563EB)] hover:underline disabled:opacity-60 2xl:text-base">
