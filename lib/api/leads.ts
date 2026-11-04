@@ -188,6 +188,10 @@ export interface LeadRow {
   stageCount: number;
   rateCardLabel: string | null;
   createdAt: string;
+  /** Last saved change of the order (any edit, not only stage moves). */
+  updatedAt?: string | null;
+  /** Final Recce / Operations assignment and its time. */
+  recceAssign?: { assigned: boolean; assignedAt: string | null };
 }
 export interface LeadSummary {
   open: number;

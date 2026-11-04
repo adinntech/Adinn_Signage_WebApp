@@ -23,6 +23,12 @@ import { cn } from "@/lib/utils";
 import { clientIdOf } from "@/lib/api/clients";
 import { leadBase } from "@/lib/role-routes";
 
+/** India time ("03 Nov 2026, 04:53 PM"), or "—" when there is none. */
+const ist = (v?: string | null) => {
+  const t = formatDateTimeIST(v);
+  return t === "-" ? "—" : t;
+};
+
 /** Lead Management list: every lead with its current mind map stage. Opening one shows its mind map. */
 export function LeadsView() {
   const { can, user } = useAuth();
@@ -37,10 +43,12 @@ export function LeadsView() {
   const [clientType, setClientType] = useState("");
   const [page, setPage] = useState(1);
   const dq = useDebounced(q);
-  const list = useLeads({ page, limit: 20, q: dq, stage, status, clientType });
+  // Client Servicing (Create Project): no client filter (Zoho clients only), so none is ever sent.
+  const clientFilter = cs ? "" : clientType;
+  const list = useLeads({ page, limit: 20, q: dq, stage, status, clientType: clientFilter });
   const summary = useLeadSummary();
   const rows = list.data?.data ?? [];
-  const filtered = !!(dq || stage || clientType || status !== "OPEN");
+  const filtered = !!(dq || stage || clientFilter || status !== "OPEN");
   const reset = (fn: () => void) => {
     fn();
     setPage(1);
@@ -88,7 +96,7 @@ export function LeadsView() {
       )}
 
       <Card className="p-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn("flex flex-wrap items-center", cs ? "gap-3" : "gap-2")}>
           <div className="relative min-w-60 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input aria-label="Search leads" placeholder="Search order no, company name, client name or Client ID" className="pl-9" value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
@@ -111,14 +119,16 @@ export function LeadsView() {
               <option value="">All</option>
             </Select>
           </div>
-          <div className="w-44">
-            <Select aria-label="Filter by client flag" value={clientType} onChange={(e) => reset(() => setClientType(e.target.value))}>
-              <option value="">{cs ? "All Clients" : "All Client Flags"}</option>
-              {/* Client Servicing: Zoho clients only, shown as "Client" (no New / Existing flag). */}
-              {!cs && <option value="NEW">New Client</option>}
-              <option value="EXISTING">{cs ? "Client" : "Existing Client"}</option>
-            </Select>
-          </div>
+          {/* Client Servicing works with Zoho clients only: no client flag filter there. */}
+          {!cs && (
+            <div className="w-44">
+              <Select aria-label="Filter by client flag" value={clientType} onChange={(e) => reset(() => setClientType(e.target.value))}>
+                <option value="">All Client Flags</option>
+                <option value="NEW">New Client</option>
+                <option value="EXISTING">Existing Client</option>
+              </Select>
+            </div>
+          )}
           <Button variant="outline" disabled={!filtered && !q} onClick={() => reset(() => (setQ(""), setStage(""), setStatus("OPEN"), setClientType("")))}>
             <FilterX className="size-4" aria-hidden /> Clear Filters
           </Button>
@@ -143,17 +153,28 @@ export function LeadsView() {
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className={cn("w-full text-left text-sm", cs ? "min-w-[1040px]" : "min-w-[980px]")}>
               <thead className="sticky top-0 z-10 border-b border-border bg-muted text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3">Order No</th>
+                  <th className={cn("px-4 py-3", cs && "w-40")}>Order No</th>
                   <th className="px-4 py-3">Client Company</th>
-                  <th className="px-4 py-3">Client Flag</th>
-                  <th className="px-4 py-3">Current Stage</th>
-                  <th className="px-4 py-3">BD</th>
-                  <th className="px-4 py-3">Client Servicing</th>
-                  <th className="px-4 py-3">Last Moved</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  {/* Client Servicing (Create Project): no Client Flag and BD columns. */}
+                  {!cs && <th className="px-4 py-3">Client Flag</th>}
+                  <th className={cn("px-4 py-3", cs && "w-56")}>Current Stage</th>
+                  {!cs && <th className="px-4 py-3">BD</th>}
+                  {cs ? (
+                    <>
+                      <th className="w-44 px-4 py-3">Recce Assign</th>
+                      <th className="w-44 px-4 py-3">Created At</th>
+                      <th className="w-44 px-4 py-3">Last Updated At</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-4 py-3">Client Servicing</th>
+                      <th className="px-4 py-3">Last Moved</th>
+                    </>
+                  )}
+                  <th className={cn("px-4 py-3 text-right", cs && "w-32")}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -171,9 +192,11 @@ export function LeadsView() {
                         <span className="block font-medium">{l.client?.name ?? "-"}</span>
                         <span className="block text-xs text-muted-foreground">{[l.client?.clientName, clientIdOf(l.client, l.clientType), l.client?.city].filter(Boolean).join(" · ")}</span>
                       </td>
-                      <td className="px-4 py-3">
-                        <ClientTypeBadge type={l.clientType} full />
-                      </td>
+                      {!cs && (
+                        <td className="px-4 py-3">
+                          <ClientTypeBadge type={l.clientType} full />
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <span className="flex items-center gap-2">
                           <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: m.soft, color: m.color }}>
@@ -188,9 +211,23 @@ export function LeadsView() {
                           ))}
                         </span>
                       </td>
-                      <td className="px-4 py-3">{l.owner?.name ?? <span className="text-muted-foreground">Unassigned</span>}</td>
-                      <td className="px-4 py-3">{l.csAssignee?.name ?? <span className="text-muted-foreground">Not assigned</span>}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDateTimeIST(l.lead.stageChangedAt)}</td>
+                      {!cs && <td className="px-4 py-3">{l.owner?.name ?? <span className="text-muted-foreground">Unassigned</span>}</td>}
+                      {cs ? (
+                        <>
+                          {/* Final Recce / Operations assignment, with its time once assigned. */}
+                          <td className="px-4 py-3">
+                            {l.recceAssign?.assigned ? <Badge tone="success">Assigned</Badge> : <Badge tone="neutral">Not Assigned</Badge>}
+                            {l.recceAssign?.assigned && <span className="mt-1 block whitespace-nowrap text-xs text-muted-foreground">{ist(l.recceAssign.assignedAt)}</span>}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{ist(l.createdAt)}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{ist(l.updatedAt)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3">{l.csAssignee?.name ?? <span className="text-muted-foreground">Not assigned</span>}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{formatDateTimeIST(l.lead.stageChangedAt)}</td>
+                        </>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
                           <Button variant="ghost" size="sm" asChild>

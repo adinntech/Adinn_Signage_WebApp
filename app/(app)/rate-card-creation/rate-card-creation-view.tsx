@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { FilePlus2, Plus, ReceiptIndianRupee, Search } from "lucide-react";
+import { FilePlus2, Plus, ReceiptIndianRupee, RotateCcw, Search } from "lucide-react";
 import { RateCardEditor } from "@/components/sales/rate-card/rate-card-stage";
 import { ZohoCompanyField } from "@/components/sales/rate-card/zoho-company-field";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useRateCardCreation, useRateCardList, useSaveRateCardCreation } from "@/lib/api/ratecards";
 import { newRequestKey } from "@/lib/api/sales";
-import { formatDate } from "@/lib/format";
+import { formatDateTimeIST } from "@/lib/format";
 
 const BASE = "/rate-card-creation";
 
@@ -106,8 +106,8 @@ export function RateCardCreationView() {
         }
       />
 
-      <Card className="p-4">
-        <div className="relative max-w-md">
+      <Card className="flex flex-wrap items-center gap-3 p-4">
+        <div className="relative w-full max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             aria-label="Search rate cards"
@@ -120,6 +120,17 @@ export function RateCardCreationView() {
             }}
           />
         </div>
+        {/* Reset: clears the search and goes back to page 1. */}
+        <Button
+          variant="outline"
+          disabled={!q && page === 1}
+          onClick={() => {
+            setQ("");
+            setPage(1);
+          }}
+        >
+          <RotateCcw className="size-4" aria-hidden /> Reset
+        </Button>
       </Card>
 
       <Card className="flex min-h-[380px] flex-1 flex-col overflow-hidden">
@@ -145,7 +156,7 @@ export function RateCardCreationView() {
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full min-w-[820px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="w-16 px-4 py-3">S.No.</th>
@@ -154,10 +165,9 @@ export function RateCardCreationView() {
                   <th className="px-4 py-3">Client ID</th>
                   <th className="px-4 py-3">Version</th>
                   <th className="px-4 py-3">Created By</th>
-                  <th className="px-4 py-3">Updated</th>
-                  <th className="px-4 py-3 text-right">
-                    <span className="sr-only">Open</span>
-                  </th>
+                  <th className="px-4 py-3">Created At</th>
+                  <th className="px-4 py-3">Last Updated At</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -169,18 +179,20 @@ export function RateCardCreationView() {
                     <td className="px-4 py-3 font-mono">{r.client?.zohoCustomerNo ?? "-"}</td>
                     <td className="px-4 py-3">{r.label ?? "-"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{r.createdBy ?? "-"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{formatDate(r.updatedAt)}</td>
+                    {/* India time, e.g. "03 Nov 2026, 04:53 PM". */}
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTimeIST(r.createdAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTimeIST(r.updatedAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <Button
                         variant="ghost"
                         size="sm"
-                        aria-label={`Open ${r.quotationRef}`}
+                        aria-label={`View ${r.quotationRef}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           open(r._id);
                         }}
                       >
-                        Open
+                        View
                       </Button>
                     </td>
                   </motion.tr>
