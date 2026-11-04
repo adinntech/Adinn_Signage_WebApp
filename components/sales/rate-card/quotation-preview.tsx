@@ -9,17 +9,35 @@ import { downloadFile, printFile, type FileSource } from "@/lib/api/files";
 import { rateCardFileName, rateText, termsList, type CompanyInfo, type QuotationValues, type Revision } from "@/lib/api/ratecards";
 import { cn } from "@/lib/utils";
 
-/* Same A4 geometry (points) as the generated PDF (backend ratecards/quotation.pdf.ts). */
+/* Same A4 geometry, fonts and colours (points) as the generated PDF (backend ratecards/quotation.pdf.ts). */
 const W = 595;
 const H = 842;
 const M = 34;
 const CONTENT_W = 530;
-const BOTTOM = 795;
+const BOTTOM = 784;
 const COL_W = [37, 179, 243, 71];
-const FONT = '"DejaVu Sans", Verdana, Geneva, sans-serif';
-const DARK = "#1E2235";
-const MUTED = "#5B6475";
-const LINE = "#E4E7EC";
+const FONT = '"Manrope", "DejaVu Sans", Verdana, Geneva, sans-serif';
+const INK = "#0F172A";
+const SLATE = "#334155";
+const LABEL = "#475569";
+const MUTED = "#64748B";
+const LINE = "#E5E7EB";
+const RED = "#C62828";
+const ZEBRA = "#FAFAF9";
+const CARD_GAP = 13;
+const HALF_W = (CONTENT_W - CARD_GAP) / 2;
+const QUOTE_ROW = 18.8;
+const HEAD_H = 26;
+const TERMS_STRIP = 50;
+/** Line height of Manrope at `size` with `gap` between lines (as PDFKit lays text out). */
+const lh = (size: number, gap: number) => size * 1.366 + gap;
+/** Table cells: S.NO, PARTICULARS (bold), SPECIFICATION (slate), RATE, with characters per line for the estimate. */
+const CELLS = [
+  { size: 8.5, weight: 600, color: INK, cap: 5 },
+  { size: 9, weight: 700, color: INK, cap: 35 },
+  { size: 8.25, weight: 500, color: SLATE, cap: 57 },
+  { size: 8.5, weight: 600, color: INK, cap: 13 },
+];
 
 type Item = QuotationValues["items"][number];
 interface PageSpec {
@@ -43,40 +61,48 @@ function lines(text: string, cap: number) {
   }
   return n;
 }
-const rowHeight = (it: Item, i: number) =>
-  Math.max(30, Math.max(lines(String(i + 1), 5), lines(it.particulars || "-", 34), lines(it.specifications || "-", 48), lines(rateText(it.quotedRate || 0, it.unit), 12)) * 10.8 + 16);
-// Terms rows as in the PDF: 7pt above / below the text, 11.5pt lines (7.5pt text + 3pt gap), at least 24pt.
-const termHeight = (t: string) => Math.max(24, lines(t, 104) * 11.5 + 14);
+const cellTexts = (it: Item, i: number) => [String(i + 1), it.particulars || "-", it.specifications || "-", rateText(it.quotedRate || 0, it.unit)];
+// Rows as in the PDF: 11pt padding above and below the tallest cell, at least 32pt.
+const rowHeight = (it: Item, i: number) => Math.max(32, Math.max(...cellTexts(it, i).map((c, j) => lines(c, CELLS[j]!.cap) * lh(CELLS[j]!.size, 2))) + 22);
+// Terms rows as in the PDF: 9pt above / below the text, 13.9pt lines (8pt text + 3pt gap), at least 32pt.
+const termHeight = (t: string) => Math.max(32, lines(t, 116) * lh(8, 3) + 18);
+/** Bill To / Quote & Contact card height as the PDF sizes it (a long name or address makes it taller). */
+function billCardHeight(clientName: string, address?: string, attn?: string) {
+  const textLines = (s: string, cap: number) => s.split(/\n/).reduce((n, l) => n + lines(l, cap), 0);
+  const addr = address?.trim();
+  const bill = 23.5 + textLines(clientName, 42) * lh(11, 1.5) + (addr ? 3 + textLines(addr, 54) * lh(9, 1.5) : 0) + (attn ? 3 + lh(9, 1.5) : 0) + 12;
+  return Math.max(141, bill, 34 + 4 * QUOTE_ROW + 32);
+}
 
 /**
  * Splits the rate card into A4 pages the same way the PDF flows: table rows, then the terms card (continued if long).
- * `top`: how much taller than its 132pt minimum the Bill To card is (a long address), as the PDF sizes it.
+ * `cardH`: height of the Bill To / Quote & Contact cards on the first page.
  */
-function paginate(items: Item[], terms: string[], top = 0): PageSpec[] {
+function paginate(items: Item[], terms: string[], cardH: number): PageSpec[] {
   const pages: PageSpec[] = [{ first: true, start: 0, items: [], terms: null }];
-  let y = 283 + top; // first-page table body starts below the Bill To / Quote cards (no subject bar)
+  let y = 120 + cardH + 12 + HEAD_H; // first-page table body starts below the Bill To / Quote cards (no subject bar)
   items.forEach((it, i) => {
     const h = rowHeight(it, i);
     if (y + h > BOTTOM && pages[pages.length - 1]!.items.length) {
       pages.push({ first: false, start: i, items: [], terms: null });
-      y = 145;
+      y = 122 + HEAD_H;
     }
     pages[pages.length - 1]!.items.push(it);
     y += h;
   });
-  y += 19;
+  y += 14;
   let k = 0;
   while (k < terms.length) {
-    if (y + 48 + termHeight(terms[k]!) + 14 > BOTTOM) {
+    if (y + TERMS_STRIP + 14 + termHeight(terms[k]!) + 17 > BOTTOM) {
       pages.push({ first: false, start: items.length, items: [], terms: null });
       y = 126;
     }
     let fit = k;
-    let h = 48;
-    while (fit < terms.length && y + h + termHeight(terms[fit]!) + 14 <= BOTTOM) h += termHeight(terms[fit++]!) + 6;
-    if (fit === k) fit = k + 1; // a single very long term still goes somewhere
+    let h = TERMS_STRIP + 14;
+    while (fit < terms.length && y + h + termHeight(terms[fit]!) + 17 <= BOTTOM) h += termHeight(terms[fit++]!) + 8;
+    if (fit === k) h += termHeight(terms[fit++]!) + 8; // a single very long term still goes somewhere
     pages[pages.length - 1]!.terms = { from: k, to: fit };
-    y += h + 14;
+    y += h + 9 + 14;
     k = fit;
   }
   return pages;
@@ -85,125 +111,148 @@ function paginate(items: Item[], terms: string[], top = 0): PageSpec[] {
 const dateText = (d?: string) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-");
 const phoneText = (p?: string) => (p && /^\d{10}$/.test(p) ? `+91 ${p.slice(0, 5)} ${p.slice(5)}` : (p ?? ""));
 
+/** Small red tracked heading of the Bill To / Quote & Contact cards. */
 function Marker({ title }: { title: string }) {
-  return <div className="text-[9.5px] font-bold">{title}</div>;
+  return (
+    <div className="text-[7px] font-bold tracking-[1.3px]" style={{ color: RED, lineHeight: `${lh(7, 0)}px` }}>
+      {title}
+    </div>
+  );
 }
 
-function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationValues; spec: PageSpec; n: number; total: number; clientName: string; company: CompanyInfo; terms: string[] }) {
+function Page({ v, spec, n, total, clientName, company, terms, cardH }: { v: QuotationValues; spec: PageSpec; n: number; total: number; clientName: string; company: CompanyInfo; terms: string[]; cardH: number }) {
   const last = n === total;
+  const quoteRows = [
+    ["DATE", dateText(v.quotationDate)],
+    ["CLIENT SERVICE", v.regards?.name || "-"],
+    ["EMAIL ID", v.regards?.email || "-"],
+    ["PHONE NUMBER", phoneText(v.regards?.mobile) || "-"],
+    ["WEBSITE", company.website],
+  ];
   return (
-    <div className="relative bg-white" style={{ width: W, height: H, fontFamily: FONT, color: DARK }}>
+    <div className="relative bg-white" style={{ width: W, height: H, fontFamily: FONT, color: INK }}>
       {/* header card (every page) */}
-      <div className="absolute flex items-center overflow-hidden rounded-[10px] border bg-white" style={{ left: M, top: 29, width: CONTENT_W, height: 79, borderColor: LINE }}>
+      <div className="absolute overflow-hidden rounded-[12px] border bg-white" style={{ left: M, top: 29, width: CONTENT_W, height: 79, borderColor: LINE }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- static brand SVG, scaled inside a scaled A4 page */}
-        <img src="/AdinnLogo.svg" alt="ADINN" style={{ width: 120, marginLeft: 20 }} />
-        <span className="ml-[17px] self-stretch border-l" style={{ borderColor: LINE, margin: "14px 0 14px 17px" }} />
-        <div className="ml-[16px] leading-tight">
-          <p className="text-[13.5px] font-bold">{company.name}</p>
-          <p className="mt-[3px] text-[8.5px] font-bold">GSTIN: {company.gstin}</p>
-          <div className="mt-[4px] text-[8px] leading-[11px]" style={{ color: MUTED }}>
-            {company.address.map((l) => (
-              <p key={l}>{l}</p>
-            ))}
-          </div>
+        <img src="/AdinnLogo.svg" alt="ADINN" className="absolute top-1/2 -translate-y-1/2" style={{ left: 18, width: 107 }} />
+        <span className="absolute border-l" style={{ left: 175 - M, top: 13, height: 53, borderColor: LINE }} />
+        <div className="absolute whitespace-nowrap" style={{ left: 196 - M, top: 0 }}>
+          <p className="absolute text-[13.25px] font-bold" style={{ top: 9, lineHeight: `${lh(13.25, 1.5)}px` }}>
+            {company.name}
+          </p>
+          <p className="absolute text-[9px] font-bold" style={{ top: 27.5, lineHeight: `${lh(9, 1.5)}px` }}>
+            GSTIN: {company.gstin}
+          </p>
+          {company.address.map((l, i) => (
+            <p key={l} className="absolute text-[9.25px] font-semibold" style={{ top: 41 + i * 12.5, color: SLATE, lineHeight: `${lh(9.25, 1.5)}px` }}>
+              {l}
+            </p>
+          ))}
         </div>
       </div>
 
-      <div className="absolute" style={{ left: M, top: spec.first ? 118 : 122, width: CONTENT_W }}>
+      <div className="absolute" style={{ left: M, top: spec.first ? 120 : 122, width: CONTENT_W }}>
         {spec.first && (
-          <>
-            <div className="flex gap-[12px]">
-              <div className="min-h-[132px] w-[260px] rounded-[10px] border px-[13px] pt-[11px]" style={{ borderColor: LINE }}>
-                <Marker title="BILL TO" />
-                <div className="mt-[4px] border-b" style={{ borderColor: LINE }} />
-                <p className="mt-[9px] break-words text-[10.5px] font-bold">{clientName}</p>
-                {v.clientAddress && (
-                  <p className="mt-[4px] whitespace-pre-line break-words text-[8.5px]" style={{ color: MUTED }}>
-                    {v.clientAddress}
-                  </p>
-                )}
-                {v.contact?.name && (
-                  <p className="mt-[4px] text-[8.5px]" style={{ color: MUTED }}>
-                    Kind Attn : {v.contact.name}
-                  </p>
-                )}
-              </div>
-              <div className="min-h-[132px] flex-1 rounded-[10px] border px-[13px] pt-[11px]" style={{ borderColor: LINE }}>
-                <Marker title="QUOTE & CONTACT" />
-                <dl className="mt-[9px] grid grid-cols-[77px_9px_1fr] gap-y-[5.5px] pl-[4px] text-[8px]">
-                  {[
-                    ["DATE", dateText(v.quotationDate)],
-                    ["CLIENT SERVICE", v.regards?.name || "-"],
-                    ["EMAIL ID", v.regards?.email || "-"],
-                    ["PHONE NUMBER", phoneText(v.regards?.mobile) || "-"],
-                    ["WEBSITE", company.website],
-                  ].map(([k, val]) => (
-                    <div key={k} className="contents">
-                      <dt className="text-[7.5px]" style={{ color: MUTED }}>
-                        {k}
-                      </dt>
-                      <span style={{ color: MUTED }}>:</span>
-                      <dd className="break-words">{val}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+          <div className="flex" style={{ gap: CARD_GAP }}>
+            <div className="rounded-[12px] border px-[15px] pt-[10.5px]" style={{ width: HALF_W, height: cardH, borderColor: LINE }}>
+              <Marker title="BILL TO" />
+              <p className="break-words text-[11px] font-bold" style={{ marginTop: 23.5 - 10.5 - lh(7, 0), lineHeight: `${lh(11, 1.5)}px` }}>
+                {clientName}
+              </p>
+              {v.clientAddress && (
+                <p className="mt-[3px] whitespace-pre-line break-words text-[9px] font-medium" style={{ color: SLATE, lineHeight: `${lh(9, 1.5)}px` }}>
+                  {v.clientAddress}
+                </p>
+              )}
+              {v.contact?.name && (
+                <p className="mt-[3px] text-[9px] font-medium" style={{ color: SLATE, lineHeight: `${lh(9, 1.5)}px` }}>
+                  Kind Attn : {v.contact.name}
+                </p>
+              )}
             </div>
-          </>
+            <div className="relative rounded-[12px] border px-[15px] pt-[10.5px]" style={{ width: HALF_W, height: cardH, borderColor: LINE }}>
+              <Marker title="QUOTE & CONTACT" />
+              {/* label left, value right, a thin line between rows */}
+              {quoteRows.map(([k, val], i) => (
+                <div
+                  key={k}
+                  className={cn("absolute flex items-center", i < quoteRows.length - 1 && "border-b")}
+                  style={{ left: 15, right: 15, top: 34 + i * QUOTE_ROW - QUOTE_ROW / 2, height: QUOTE_ROW, borderColor: LINE }}
+                >
+                  <span className="w-[80px] shrink-0 text-[7px] font-semibold tracking-[1px]" style={{ color: LABEL }}>
+                    {k}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-right text-[8.75px] font-bold">{val}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {(spec.items.length > 0 || (spec.first && !v.items?.length)) && (
-          <table className="w-full border-collapse text-[8px]" style={{ marginTop: spec.first ? 10 : 0, tableLayout: "fixed" }}>
-            <colgroup>
-              {COL_W.map((w, i) => (
-                <col key={i} style={{ width: w }} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr className="h-[23px] text-left text-[7.5px] font-bold" style={{ background: "#EEF0F3" }}>
-                {["S.NO", "PARTICULARS", "SPECIFICATION", "RATE / SQFT"].map((h, j) => (
-                  <th key={h} className={cn("whitespace-nowrap px-[11px] font-bold", j === 3 && "pr-0")}>
-                    {h}
-                  </th>
+          <div className="overflow-hidden rounded-[12px] border" style={{ borderColor: LINE, marginTop: spec.first ? 12 : 0 }}>
+            <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                {COL_W.map((w, i) => (
+                  <col key={i} style={{ width: w }} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {spec.items.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="py-4 text-center" style={{ color: MUTED }}>
-                    No signage items yet
-                  </td>
+              </colgroup>
+              <thead>
+                <tr className="text-left text-[7px] font-bold tracking-[0.8px]" style={{ height: HEAD_H, background: "#F3F4F6", color: LABEL }}>
+                  {["S.NO", "PARTICULARS", "SPECIFICATION", "RATE / SQFT"].map((h, j) => (
+                    <th key={h} className={cn("whitespace-nowrap px-[11px] font-bold", j === 3 && "pr-0")}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              )}
-              {spec.items.map((it, i) => {
-                const idx = spec.start + i;
-                return (
-                  <tr key={idx} className="h-[30px] border-b" style={{ borderColor: LINE, background: idx % 2 === 1 ? "#FAFAFB" : undefined }}>
-                    {[String(idx + 1), it.particulars || "-", it.specifications || "-", rateText(it.quotedRate || 0, it.unit)].map((c, j) => (
-                      <td key={j} className={cn("break-words px-[11px] py-[7px] leading-[10.8px]", j > 0 && "border-l", j === 3 && "pr-[4px]")} style={{ borderColor: LINE }}>
-                        {c}
-                      </td>
-                    ))}
+              </thead>
+              <tbody>
+                {spec.items.length === 0 && (
+                  <tr className="border-t" style={{ borderColor: LINE }}>
+                    <td colSpan={4} className="py-4 text-center text-[8px]" style={{ color: MUTED }}>
+                      No signage items yet
+                    </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                )}
+                {spec.items.map((it, i) => {
+                  const idx = spec.start + i;
+                  return (
+                    <tr key={idx} className="border-t" style={{ height: rowHeight(it, idx), borderColor: LINE, background: idx % 2 === 1 ? ZEBRA : undefined }}>
+                      {cellTexts(it, idx).map((c, j) => {
+                        const cell = CELLS[j]!;
+                        return (
+                          <td
+                            key={j}
+                            className={cn("break-words px-[11px] py-[11px] align-top", j === 3 && "pr-[4px]")}
+                            style={{ fontSize: cell.size, fontWeight: cell.weight, color: cell.color, lineHeight: `${lh(cell.size, 2)}px` }}
+                          >
+                            {c}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {spec.terms && (
-          <div className="rounded-[10px] border px-[16px] pb-[14px]" style={{ borderColor: LINE, marginTop: spec.items.length || spec.first ? 19 : 4 }}>
-            <div className="-mx-[2px] flex h-[35px] items-center justify-between border-b" style={{ borderColor: LINE }}>
-              <span className="text-[11px] font-bold">{spec.terms.from === 0 ? "Terms & Conditions" : "Terms & Conditions (continued)"}</span>
+          <div className="overflow-hidden rounded-[12px] border pb-[17px]" style={{ borderColor: LINE, marginTop: spec.items.length || spec.first ? 14 : 4 }}>
+            <div className="flex items-center justify-between border-b px-[18px]" style={{ height: TERMS_STRIP, background: "#F8F9FA", borderColor: LINE }}>
+              <span className="text-[11.25px] font-semibold">{spec.terms.from === 0 ? "Terms & Conditions" : "Terms & Conditions (continued)"}</span>
+              <span className="flex h-[19px] items-center rounded-full border px-[10px] text-[7.5px] font-semibold" style={{ background: "#FEF2F2", borderColor: "#FECACA", color: "#B91C1C" }}>
+                Subject To Availability
+              </span>
             </div>
-            <ol className="mt-[13px] space-y-[6px]">
+            <ol className="mx-[18px] mt-[14px] space-y-[8px]">
               {terms.slice(spec.terms.from, spec.terms.to).map((t, i) => (
-                <li key={i} className="flex min-h-[24px] items-center gap-[14px] rounded-[4px] border px-[10px] py-[7px] text-[7.5px]" style={{ background: "#F7F7F8", borderColor: "#ECEDEF" }}>
-                  <span className="flex h-[11px] w-[23px] shrink-0 items-center justify-center rounded-[3px] text-[6.5px] font-bold text-white" style={{ background: "#1F2433" }}>
+                <li key={i} className="flex items-center gap-[10px] rounded-[6px] border px-[10px] text-[8px]" style={{ height: termHeight(t), background: ZEBRA, borderColor: "#ECECEC" }}>
+                  <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[4px] text-[7px] font-bold text-white" style={{ background: INK }}>
                     {String(spec.terms!.from + i + 1).padStart(2, "0")}
                   </span>
-                  <span className="leading-[11.5px]">{t}</span>
+                  <span style={{ lineHeight: `${lh(8, 3)}px` }}>{t}</span>
                 </li>
               ))}
             </ol>
@@ -211,24 +260,20 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
         )}
       </div>
 
-      {/* footer (every page) */}
-      <div className="absolute flex items-end justify-between border-t pt-[6px]" style={{ left: M, top: 810, width: CONTENT_W, borderColor: LINE }}>
-        {last ? (
-          <div className="leading-tight">
-            <p className="text-[8px] font-bold">Thank You For Choosing {company.name}.</p>
-            <p className="mt-[2px] text-[7px]" style={{ color: MUTED }}>
-              This Is A System-Generated Quotation And Does Not Require A Digital Signature.
-            </p>
-          </div>
-        ) : (
-          <span className="text-[8px]" style={{ color: MUTED }}>
-            {company.website}
-          </span>
-        )}
-        <span className="text-[7.5px] tracking-[1.5px]" style={{ color: MUTED }}>
-          PAGE {n} OF {total}
-        </span>
-      </div>
+      {/* footer: thank-you note on the last page, page number centred on every page */}
+      {last && (
+        <div className="absolute border-t pt-[6px]" style={{ left: M, top: 792, width: CONTENT_W, borderColor: LINE }}>
+          <p className="text-[8.25px] font-bold" style={{ lineHeight: `${lh(8.25, 1.2)}px` }}>
+            Thank You For Choosing {company.name}.
+          </p>
+          <p className="text-[7.5px]" style={{ color: MUTED, lineHeight: `${lh(7.5, 0)}px` }}>
+            This Is A System-Generated Quotation And Does Not Require A Digital Signature.
+          </p>
+        </div>
+      )}
+      <span className="absolute text-center text-[7.5px] font-semibold tracking-[1px]" style={{ left: M, top: 826, width: CONTENT_W, color: "#94A3B8" }}>
+        PAGE {n} OF {total}
+      </span>
     </div>
   );
 }
@@ -275,15 +320,15 @@ export function QuotationPreview({
   }, [fitWidth]);
   const scale = fitWidth && areaW ? Math.max(0.3, areaW / W) : zoom;
   const terms = useMemo(() => termsList(values.terms), [values.terms]);
-  // Bill To card height as in the PDF (40 + name + address + Kind Attn + 24, at least 132).
-  const addrTop = Math.max(0, 88 + (values.clientAddress?.trim() ? lines(values.clientAddress, 50) * 10.5 : 0) - 132);
-  const pages = useMemo(() => paginate(values.items ?? [], terms, addrTop), [values.items, terms, addrTop]);
+  // Bill To / Quote & Contact card height as in the PDF (taller for a long name or address).
+  const cardH = billCardHeight(clientName, values.clientAddress, values.contact?.name ? `Kind Attn : ${values.contact.name}` : undefined);
+  const pages = useMemo(() => paginate(values.items ?? [], terms, cardH), [values.items, terms, cardH]);
   const current = Math.min(page, pages.length - 1);
   const label = dirty || !latest ? `${latest ? latest.label + " + unsaved" : "Draft"}` : latest.label;
   const pdfId = latest?.pdf?.fileId;
   const src = source ?? { orderId };
   const run = (fn: () => Promise<void>) => fn().catch((e) => toast(errorMessage(e), "error"));
-  const pageProps = { v: values, total: pages.length, clientName, company, terms };
+  const pageProps = { v: values, total: pages.length, clientName, company, terms, cardH };
 
   return (
     <div className="flex h-full min-h-[600px] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
