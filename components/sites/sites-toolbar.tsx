@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 
 export interface FilterState {
   district: string;
+  location: string;
+  planArea: string;
   scenario: Scenario | "";
   missing: MissingKey | "";
   importBatchId: string;
@@ -134,6 +136,25 @@ export function SitesToolbar({
               {d.district} ({d.count})
             </option>
           ))}
+        </Select>
+      </div>
+      <div className="w-52">
+        <Select aria-label="Filter by area" value={filter.location} onChange={(e) => onFilter({ location: e.target.value })}>
+          <option value="">All areas</option>
+          {districts.map((d) => {
+            const areas = (stats?.locations ?? []).filter((l) => l.district.toLowerCase() === d.district.toLowerCase() && (!filter.district || filter.district.toLowerCase() === d.district.toLowerCase()));
+            return areas.length ? (
+              <optgroup key={d.district} label={`${d.district} (${d.count})`}>
+                {areas.map((l) => <option key={`${l.district}-${l.location}`} value={l.location}>{l.location} ({l.count})</option>)}
+              </optgroup>
+            ) : null;
+          })}
+        </Select>
+      </div>
+      <div className="w-60">
+        <Select aria-label="Filter by smart-plan cluster" value={filter.planArea} onChange={(e) => onFilter({ planArea: e.target.value })} title="Nearby-shop groups from the Smart plan (Cost Comparison > Use this plan)">
+          <option value="">{(stats?.clusters.length ?? 0) > 0 ? "All clusters" : "Clusters (run Smart plan)"}</option>
+          {(stats?.clusters ?? []).map((c) => <option key={c.key} value={c.key}>{c.name} ({c.count})</option>)}
         </Select>
       </div>
       <div className="w-44">

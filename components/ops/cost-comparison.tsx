@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Calculator, ClipboardCheck, Layers, Receipt, RotateCcw, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { fetchLegLinks, legToInput, useCost, useRouteLeg, useSavePlan, useSyncPlan, type LegInput, type LegLinks, type PlanStatus, type RouteInfo } from "@/lib/api/costing";
+import { fetchLegLinks, legToInput, useCost, useReadiness, useRouteLeg, useSavePlan, useSuggestPlan, useSyncPlan, type LegInput, type LegLinks, type PlanStatus, type RouteInfo } from "@/lib/api/costing";
 import { useActiveVendors } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import { ExpenseClaims } from "./expense-claims";
 import { LegCard, inr } from "./plan/leg-card";
 import { PlanReview } from "./plan/plan-review";
 import { PlanShops } from "./plan/plan-shops";
+import { SmartSuggest } from "./plan/smart-suggest";
 
 type Step = "shops" | "compare" | "review" | "bills";
 const STATUS: Record<PlanStatus, { label: string; tone: "neutral" | "warning" | "success" | "danger" | "info" }> = {
@@ -57,8 +58,27 @@ export function CostComparison({ projectId, closed }: { projectId: string; close
   const [links, setLinks] = useState<Record<string, LegLinks>>({});
   const [linking, setLinking] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(false);
+  const suggest = useSuggestPlan(projectId);
+  const readiness = useReadiness(projectId).data;
+  const [autoNote, setAutoNote] = useState<string | null>(null);
+  const autoTried = useRef(false);
 
   const view = q.data;
+  // Automatic first: once the shops are verified and nothing is chosen yet, the best team or vendor of every area is selected
+  // for you. Everything stays editable; nothing is submitted or assigned until you confirm.
+  const noChoices = !!view && (!view.saved || view.plan.legs.length === 0 || view.plan.legs.every((l) => !l.channel));
+  const canAuto = can("sites:write") && !closed && !!view && view.plan.clientDecision !== "ACCEPTED";
+  useEffect(() => {
+    if (autoTried.current || !canAuto || !noChoices || !readiness || readiness.verified === 0) return;
+    autoTried.current = true;
+    suggest.mutate({ skills: [], requireSkills: false, apply: true, groupBy: "area" }, {
+      onSuccess: (r) => {
+        setAutoNote(`The best choice was selected automatically for ${r.totals.areas} areas (${r.totals.inHouseShops} shops in-house, ${r.totals.vendorShops} to vendors, about ₹${Math.round(r.totals.suggested).toLocaleString("en-IN")}). Change anything you like, then submit.`);
+        setStep("compare");
+      },
+      onError: () => { /* the Smart plan card shows why */ },
+    });
+  }, [canAuto, noChoices, readiness, suggest]);
   const serverLegs = useMemo(() => (view?.plan.legs ?? []).map(legToInput), [view]);
   const base = useMemo(() => JSON.stringify(serverLegs), [serverLegs]);
   // The editable copy follows the server; once something is typed it is kept until it is saved or discarded.
@@ -143,6 +163,13 @@ export function CostComparison({ projectId, closed }: { projectId: string; close
           ]}
         />
         <TabPanel k={step} className="space-y-4 bg-[#f7f9fd] p-4">
+          {autoNote && step !== "shops" && (
+            <p role="status" className="flex items-center justify-between gap-3 rounded-xl border border-[#9fdcc3] bg-[#ecfaf3] px-4 py-3 text-sm text-finance">
+              <span><strong>Automatic plan ready.</strong> {autoNote}</span>
+              <button type="button" className="text-xs underline" onClick={() => setAutoNote(null)}>Dismiss</button>
+            </p>
+          )}
+          {step === "shops" && <SmartSuggest projectId={projectId} canEdit={canEdit} onApplied={() => setStep("compare")} />}
           {step === "shops" && <PlanShops projectId={projectId} view={view} canEdit={canEdit} syncing={sync.isPending} onSync={() => sync.mutate(undefined, { onSuccess: (r) => { toast(`${r.plan.legs.length} area(s) in the plan`); setStep("compare"); }, onError: (e) => toast(errorMessage(e), "error") })} />}
 
           {step === "compare" && (

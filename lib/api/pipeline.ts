@@ -286,7 +286,7 @@ export function useApproveAll(pid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (level: ApprovalLevel) =>
-      api<{ approved: number; stillPending: number }>(`/projects/${pid}/sites/approve-all`, { method: "POST", body: JSON.stringify({ level }) }),
+      api<{ approved: number; stillPending: number; waitingForAddress?: number }>(`/projects/${pid}/sites/approve-all`, { method: "POST", body: JSON.stringify({ level }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sites", pid] }),
   });
 }

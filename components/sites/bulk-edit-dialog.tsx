@@ -24,6 +24,8 @@ export interface BulkTarget {
   ids?: string[];
   filter?: SiteFilter;
   count: number;
+  /** What the deletion is about, e.g. "Every shop brought in by the import of file.xlsx". */
+  label?: string;
 }
 
 export function BulkEditDialog({
@@ -189,7 +191,7 @@ export function BulkDeleteDialog({
         </p>
       ) : (
         <p className="text-sm">
-          {target.ids ? "The selected sites" : "Every site matching the current filter"} ({formatNumber(target.count)}) will be deleted.
+          {target.label ?? (target.ids ? "The selected sites" : "Every site matching the current filter")} ({formatNumber(target.count)}) will be deleted.
         </p>
       )}
     </Modal>

@@ -194,7 +194,7 @@ export function ImportWizard({
         onOpenChange={(o) => !o && requestClose()}
         title={fromFile ? `Extract shops from ${fromFile.name}` : "Import sites from Excel"}
         description={fromFile ? "The columns are matched for you. Check them, review the rows and confirm. You can edit every shop afterwards." : "Upload, map columns, review and import. Nothing is saved until you confirm the import."}
-        className="h-[92vh] max-w-6xl"
+        className="h-[94vh] max-w-[96vw] 2xl:max-w-[1600px]"
       >
         <Stepper step={step} />
         <AnimatePresence mode="wait" initial={false}>

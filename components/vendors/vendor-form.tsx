@@ -62,7 +62,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
   const lastData = quick ? "business" : "rates";
   const [f, setF] = useState<Form>(() => fromVendor(vendor));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const set = (k: keyof Form) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }));
+  const set =(k: keyof Form) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }));
   const options = types.data ?? Object.entries(BUILT_IN).map(([rules, name]) => ({ _id: rules, name, rules: rules as VendorType }));
   // The chosen type decides the rules: an organization needs a contact person and GST, one-man / freelancer needs neither.
   const rules: VendorType = options.find((t) => t.name === f.typeName)?.rules ?? vendor?.type ?? "ONE_MAN";

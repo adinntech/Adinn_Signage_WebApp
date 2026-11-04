@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BedDouble, Car, Check, History, Plus, ReceiptIndianRupee, ShieldCheck, Utensils, X, type LucideIcon } from "lucide-react";
+import { BedDouble, Building2, Car, Check, Store, History, Plus, ReceiptIndianRupee, ShieldCheck, Utensils, X, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -218,9 +218,9 @@ function VendorTab({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="space-y-3">
       {canEdit && (
-        <div className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
-          <p className="font-semibold text-navy">New vendor rate plan</p>
-          <div className="grid gap-3 sm:grid-cols-4">
+        <div className="space-y-2.5 overflow-hidden rounded-xl border border-border bg-surface pb-3 shadow-soft [&>*:not(header)]:mx-3">
+          <header className="!mx-0 flex items-center gap-2.5 bg-gradient-to-r from-[#6d28d9] to-[#9333ea] px-3 py-2 text-white"><Store className="size-5" /><div><p className="font-semibold">New vendor rate plan</p><p className="text-xs opacity-90">One plan per vendor and recce type. Dates cannot overlap.</p></div></header>
+          <div className="grid gap-2.5 sm:grid-cols-4">
             <Field label="Vendor" htmlFor="vr-v" error={errors.vendorId}><Select id="vr-v" value={f.vendorId ?? ""} onChange={(e) => set("vendorId", e.target.value)}><option value="">Choose…</option>{(vendors.data?.data ?? []).map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}</Select></Field>
             <Field label="Recce type" htmlFor="vr-t" error={errors.recceType}><Input id="vr-t" maxLength={60} value={f.recceType ?? ""} onChange={(e) => set("recceType", e.target.value)} /></Field>
             <Field label="Effective from" htmlFor="vr-f"><Input id="vr-f" type="date" value={f.effectiveFrom} onChange={(e) => set("effectiveFrom", e.target.value)} /></Field>
@@ -235,8 +235,8 @@ function VendorTab({ canEdit }: { canEdit: boolean }) {
           <tbody>{(rates.data ?? []).map((r) => <tr key={r._id} className="border-t border-border"><td className="p-3">{r.vendor?.name}</td><td>{r.recceType}</td><td>{inr(r.ratePerShop)}</td><td>{inr(r.ratePerDay)}</td><td>{inr(r.ratePerLocation)}</td><td>{inr(r.fixedProjectRate)}</td><td>{inr(r.travelCharges + r.stayCharges + r.otherCharges)}</td><td>{formatDate(r.effectiveFrom)}</td><td>{r.effectiveTo ? formatDate(r.effectiveTo) : "open"}</td></tr>)}</tbody></table>
         {rates.data?.length === 0 && <EmptyState title="No vendor rate plans yet" />}
       </div>
-      <div className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
-        <p className="font-semibold text-navy">Apply a vendor rate to a project</p>
+      <div className="space-y-2.5 overflow-hidden rounded-xl border border-border bg-surface pb-3 shadow-soft [&>*:not(header)]:mx-3">
+        <header className="!mx-0 flex items-center gap-2.5 bg-gradient-to-r from-[#0f766e] to-[#0d9488] px-3 py-2 text-white"><Building2 className="size-5" /><div><p className="font-semibold">Apply a vendor rate to a project</p><p className="text-xs opacity-90">The rate in force today is stored with the project as a snapshot.</p></div></header>
         <div className="grid gap-3 sm:grid-cols-6">
           <Select aria-label="Project" className="sm:col-span-2" value={ap.projectId ?? ""} onChange={(e) => setAp({ ...ap, projectId: e.target.value })}><option value="">Project…</option>{(projects.data?.data ?? []).map((p) => <option key={p._id} value={p._id}>{p.code} · {p.campaign ?? p.name}</option>)}</Select>
           <Select aria-label="Vendor" value={ap.vendorId ?? ""} onChange={(e) => setAp({ ...ap, vendorId: e.target.value })}><option value="">Vendor…</option>{(vendors.data?.data ?? []).map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}</Select>
@@ -252,7 +252,7 @@ function VendorTab({ canEdit }: { canEdit: boolean }) {
 
 function Block({ title, rows }: { title: string; rows: { key: string; total: number }[] }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-soft"><p className="mb-2 font-semibold text-navy">{title}</p>
+    <div className="rounded-xl border border-border bg-surface p-4 shadow-soft"><p className="mb-2 border-b border-border pb-1.5 font-semibold text-navy">{title}</p>
       <ul className="max-h-60 space-y-1 overflow-auto text-sm">{rows.map((r) => <li key={r.key} className="flex justify-between"><span>{r.key}</span><b className="tabular-nums">{inr(r.total)}</b></li>)}{rows.length === 0 && <li className="text-muted-foreground">No data yet</li>}</ul></div>
   );
 }

@@ -18,6 +18,7 @@ import { downloadZohoVendors, useAddVendorSkill, useSetZohoPrice, useStartZohoSy
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ExportMenu } from "./export-menu";
+import { ZohoToggle } from "./zoho-toggle";
 import { ZohoVendorDrawer } from "./zoho-vendor-drawer";
 
 const money = (n: number | null) => (n == null ? "–" : `₹${n}`);
@@ -97,8 +98,10 @@ function SearchResults({ canWrite, onCost, onView, syncing, empty }: { canWrite:
   const dq = useDebounced(q.trim());
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  const searching = dq.length >= 2;
-  const list = useZohoDirectory({ page, limit, q: searching ? dq : undefined, status: "active" }, searching);
+  /** Off: nothing is fetched until something is typed. On: the whole Zoho list is fetched (page by page) and the search narrows it. */
+  const [all, setAll] = useState(false);
+  const searching = all || dq.length >= 2;
+  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active" }, searching);
   const rows = list.data?.data ?? [];
   return (
     <>
@@ -107,6 +110,7 @@ function SearchResults({ canWrite, onCost, onView, syncing, empty }: { canWrite:
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search by vendor ID, name, GST, PAN, phone, email, city…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
         </div>
+        <ZohoToggle on={all} onChange={(v) => { setAll(v); setPage(1); }} />
       </div>
       {!searching ? (
         <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">{empty && !syncing ? "No Zoho vendors stored yet. Press “Sync from Zoho” first." : ""}</p>

@@ -112,13 +112,13 @@ const schema = z
         message: "End date must be on or after the start date",
       });
     if (
-      v.requirementType !== "ASO" &&
+      v.requirementType !== "ASO" && v.expectedShops.trim() !== "" &&
       !/^[1-9]\d{0,5}$/.test(v.expectedShops.trim())
     )
       ctx.addIssue({
         code: "custom",
         path: ["expectedShops"],
-        message: "Enter the number of shops (whole number, at least 1)",
+        message: "Use a whole number, at least 1, or leave it empty",
       });
     const seen = new Map<string, number>();
     v.contacts.forEach((c, i) => {
@@ -246,7 +246,7 @@ function ProjectForm({ orderId, d }: { orderId: string; d: ProjectDraft }) {
         priority: x.priority,
         requirementType: x.requirementType,
         expectedShops:
-          x.requirementType === "ASO" ? null : Number(x.expectedShops),
+          x.requirementType === "ASO" || x.expectedShops.trim() === "" ? null : Number(x.expectedShops),
         contacts: x.contacts.map((c) => ({
           name: c.name.trim(),
           email: c.email.trim().toLowerCase(),
@@ -567,9 +567,8 @@ function ProjectForm({ orderId, d }: { orderId: string; d: ProjectDraft }) {
                   </p>
                 ) : (
                   <Field
-                    label="Total Shops"
+                    label="Total Shops (optional)"
                     htmlFor="expectedShops"
-                    required
                     error={errors.expectedShops?.message}
                     hint={
                       d.handover.shops

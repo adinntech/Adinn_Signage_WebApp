@@ -1,7 +1,5 @@
 "use client";
 
-import { BadgeCheck } from "lucide-react";
-import { ShopApprovals } from "@/components/approvals/shop-approvals";
 import { SitesTab } from "@/components/sites/sites-tab";
 import type { Project } from "@/lib/api/projects";
 import { AdditionalShops } from "./additional-shops";
@@ -24,18 +22,9 @@ export function ShopDetailsStage({ project, canEdit, readOnly }: { project: Proj
     >
       <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />
 
-      <SitesTab project={project} readOnly={readOnly} allowImport={false} />
+      <SitesTab project={project} readOnly={readOnly} allowImport={false} verification />
 
       <AdditionalShops project={project} canEdit={canEdit} />
-
-      <div className="rounded-xl border border-[#d6c4f5] bg-[#f6f0ff] p-4">
-        <h3 className="mb-1 flex items-center gap-2 text-sm font-bold text-vendor">
-          <span className="flex size-6 items-center justify-center rounded-full bg-vendor text-white"><BadgeCheck className="size-4" aria-hidden /></span>
-          Shop verification
-        </h3>
-        <p className="mb-3 text-xs text-muted-foreground">Check each shop&apos;s details (name, address, phone). The recce can start only when every shop is verified.</p>
-        <ShopApprovals projectId={project._id} mode="details" readOnly={readOnly} />
-      </div>
     </RequirementPanel>
   );
 }

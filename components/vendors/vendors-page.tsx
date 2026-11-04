@@ -15,7 +15,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoSyncStatus, type Vendor, type VendorStatus, type VendorType } from "@/lib/api/vendors";
+import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoDirectory, useZohoSyncStatus, type Vendor, type VendorStatus, type VendorType, type ZohoVendorRow } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ import { ExportMenu } from "./export-menu";
 import { VendorImport } from "./vendor-import";
 import { VendorIdDialog } from "./vendor-id-dialog";
 import { VendorMaster } from "./vendor-master";
+import { ZohoToggle } from "./zoho-toggle";
+import { ZohoVendorDrawer } from "./zoho-vendor-drawer";
 import { VendorRegistrationMail } from "./vendor-registration-mail";
 
 type Tab = "ALL" | VendorStatus;
@@ -51,6 +53,10 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const list = useVendors({ page, limit, q: dq || undefined, status: tab === "ALL" ? "" : tab, type, sort: "name" });
+  /** Off: only the vendors registered here. On: the full Zoho list, fetched only now (never while the toggle is off). */
+  const [zohoOn, setZohoOn] = useState(false);
+  const [zview, setZview] = useState<ZohoVendorRow | null>(null);
+  const zlist = useZohoDirectory({ page, limit, q: dq || undefined, status: "active" }, zohoOn);
   const del = useDeleteVendor();
   const [form, setForm] = useState<{ open: boolean; vendor?: Vendor }>({ open: false });
   const registration = which === "registration";
@@ -95,23 +101,56 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
         </div>
       </div>
 
-      {actions && <div className="flex flex-wrap justify-end gap-2">{actions}</div>}
-
       {!registration && <VendorMaster canWrite={canWrite} />}
 
       {registration && (
       <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
-        <div className="border-b border-border px-4 py-3"><h2 className="text-base font-bold text-navy">Registered vendors</h2><p className="text-xs text-muted-foreground">New vendors registered here with their KYC documents and registration mail. Click a row to see all its details.</p></div>
-        <Tabs label="Vendor status" className="border-b border-border pt-2" value={tab} onChange={(k) => { setTab(k as Tab); setPage(1); }} tabs={TABS.map((t) => ({ ...t, count: s ? (t.key === "ALL" ? s.ALL : s[t.key]) : undefined }))} />
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0"><h2 className="text-base font-bold text-navy">{zohoOn ? "Zoho vendors" : "Registered vendors"}</h2><p className="text-xs text-muted-foreground">{zohoOn ? "The full vendor list fetched from Zoho Books. Click a row to see all its details." : "New vendors registered here with their KYC documents and registration mail. Click a row to see all its details."}</p></div>
+          {actions && <div className="flex flex-wrap justify-end gap-2">{actions}</div>}
+        </div>
+        <div className="flex items-center justify-between gap-3 border-b border-border pr-3">
+          <div className="min-w-0 flex-1">{!zohoOn && <Tabs label="Vendor status" className="pt-2" value={tab} onChange={(k) => { setTab(k as Tab); setPage(1); }} tabs={TABS.map((t) => ({ ...t, count: s ? (t.key === "ALL" ? s.ALL : s[t.key]) : undefined }))} />}</div>
+          <ZohoToggle className="my-1.5" on={zohoOn} onChange={(v) => { setZohoOn(v); setPage(1); }} />
+        </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
           <div className="relative min-w-52 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search vendor name, code, mobile, city…" className="pl-9" aria-label="Search vendors" />
+            <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder={zohoOn ? "Search Zoho vendor ID, name, GST, PAN, phone, city…" : "Search vendor name, code, mobile, city…"} className="pl-9" aria-label="Search vendors" />
           </div>
-          <div className="w-44"><Select value={type} onChange={(e) => { setType(e.target.value as VendorType | ""); setPage(1); }} aria-label="Vendor type"><option value="">All types</option><option value="ONE_MAN">One-man</option><option value="ORGANIZATION">Organization</option></Select></div>
-          <ExportMenu onExport={(format) => downloadVendors(format, { q: dq || undefined, status: tab === "ALL" ? "" : tab, type })} />
+          {!zohoOn && <div className="w-44"><Select value={type} onChange={(e) => { setType(e.target.value as VendorType | ""); setPage(1); }} aria-label="Vendor type"><option value="">All types</option><option value="ONE_MAN">One-man</option><option value="ORGANIZATION">Organization</option></Select></div>}
+          {!zohoOn && <ExportMenu onExport={(format) => downloadVendors(format, { q: dq || undefined, status: tab === "ALL" ? "" : tab, type })} />}
         </div>
 
+        {zohoOn ? (
+          <div className={cn("overflow-x-auto transition-opacity", zlist.isFetching && !zlist.isPending && "opacity-60")}>
+            {zlist.isPending ? (
+              <RowsSkeleton rows={6} className="p-4" />
+            ) : zlist.isError ? (
+              <ErrorState error={zlist.error} onRetry={() => zlist.refetch()} />
+            ) : (zlist.data?.data ?? []).length === 0 ? (
+              <EmptyState title="No Zoho vendor found" description="Check the spelling, or sync the Zoho list in Vendor master." />
+            ) : (
+              <table className="w-full min-w-[860px] text-sm">
+                <thead className="bg-[#f6f0ff] text-left text-xs uppercase tracking-wide text-navy">
+                  <tr><th className="px-4 py-3">Vendor ID</th><th className="px-4 py-3">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">GST / PAN</th><th className="px-4 py-3">City</th><th className="px-4 py-3">Registered here</th></tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {(zlist.data?.data ?? []).map((v) => (
+                    <tr key={v._id} className="cursor-pointer hover:bg-[#faf6ff]" onClick={() => setZview(v)} title="Click to see all details">
+                      <td className="px-4 py-3 font-mono font-semibold text-navy">{v.vendorNo ?? "–"}</td>
+                      <td className="max-w-60 px-4 py-3 font-semibold text-navy"><span className="block truncate" title={v.name}>{v.name}</span></td>
+                      <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
+                      <td className="px-4 py-3 text-xs">{v.gstin ?? "–"}<span className="block text-muted-foreground">{v.pan ?? ""}</span></td>
+                      <td className="max-w-36 truncate px-4 py-3">{v.city || "–"}</td>
+                      <td className="px-4 py-3 text-xs">{v.vendor ? <span className="font-semibold text-finance">{v.vendor.code}</span> : <span className="text-muted-foreground">No</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        ) : (
         <div className={cn("overflow-x-auto transition-opacity", list.isFetching && !list.isPending && "opacity-60")}>
           {list.isPending ? (
             <RowsSkeleton rows={6} className="p-4" />
@@ -157,12 +196,14 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
             </table>
           )}
         </div>
-        <Pagination meta={list.data?.meta} onPage={setPage} onLimit={(n) => { setLimit(n); setPage(1); }} />
+        )}
+        {zohoOn ? <Pagination meta={zlist.data?.meta} onPage={setPage} onLimit={(n) => { setLimit(n); setPage(1); }} /> : <Pagination meta={list.data?.meta} onPage={setPage} onLimit={(n) => { setLimit(n); setPage(1); }} />}
       </section>
       )}
 
       {form.open && <VendorForm key={form.vendor?._id ?? "new"} open vendor={form.vendor} onClose={() => setForm({ open: false })} />}
-      {importing && <VendorImport open onClose={() => setImporting(false)} />}
+      <ZohoVendorDrawer vendor={zview} canWrite={false} onCost={() => undefined} onClose={() => setZview(null)} />
+      {importing &&<VendorImport open onClose={() => setImporting(false)} />}
       {mailing && <VendorRegistrationMail vendor={mailing} open onClose={() => setMailing(null)} />}
       {idFor && <VendorIdDialog vendor={idFor} onClose={() => setIdFor(null)} />}
       <VendorDrawer vendor={view ? (rows.find((r) => r._id === view._id) ?? view) : null} onClose={() => setView(null)} onEdit={(v) => { setView(null); setForm({ open: true, vendor: v }); }} />

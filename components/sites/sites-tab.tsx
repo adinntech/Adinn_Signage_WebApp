@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { MapPin, Plus, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, BadgeCheck, MapPin, Plus, Trash2, Undo2, Upload, X } from "lucide-react";
+import { levelsFor } from "@/components/approvals/shop-approvals";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
@@ -12,6 +14,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
+import { useApprovalSites, useApproveAll, useSetApproval, type ApprovalState } from "@/lib/api/pipeline";
 import type { Project } from "@/lib/api/projects";
 import {
   downloadSites,
@@ -33,7 +36,7 @@ import { BulkDeleteDialog, BulkEditDialog, type BulkTarget } from "./bulk-edit-d
 import { ImportHistory } from "./import-history";
 import { ImportWizard } from "./import-wizard";
 import { SiteFormDialog } from "./site-form-dialog";
-import { SitesTable } from "./sites-table";
+import { SitesTable, type VerifyControls } from "./sites-table";
 import { SitesStats, SitesToolbar, type FilterState } from "./sites-toolbar";
 
 const COLUMNS_KEY = "sites.visibleColumns.v1";
@@ -53,12 +56,37 @@ function loadColumns(): string[] {
   return DEFAULT_VISIBLE;
 }
 
-const NO_FILTER: FilterState = { district: "", scenario: "", missing: "", importBatchId: "" };
+const NO_FILTER: FilterState = { district: "", location: "", planArea: "", scenario: "", missing: "", importBatchId: "" };
 
-export function SitesTab({ project, readOnly, allowImport = true }: { project: Project; readOnly?: boolean; /** false hides the Excel upload (shops then come from the attachments panel or are added by hand). */ allowImport?: boolean }) {
+export function SitesTab({ project, readOnly, allowImport = true, verification = false }: { project: Project; readOnly?: boolean; /** false hides the Excel upload (shops then come from the attachments panel or are added by hand). */ allowImport?: boolean; /** Adds the Operations shop-verification column, bulk verify and the corrections list to this table. */ verification?: boolean }) {
   const pid = project._id;
-  const { can } = useAuth();
+  const { user, can } = useAuth();
   const toast = useToast();
+  const setApproval = useSetApproval(pid);
+  const approveAll = useApproveAll(pid);
+  const approvals = useApprovalSites(pid, verification);
+  const [correcting, setCorrecting] = React.useState<Site | null>(null);
+  const [note, setNote] = React.useState("");
+  const [verifying, setVerifying] = React.useState(false);
+  const canVerify = verification && !readOnly && levelsFor(user?.role, can).includes("ops");
+  const approvalRows = approvals.data?.data ?? [];
+  const verifiedCount = approvalRows.filter((s) => s.opsApproval === "APPROVED").length;
+  const corrections = approvalRows.filter((s) => s.opsApproval === "CORRECTION");
+  const { mutate: mutateApproval } = setApproval;
+  const verifyControls = React.useMemo<VerifyControls | undefined>(
+    () =>
+      verification
+        ? {
+            canAct: canVerify,
+            onSet: (s: Site, value: ApprovalState) => mutateApproval({ siteId: s._id, level: "ops", value }, { onError: (e) => toast(errorMessage(e), "error") }),
+            onCorrect: (s: Site) => {
+              setNote("");
+              setCorrecting(s);
+            },
+          }
+        : undefined,
+    [verification, canVerify, mutateApproval, toast],
+  );
   const reduce = useReducedMotion();
   const canWrite = can("sites:write") && !readOnly;
   const defaultScenario: Scenario = project.requirement?.siteDataScenario ?? "MEASUREMENT_REQUIRED";
@@ -87,11 +115,13 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
   const siteFilter: SiteFilter = {
     q: dq || undefined,
     district: filter.district || undefined,
+    location: filter.location || undefined,
+    planArea: filter.planArea || undefined,
     scenario: filter.scenario || undefined,
     missing: filter.missing || undefined,
     importBatchId: filter.importBatchId || undefined,
   };
-  const hasFilters = !!(dq || filter.district || filter.scenario || filter.missing || filter.importBatchId);
+  const hasFilters = !!(dq || filter.district || filter.location || filter.planArea || filter.scenario || filter.missing || filter.importBatchId);
 
   const list = useSites(pid, { ...siteFilter, page, limit, sort });
   const stats = useSiteStats(pid);
@@ -196,6 +226,27 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
       setExporting(false);
     }
   }
+  async function verifySelected() {
+    setVerifying(true);
+    try {
+      if (allMatching && !hasFilters) {
+        const r = await approveAll.mutateAsync("ops");
+        toast(r.approved ? `Verified ${r.approved} shop(s)` : "Nothing pending to verify");
+      } else if (allMatching) {
+        toast("Clear the filters to verify every shop, or tick the shops on this page.", "error");
+        return;
+      } else {
+        const ids = [...selected];
+        for (const siteId of ids) await setApproval.mutateAsync({ siteId, level: "ops", value: "APPROVED" });
+        toast(`Verified ${ids.length} shop(s)`);
+      }
+      clearSelection();
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setVerifying(false);
+    }
+  }
   async function runTemplate(s: Scenario) {
     try {
       await downloadTemplate(pid, s);
@@ -239,6 +290,32 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
   return (
     <div className="min-w-0 max-w-full space-y-3">
       <SitesStats stats={stats.data} missing={filter.missing} onMissing={(m) => setFilter({ missing: m })} />
+      {(stats.data?.waitingForAddress ?? 0) > 0 && (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f5c77e] bg-[#fff8ec] px-4 py-3 text-sm">
+          <span><strong>{stats.data?.waitingForAddress} shops are waiting for an address.</strong> They are saved separately: a shop without an address cannot be verified, and the smart plan plans only verified shops. Fill the address, then verify the shop. The other {stats.data?.readyForRecce} shops can go ahead.</span>
+          <Button size="sm" variant="outline" onClick={() => setFilter({ missing: "address" })}>Show shops without address</Button>
+        </div>
+      )}
+      {verification && approvalRows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#d6c4f5] bg-[#f6f0ff] px-4 py-3">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-vendor text-white"><BadgeCheck className="size-4" aria-hidden /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-vendor">Shop verification</p>
+            <p className="text-xs text-muted-foreground">Check each shop&apos;s name, address and phone, then verify it here. The recce can start only when every shop is verified.</p>
+          </div>
+          <p className="text-lg font-bold tabular-nums text-navy">{verifiedCount} <span className="text-sm font-medium text-muted-foreground">/ {approvalRows.length} verified</span></p>
+          {canVerify && verifiedCount < approvalRows.length && (
+            <Button
+              size="sm"
+              variant="outline"
+              loading={approveAll.isPending}
+              onClick={() => approveAll.mutate("ops", { onSuccess: (r) => toast(r.approved ? `Verified ${r.approved} shop(s)` : "Nothing pending to verify"), onError: (e) => toast(errorMessage(e), "error") })}
+            >
+              Verify all pending
+            </Button>
+          )}
+        </div>
+      )}
       <SitesToolbar
         q={q}
         onQ={onQ}
@@ -270,6 +347,11 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
           >
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-secondary px-3 py-2 text-sm" role="region" aria-label="Bulk actions">
               <span className="font-medium">{formatNumber(count)} selected</span>
+              {canVerify && (
+                <Button size="sm" loading={verifying} onClick={verifySelected}>
+                  <BadgeCheck className="size-4" aria-hidden /> Verify selected
+                </Button>
+              )}
               {canWrite && (
                 <Button size="sm" variant="outline" onClick={() => setBulkEdit(target())}>
                   Bulk edit
@@ -364,6 +446,7 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
                 onDuplicate={runDuplicate}
                 onDelete={setDeleting}
                 dimmed={list.isPlaceholderData}
+                verify={verifyControls}
               />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border">
@@ -400,6 +483,50 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
           </>
         )}
       </Card>
+
+      {verification && corrections.length > 0 && (
+        <div role="region" aria-label="Corrections requested" className="rounded-xl border border-[#ffd9b0] bg-[#fff0e0] p-4">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-approval"><AlertTriangle className="size-4" aria-hidden /> Corrections requested ({corrections.length})</h3>
+          <ul className="divide-y divide-[#ffd9b0] text-sm">
+            {corrections.map((s) => (
+              <li key={s._id} className="flex flex-wrap items-center gap-2 py-2">
+                <span className="font-medium text-navy">{s.shopName || s.dealerName || s.siteCode}</span>
+                <span className="min-w-0 flex-1 text-muted-foreground">{s.approvalNote || "No note"}</span>
+                {canVerify && (
+                  <Button size="sm" variant="outline" onClick={() => mutateApproval({ siteId: s._id, level: "ops", value: "PENDING" }, { onError: (e) => toast(errorMessage(e), "error") })}>
+                    <Undo2 className="size-4" aria-hidden /> Reset to pending
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <Modal
+        open={!!correcting}
+        onOpenChange={(o) => !o && setCorrecting(null)}
+        title="Request a correction"
+        description={correcting ? `${correcting.shopName || correcting.dealerName || correcting.siteCode}: tell the team what to fix.` : undefined}
+        className="max-w-md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setCorrecting(null)}>Cancel</Button>
+            <Button
+              disabled={note.trim().length < 3}
+              onClick={() => {
+                if (!correcting) return;
+                mutateApproval({ siteId: correcting._id, level: "ops", value: "CORRECTION", note: note.trim() }, { onError: (e) => toast(errorMessage(e), "error") });
+                setCorrecting(null);
+              }}
+            >
+              Request correction
+            </Button>
+          </div>
+        }
+      >
+        <Input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Phone number looks wrong" aria-label="Correction note" maxLength={200} />
+      </Modal>
 
       {adding && <SiteFormDialog projectId={pid} site={null} defaultScenario={defaultScenario} onClose={() => setAdding(false)} />}
       {detail && (
@@ -450,6 +577,7 @@ export function SitesTab({ project, readOnly, allowImport = true }: { project: P
         <ImportHistory
           projectId={pid}
           onClose={() => setHistory(false)}
+          onDelete={(b) => { setHistory(false); setBulkDelete({ filter: { importBatchId: b._id }, count: b.result?.created ?? 0, label: `Every shop brought in by the import of ${b.fileName ?? "this file"}` }); }}
           onViewSites={(batchId) => {
             setHistory(false);
             setQ("");
