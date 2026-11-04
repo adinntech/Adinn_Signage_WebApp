@@ -3,11 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Lock, Paperclip, Save, Send, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { HandoverTab } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
-import { EmailHistory } from "@/components/sales/email-history";
+import { DeliveryBadge, EmailHistory, emailTypes } from "@/components/sales/email-history";
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -18,18 +18,22 @@ import { DetailItem } from "@/components/ui/page-header";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
+import { RichTextView } from "@/components/ui/rich-text-editor";
+import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile } from "@/lib/api/files";
-import { downloadShopExcel } from "@/lib/api/sales";
+import { downloadShopExcel, useOrderEmails } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
-import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, type Priority, type RecceState } from "@/lib/api/recce";
+import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
 import { formatDateTimeIST } from "@/lib/format";
-import { RouteNotice, StepFooter } from "./assign-panels";
+import { clearStepDraft, useStepDraft } from "@/lib/step-drafts";
+import { flagHandoverGaps, RouteNotice, StepFooter } from "./assign-panels";
+import { branchSteps, canOpen, csRecceAssign } from "./assign-steps";
 import { ASSIGN_META } from "./stage-meta";
 
 const TEAL = ASSIGN_META.RECCE.color;
@@ -78,11 +82,16 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
           <li className="flex items-center gap-3 px-3 py-2.5 text-sm">
             <UserRound className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Client details and contact persons (in the message)
           </li>
+          {r.rateCard?.choice === "SKIPPED" && (
+            <li className="flex items-center gap-3 px-3 py-2.5 text-sm text-muted-foreground">
+              <SkipForward className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Rate Card skipped: no rate card goes with this email
+            </li>
+          )}
           {a?.rateCard && (
             <AttachmentRow
               icon={FileText}
               name={a.rateCard.name ?? `Rate Card ${a.rateCard.label}.pdf`}
-              meta={`Rate Card ${a.rateCard.label} · the latest saved version goes with the email`}
+              meta={`Rate Card ${a.rateCard.label} · the saved version included in this flow`}
               onPreview={() => setPreview({ saved: a.rateCard!, source })}
               onDownload={() => void downloadFile(a.rateCard!.fileId, source, a.rateCard!.name ?? "Rate_Card.pdf").catch(fail)}
             />
@@ -135,23 +144,136 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
  */
 function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean; onSent: () => void }) {
   const send = useSendCodeRequest(r.orderId);
-  const [files, setFiles] = useState<File[]>([]);
-  if (locked)
-    return (
-      <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-        {r.requests.count} email{r.requests.count === 1 ? "" : "s"} recorded, last on {formatDateTimeIST(r.requests.lastSentAt)}. Open Email History on the mind map to see them.
-      </p>
-    );
+  const [files, setFiles] = useStepDraft<File[]>(`${r.orderId}:email:files`, []);
+  const [tab, setTab] = useState<"email" | "history">("email");
+  // Same history data as the Email History tab: Initial Send / Resend counts (successful sends only).
+  const history = useOrderEmails(r.orderId, "PROJECT_CODE_REQUEST");
+  const sends = history.data ? emailTypes(history.data) : null;
+  // Saved codes (persisted on the order; a failed save leaves them null) end the step: the email is preview-only and
+  // the server refuses new sends and resends.
+  const readOnly = locked || !!r.codes;
   return (
     <div className="space-y-4">
-      {r.emailDone && (
-        <p className="flex items-center gap-2 rounded-lg bg-success-soft/70 px-3 py-2 text-sm text-success">
-          <Check className="size-4 shrink-0" aria-hidden /> Already sent {r.requests.count} time{r.requests.count === 1 ? "" : "s"}. Send again only if needed; Email History has the details.
-        </p>
+      <Tabs
+        idPrefix="recce-mail-tabs"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { key: "email", label: "Email", icon: Mail },
+          { key: "history", label: "Email History", icon: History, badge: r.requests.count ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs">{r.requests.count}</span> : undefined },
+        ]}
+      />
+      <TabPanel k={tab}>
+        <div id="recce-mail-tabs-panel" className="space-y-4">
+          {!!sends?.sent && tab === "email" && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-success-soft/70 px-3 py-2 text-sm text-success">
+              <Check className="size-4 shrink-0" aria-hidden /> Initial email sent
+              {sends.sent > 1 && ` · Resent ${sends.sent - 1} time${sends.sent === 2 ? "" : "s"}`}
+              {sends.lastSentAt && ` · Last sent on ${formatDateTimeIST(sends.lastSentAt)}`}
+              <button type="button" className="font-semibold underline underline-offset-2 hover:no-underline" onClick={() => setTab("history")}>
+                View Email History
+              </button>
+            </p>
+          )}
+          {/* Resend stays with the composer flow: hidden here once the codes are saved (the server refuses it too). */}
+          {tab === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={false} />}
+          {tab === "email" && readOnly && <LatestRequestPreview r={r} />}
+          {tab === "email" && !readOnly && <CodeRequestComposer r={r} files={files} setFiles={setFiles} send={send} onSent={onSent} resend={!!sends?.sent} />}
+        </div>
+      </TabPanel>
+    </div>
+  );
+}
+
+/** Codes saved (or branch locked): the latest recorded request email, read-only, with attachment preview / download. */
+function LatestRequestPreview({ r }: { r: RecceState }) {
+  const q = useOrderEmails(r.orderId, "PROJECT_CODE_REQUEST");
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const toast = useToast();
+  const source = { orderId: r.orderId };
+  if (q.isPending) return <RowsSkeleton rows={3} />;
+  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
+  const e = q.data[0];
+  if (!e) return <EmptyState icon={Inbox} title="No request email recorded" description="Email History shows every project code request sent for this project." />;
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-muted-foreground">
+        <Lock className="size-4 shrink-0" aria-hidden /> {r.codes ? "Codes saved: the request email is read-only." : "Read-only: the latest request email."}
+      </p>
+      <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-border bg-card p-4">
+        <dt className="text-muted-foreground">From</dt>
+        <dd>{e.from || "-"}</dd>
+        <dt className="text-muted-foreground">To</dt>
+        <dd>{e.to.join(", ")}</dd>
+        <dt className="text-muted-foreground">CC</dt>
+        <dd>{e.cc.join(", ") || "-"}</dd>
+        <dt className="text-muted-foreground">Subject</dt>
+        <dd className="font-medium">
+          {e.subject}
+          {e.requestId && <span className="ml-2 font-mono text-xs text-muted-foreground">{e.requestId}</span>}
+        </dd>
+        <dt className="text-muted-foreground">Sent</dt>
+        <dd>
+          {formatDateTimeIST(e.sentAt)} by {e.sentBy?.name ?? "-"}
+        </dd>
+        <dt className="text-muted-foreground">Status</dt>
+        <dd>
+          <DeliveryBadge e={e} />
+          {e.error && <span className="ml-2 text-xs text-muted-foreground">{e.error}</span>}
+        </dd>
+      </dl>
+      <div className="rounded-lg border border-border bg-background p-4">
+        <RichTextView html={e.body} />
+      </div>
+      {e.attachments.length > 0 && (
+        <section>
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Paperclip className="size-3.5" aria-hidden /> Attachments ({e.attachments.length})
+            {e.revisionLabel && <span className="normal-case">· Rate Card {e.revisionLabel}</span>}
+          </p>
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {e.attachments.map((a) => (
+              <AttachmentRow
+                key={a.fileId}
+                icon={/.(xlsx?|csv)$/i.test(a.name ?? "") ? FileSpreadsheet : FileText}
+                name={a.name ?? "file"}
+                onPreview={() => setPreview({ saved: a, source })}
+                onDownload={() => void downloadFile(a.fileId, source, a.name ?? "file").catch((err) => toast(errorMessage(err), "error"))}
+              />
+            ))}
+          </ul>
+        </section>
       )}
+      <FileRefPreview target={preview} onClose={() => setPreview(null)} />
+    </div>
+  );
+}
+
+/** Before the codes are saved: the composer (send / send again) and its attachments. */
+function CodeRequestComposer({
+  r,
+  files,
+  setFiles,
+  send,
+  onSent,
+  resend,
+}: {
+  r: RecceState;
+  files: File[];
+  setFiles: (f: File[]) => void;
+  send: ReturnType<typeof useSendCodeRequest>;
+  onSent: () => void;
+  /** An email already went (successfully): the button reads Resend Email. */
+  resend: boolean;
+}) {
+  return (
+    <div className="space-y-4">
       <EmailComposer
         idPrefix="recce-mail"
         compact
+        persistKey={`${r.orderId}:email`}
+        sendLabel={resend ? "Resend Email" : "Send Email"}
+        notConfigured={'The signage email API is not configured on the server (SIGNAGE_MAIL_API_URL / SIGNAGE_MAIL_API_KEY). Sending will be recorded as "Not sent" until it is set up.'}
         orderId={r.orderId}
         from={r.mail.from}
         mailEnabled={r.mail.enabled}
@@ -165,7 +287,11 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
           fd.append("payload", JSON.stringify(v));
           for (const f of files) fd.append("files", f);
           const sent = await send.mutateAsync(fd);
-          setFiles([]);
+          // A failed send keeps the added files for another try.
+          if (sent.status !== "FAILED") {
+            setFiles([]);
+            clearStepDraft(`${r.orderId}:email:files`);
+          }
           // Let the composer show its result first, then move on to the codes.
           if (sent.status !== "FAILED") setTimeout(onSent, 400);
           return sent;
@@ -184,10 +310,11 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const { user } = useAuth();
   const csUser = user?.role === "CLIENT_SERVICING";
   const save = useSaveRecceCodes(r.orderId);
-  const [project, setProject] = useState(r.codes?.projectCode ?? "");
-  const [est, setEst] = useState((r.codes?.estimationCode ?? "").replace(/^EST-/, ""));
+  const key = `${r.orderId}:codes`;
+  const [project, setProject] = useStepDraft(`${key}:project`, r.codes?.projectCode ?? "");
+  const [est, setEst] = useStepDraft(`${key}:est`, (r.codes?.estimationCode ?? "").replace(/^EST-/, ""));
   const fromZoho = !!r.zohoClientId?.fromZoho;
-  const [clientId, setClientId] = useState(r.codes?.clientId ?? (fromZoho ? "" : (r.zohoClientId?.value ?? "")));
+  const [clientId, setClientId] = useStepDraft(`${key}:client`, r.codes?.clientId ?? (fromZoho ? "" : (r.zohoClientId?.value ?? "")));
   const [errors, setErrors] = useState<Record<string, string>>({});
   if (locked && r.codes) return <CodesView r={r} />;
   const submit = async () => {
@@ -200,6 +327,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
     try {
       await save.mutateAsync({ projectCode: project, estimationCode: `EST-${est}`, clientId: fromZoho ? undefined : clientId.trim() });
       toast("Project and estimation codes saved");
+      clearStepDraft(key);
       onSaved();
     } catch (err) {
       const fe = fieldErrorsOf(err);
@@ -300,12 +428,13 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
   const users = useRecceUsers();
   const assign = useAssignRecce(r.orderId);
   const [query, setQuery] = useState("");
-  const [person, setPerson] = useState<SearchOption | null>(null);
-  const [startDate, setStartDate] = useState(today);
-  const [targetDate, setTargetDate] = useState("");
-  const [district, setDistrict] = useState("");
-  const [priority, setPriority] = useState<Priority>("MEDIUM");
-  const [note, setNote] = useState("");
+  const key = `${r.orderId}:assign`;
+  const [person, setPerson] = useStepDraft<SearchOption | null>(`${key}:person`, null);
+  const [startDate, setStartDate] = useStepDraft(`${key}:start`, today);
+  const [targetDate, setTargetDate] = useStepDraft(`${key}:end`, "");
+  const [district, setDistrict] = useStepDraft(`${key}:district`, "");
+  const [priority, setPriority] = useStepDraft<Priority>(`${key}:priority`, "MEDIUM");
+  const [note, setNote] = useStepDraft(`${key}:note`, "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState(false);
   const q = query.trim().toLowerCase();
@@ -399,6 +528,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
             await assign.mutateAsync({ assigneeId: person!.value, startDate, targetDate, district: district.trim(), priority, note: note.trim() || undefined });
             toast(`Project ${r.codes?.projectCode} created and assigned to ${person!.label}. They have been notified.`);
             setConfirm(false);
+            clearStepDraft(key);
             onAssigned?.();
           } catch (err) {
             setConfirm(false);
@@ -456,6 +586,7 @@ export function RecceBranchPanel({
   step,
   onDone,
   onAssigned,
+  onGo,
   projectLink = false,
 }: {
   /** Lead Management: the lead. Client Servicing workflow: the order with `handover.assignee` null (their own steps). */
@@ -463,13 +594,20 @@ export function RecceBranchPanel({
   step: RecceStep;
   onDone: () => void;
   onAssigned?: () => void;
+  /**
+   * Opens another step in the same drawer: Previous / Next, and Skip Rate Card (on to the request email). Without it
+   * (read-only places) there is no step navigation.
+   */
+  onGo?: (step: RecceStep) => void;
   /** "Open Project" on the assignment banner (Client Servicing workflow); Lead Management drawers do not show it. */
   projectLink?: boolean;
 }) {
   const q = useRecce(detail.order._id, !detail.handover.assignee);
   const { user } = useAuth();
+  const toast = useToast();
   const csUser = user?.role === "CLIENT_SERVICING";
   const confirm = useConfirmRecceHandover(detail.order._id);
+  const skip = useSkipRecceRateCard(detail.order._id);
   if (q.isPending)
     return (
       <div className="space-y-4">
@@ -481,17 +619,86 @@ export function RecceBranchPanel({
   const r = q.data;
   const assigned = !!r.assignee;
   const locked = assigned || !r.unlocked;
+  // Previous / Next: the steps this order has, in order (same list as the mind map). Only steps that can be opened.
+  const steps = branchSteps(csRecceAssign(r), "RECCE");
+  const at = steps.findIndex((s) => s.step === step);
+  const prev = at > 0 && canOpen(steps[at - 1]!) ? steps[at - 1]! : null;
+  // Assign Type & Details (editable): the top Next is shown and goes through the same check as Continue / Skip.
+  const handoverForward = step === "handover" && !locked && at >= 0 ? (steps[at + 1] ?? null) : null;
+  const next = handoverForward ?? (at >= 0 && steps[at]!.state === "DONE" && steps[at + 1] && canOpen(steps[at + 1]!) ? steps[at + 1]! : null);
+  /**
+   * One check for every forward action out of Assign Type & Details (top Next, Continue, Skip: Rate Card): with
+   * mandatory details missing it stays here, pulses the bottom banner and scrolls to the first invalid section;
+   * otherwise it saves step 1 as done (server-checked) and the caller moves on.
+   */
+  const leaveHandover = async () => {
+    const gaps = r.handoverMissing ?? [];
+    if (gaps.length) {
+      flagHandoverGaps(gaps);
+      return false;
+    }
+    try {
+      await confirm.mutateAsync(undefined);
+      return true;
+    } catch (e) {
+      // Server gap (details changed meanwhile): the same feedback, then the error message.
+      flagHandoverGaps([errorMessage(e)]);
+      throw e;
+    }
+  };
+  /** Skip Rate Card: the request email goes without a rate card (saved versions are kept); opens the email. */
+  const skipRateCard = async () => {
+    await skip.mutateAsync(undefined);
+    toast("Rate Card skipped: the request email goes without a rate card.");
+    if (onGo) onGo("email");
+    else onDone();
+  };
 
   return (
     <div className="space-y-4">
+      {onGo && (prev || next) && (
+        <nav aria-label="Step navigation" className="flex flex-wrap items-center justify-between gap-2">
+          {prev ? (
+            <Button variant="outline" size="sm" onClick={() => onGo(prev.step as RecceStep)}>
+              <ArrowLeft className="size-4" aria-hidden /> Previous: {prev.label}
+            </Button>
+          ) : (
+            <span />
+          )}
+          {next && (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={!!handoverForward && confirm.isPending}
+              onClick={() =>
+                handoverForward
+                  ? void leaveHandover().then((ok) => ok && onGo(handoverForward.step as RecceStep), (e) => toast(errorMessage(e), "error"))
+                  : onGo(next.step as RecceStep)
+              }
+            >
+              Next: {next.label} <ArrowRight className="size-4" aria-hidden />
+            </Button>
+          )}
+        </nav>
+      )}
       {assigned && <AssignedBanner r={r} projectLink={projectLink} />}
       {step === "handover" && !locked && !r.route && !csUser && <RouteNotice branch="RECCE" />}
       {step === "email" && r.csFlow?.handoverSent && <ReceivedHandover r={r} />}
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
-      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked && !r.csFlow && !csUser} />}
+      {step === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={!locked && !r.codes && !r.csFlow && !csUser} />}
       {step === "codes" && <CodesStep r={r} locked={locked} onSaved={onDone} />}
-      {/* Rate Card: never locked (updated at any time, also after the assignment); the first save moves on. */}
-      {step === "ratecard" && <RateCardStage orderId={r.orderId} step={{ onContinue: r.rateCard?.doneAt ? undefined : onDone }} />}
+      {/* Rate Card: never locked (updated at any time, also after the assignment). Save & Continue includes the saved
+          version in this flow and moves on; Skip Rate Card (before the assignment) leaves it out. */}
+      {step === "ratecard" && (
+        <>
+          {r.rateCard?.choice === "SKIPPED" && !assigned && (
+            <p className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-soft/60 px-3 py-2 text-sm">
+              <SkipForward className="size-4 shrink-0 text-warning" aria-hidden /> Skipped: the request email goes without a rate card. Save &amp; Continue to include it.
+            </p>
+          )}
+          <RateCardStage orderId={r.orderId} step={{ onContinue: assigned ? undefined : onDone, onSkip: assigned || r.rateCard?.choice === "SKIPPED" ? undefined : skipRateCard }} />
+        </>
+      )}
       {step === "handover" && (
         <>
           <HandoverTab order={detail.order} mode="recce" locked={locked} csEdit={!!r.csFlow || csUser} />
@@ -503,9 +710,19 @@ export function RecceBranchPanel({
               missing={r.handoverMissing ?? []}
               // Saves step 1 as done (server-checked), then opens the next step (Rate Card, or the email on older orders).
               onContinue={async () => {
-                await confirm.mutateAsync(undefined);
-                onDone();
+                if (await leaveHandover()) onDone();
               }}
+              // Orders with the Rate Card step: Skip saves step 1 the same way, then skips the rate card (the email next).
+              skip={
+                r.rateCard
+                  ? {
+                      label: "Skip: Rate Card",
+                      onSkip: async () => {
+                        if (await leaveHandover()) await skipRateCard();
+                      },
+                    }
+                  : undefined
+              }
             />}
         </>
       )}

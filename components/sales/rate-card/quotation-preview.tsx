@@ -20,7 +20,6 @@ const FONT = '"DejaVu Sans", Verdana, Geneva, sans-serif';
 const DARK = "#1E2235";
 const MUTED = "#5B6475";
 const LINE = "#E4E7EC";
-const RED = "#E3000F";
 
 type Item = QuotationValues["items"][number];
 interface PageSpec {
@@ -55,7 +54,7 @@ const termHeight = (t: string) => Math.max(24, lines(t, 104) * 11.5 + 14);
  */
 function paginate(items: Item[], terms: string[], top = 0): PageSpec[] {
   const pages: PageSpec[] = [{ first: true, start: 0, items: [], terms: null }];
-  let y = 315 + top; // first-page table body starts below the Bill To / Quote cards and the subject bar
+  let y = 283 + top; // first-page table body starts below the Bill To / Quote cards (no subject bar)
   items.forEach((it, i) => {
     const h = rowHeight(it, i);
     if (y + h > BOTTOM && pages[pages.length - 1]!.items.length) {
@@ -87,12 +86,7 @@ const dateText = (d?: string) => (d ? new Date(d).toLocaleDateString("en-GB", { 
 const phoneText = (p?: string) => (p && /^\d{10}$/.test(p) ? `+91 ${p.slice(0, 5)} ${p.slice(5)}` : (p ?? ""));
 
 function Marker({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-[9px]">
-      <span className="h-[15px] w-[4px] rounded-sm" style={{ background: RED }} />
-      <span className="text-[9.5px] font-bold">{title}</span>
-    </div>
-  );
+  return <div className="text-[9.5px] font-bold">{title}</div>;
 }
 
 function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationValues; spec: PageSpec; n: number; total: number; clientName: string; company: CompanyInfo; terms: string[] }) {
@@ -139,7 +133,7 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
                 <dl className="mt-[9px] grid grid-cols-[77px_9px_1fr] gap-y-[5.5px] pl-[4px] text-[8px]">
                   {[
                     ["DATE", dateText(v.quotationDate)],
-                    ["BUSINESS ANALYST", v.regards?.name || "-"],
+                    ["CLIENT SERVICE", v.regards?.name || "-"],
                     ["EMAIL ID", v.regards?.email || "-"],
                     ["PHONE NUMBER", phoneText(v.regards?.mobile) || "-"],
                     ["WEBSITE", company.website],
@@ -155,18 +149,11 @@ function Page({ v, spec, n, total, clientName, company, terms }: { v: QuotationV
                 </dl>
               </div>
             </div>
-            <div className="mt-[8px] flex h-[26px] items-center rounded-[6px] border" style={{ background: "#FDF0F0", borderColor: "#F4CFCF" }}>
-              <span className="w-[90px] pl-[22px] text-[9px] font-bold" style={{ color: RED }}>
-                SUBJECT
-              </span>
-              <span className="h-[16px] w-[1.2px]" style={{ background: RED }} />
-              <span className="ml-[12px] truncate text-[9.5px] font-bold">{v.subject || "-"}</span>
-            </div>
           </>
         )}
 
         {(spec.items.length > 0 || (spec.first && !v.items?.length)) && (
-          <table className="w-full border-collapse text-[8px]" style={{ marginTop: spec.first ? 8 : 0, tableLayout: "fixed" }}>
+          <table className="w-full border-collapse text-[8px]" style={{ marginTop: spec.first ? 10 : 0, tableLayout: "fixed" }}>
             <colgroup>
               {COL_W.map((w, i) => (
                 <col key={i} style={{ width: w }} />

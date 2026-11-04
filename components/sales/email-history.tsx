@@ -30,6 +30,31 @@ export function DeliveryBadge({ e }: { e: Pick<SentEmail, "status" | "error"> })
   );
 }
 
+/**
+ * Project Code Request Email type, numbered in send order (oldest first) whatever order the table shows: the first
+ * successfully sent email is the Initial Send, later successful ones Resend 1, 2, …. Failed / not-sent attempts keep
+ * their delivery status and are not counted ("… attempt"). `sent`: successful emails; `lastSentAt`: the latest one.
+ */
+export function emailTypes(emails: SentEmail[]) {
+  const asc = [...emails].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime() || (a._id > b._id ? 1 : -1));
+  const labels = new Map<string, string>();
+  let sent = 0;
+  let lastSentAt: string | null = null;
+  for (const e of asc) {
+    if (e.status === "SENT") {
+      labels.set(e._id, sent === 0 ? "Initial Send" : `Resend ${sent}`);
+      sent++;
+      lastSentAt = e.sentAt;
+    } else labels.set(e._id, sent === 0 ? "Initial Send attempt" : "Resend attempt");
+  }
+  return { labels, sent, lastSentAt };
+}
+
+function EmailTypeBadge({ label }: { label?: string }) {
+  if (!label) return null;
+  return <Badge tone={label === "Initial Send" ? "info" : label.endsWith("attempt") ? "neutral" : "primary"}>{label}</Badge>;
+}
+
 /** Sent history for one order and email kind (company profile, rate card or customer onboarding form). */
 export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: string; kind: SentEmail["kind"]; allowResend?: boolean }) {
   const { can } = useAuth();
@@ -42,6 +67,8 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
   if (q.isPending) return <RowsSkeleton rows={3} />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   if (!q.data.length) return <EmptyState icon={Inbox} title="No emails sent yet" description="Every send is recorded here with its exact content and attachment." />;
+  // Project Code Request Email: Initial Send / Resend n (Delivery Status stays its own column).
+  const types = kind === "PROJECT_CODE_REQUEST" ? emailTypes(q.data).labels : null;
 
   return (
     <>
@@ -49,6 +76,7 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <tr>
+              {types && <th className="px-4 py-3">Email Type</th>}
               <th className="px-4 py-3">Sent By</th>
               <th className="px-4 py-3">Recipients</th>
               <th className="px-4 py-3">Subject</th>
@@ -61,6 +89,11 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
           <tbody className="divide-y divide-border">
             {q.data.map((e) => (
               <tr key={e._id} className="align-top hover:bg-muted/40">
+                {types && (
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <EmailTypeBadge label={types.get(e._id)} />
+                  </td>
+                )}
                 <td className="px-4 py-3 font-medium">{e.sentBy?.name}</td>
                 <td className="px-4 py-3">
                   <span className="block">To: {e.to.join(", ")}</span>
@@ -69,10 +102,16 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
                 </td>
                 <td className="max-w-48 px-4 py-3">
                   <span className="line-clamp-2">{e.subject}</span>
+                  {/* Project code request (signage email API): its request reference. */}
+                  {e.requestId && <span className="block font-mono text-xs text-muted-foreground">{e.requestId}</span>}
                   {e.resentFrom && <span className="text-xs text-muted-foreground">Resent</span>}
                 </td>
                 <td className="max-w-56 px-4 py-3">
-                  {kind === "RATE_CARD" && e.revisionLabel && <Badge tone="info" className="mb-1">{e.revisionLabel}</Badge>}
+                  {(kind === "RATE_CARD" || kind === "PROJECT_CODE_REQUEST") && e.revisionLabel && (
+                    <Badge tone="info" className="mb-1">
+                      {kind === "RATE_CARD" ? e.revisionLabel : `Rate Card ${e.revisionLabel}`}
+                    </Badge>
+                  )}
                   {e.attachments.map((a) => (
                     <div key={a.fileId}>
                       <AttachmentChip file={a} source={{ orderId }} />
@@ -106,6 +145,14 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
         {view && (
           <div className="space-y-3 text-sm">
             <dl className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5">
+              {types && (
+                <>
+                  <dt className="text-muted-foreground">Type</dt>
+                  <dd>
+                    <EmailTypeBadge label={types.get(view._id)} />
+                  </dd>
+                </>
+              )}
               <dt className="text-muted-foreground">From</dt>
               <dd>{view.from || "-"}</dd>
               <dt className="text-muted-foreground">To</dt>

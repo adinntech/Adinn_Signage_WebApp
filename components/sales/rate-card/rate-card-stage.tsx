@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, Trash2, UserRound } from "lucide-react";
+import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, SkipForward, Trash2, UserRound } from "lucide-react";
 import { z } from "zod";
 import { normalizeMobile } from "@/components/clients/company-form";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { RATE_UNITS, rateCardFileName, useQuotation, useRateItems, useSaveQuotat
 import { useSendEmail } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, toDateInput } from "@/lib/format";
+import { clearStepDraft, readStepDraft, writeStepDraft } from "@/lib/step-drafts";
 import { cn } from "@/lib/utils";
 import { EmailComposer } from "../email-composer";
 import { EmailHistory } from "../email-history";
@@ -54,11 +55,10 @@ const schema = z.object({
   clientAddress: z.string().trim().max(500),
   contact: z.object({ name: z.string().trim().min(1, "Select the contact person"), designation: z.string(), phone: z.string(), email: z.string() }),
   quotationDate: z.string().min(1, "Enter the quotation date"),
-  subject: z.string().trim().min(1, "Enter the subject").max(250),
   items: z.array(line).min(1, "Add at least one signage item").max(100),
   terms: z.string(),
   regards: z.object({
-    name: z.string().trim().min(1, "Enter the business analyst name"),
+    name: z.string().trim().min(1, "Enter the client service name"),
     designation: z.string().trim(),
     mobile: z.string().trim().refine((v) => /^[6-9]\d{9}$/.test(normalizeMobile(v)), "Enter a 10-digit mobile number"),
     email: z.string().trim().refine(email, "Enter a valid email address"),
@@ -83,7 +83,6 @@ function toForm(d: QuotationState, typedContact = false): FormValues {
     clientAddress: full && cityOnly ? full : (src.clientAddress ?? ""),
     contact: { name: contact?.name ?? "", designation: contact?.designation ?? "", phone: contact?.phone ?? "", email: contact?.email ?? "" },
     quotationDate: toDateInput(src.quotationDate) || toDateInput(new Date().toISOString()),
-    subject: src.subject ?? "",
     items: (src.items ?? []).map((i) => ({
       masterItemId: "masterItem" in i ? (i.masterItem ?? null) : ((i as { masterItemId?: string | null }).masterItemId ?? null),
       particulars: i.particulars,
@@ -102,7 +101,6 @@ const toApi = (v: FormValues): QuotationValues => ({
   clientAddress: v.clientAddress || undefined,
   contact: { name: v.contact.name, designation: v.contact.designation || undefined, phone: v.contact.phone || undefined, email: v.contact.email || undefined },
   quotationDate: v.quotationDate,
-  subject: v.subject,
   items: v.items.map((i) => ({ ...i, specifications: i.specifications || undefined, overrideReason: i.overrideReason || undefined, masterItemId: i.masterItemId || undefined })),
   terms: v.terms,
   regards: { ...v.regards, mobile: normalizeMobile(v.regards.mobile) },
@@ -122,6 +120,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   // Rate Card Creation: its own PDFs and save; an order's rate card otherwise.
   const source: FileSource = step?.source ?? { orderId };
   const [saving, setSaving] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   // Download / Preview of the saved PDF: which one is running, and what to say when there is nothing saved yet.
   const [pdfBusy, setPdfBusy] = useState<"download" | "preview" | null>(null);
   const savedPdf = data.latest?.pdf?.fileId ?? null;
@@ -160,6 +159,25 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestId, reset]);
 
+  // Create Project Rate Card step: unsaved edits are kept while another step of the drawer is open (Previous / Next)
+  // and come back here; a newer saved version, or a save, drops them.
+  const draftKey = step && !step.save && orderId ? `${orderId}:ratecard` : null;
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (!draftKey) return;
+    const kept = readStepDraft<{ latestId: string | null; values: FormValues }>(draftKey);
+    if (kept && kept.latestId === (data.latest?._id ?? null)) {
+      seeded.current = true;
+      reset(kept.values, { keepDefaultValues: true });
+    }
+    return () => {
+      if (!savedRef.current && form.formState.isDirty) writeStepDraft(draftKey, { latestId: data.latest?._id ?? null, values: form.getValues() });
+      else clearStepDraft(draftKey);
+    };
+    // Once per opening of the step.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
   // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).
   // Seeded from a fresh read (not an older cached list), so the latest master prices are used.
@@ -195,6 +213,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
         const r = step?.save ? await step.save(toApi(v)) : await save.mutateAsync(toApi(v));
         if (r.saved) toast(`Rate card saved as ${r.revision.label}. PDF generated.`);
         else toast("No changes since the last saved revision.", "info");
+        savedRef.current = true;
+        if (draftKey) clearStepDraft(draftKey);
         step?.onContinue?.();
       } catch (err) {
         const fe = fieldErrorsOf(err);
@@ -213,11 +233,33 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   };
 
   // Editor actions: below the editor, or (Client Servicing Rate Card step) in a sticky bar under its heading.
+  /** Skip Rate Card: the request email goes without a rate card; unsaved edits are not saved (and never attached). */
+  const onSkip = async () => {
+    if (!step?.onSkip || skipping) return;
+    if (dirty && !window.confirm("Skip the rate card? Your unsaved edits here are not saved, and no rate card goes with the request email.")) return;
+    setSkipping(true);
+    try {
+      savedRef.current = true;
+      if (draftKey) clearStepDraft(draftKey);
+      await step.onSkip();
+    } catch (err) {
+      savedRef.current = false;
+      toast(errorMessage(err), "error");
+    } finally {
+      setSkipping(false);
+    }
+  };
+
   const actions = (
     <>
       {editable && (
         <Button variant="brand" onClick={onSave} loading={saving}>
           <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
+        </Button>
+      )}
+      {step?.onSkip && (
+        <Button variant="outline" onClick={() => void onSkip()} loading={skipping} disabled={saving}>
+          <SkipForward className="size-4" aria-hidden /> Skip Rate Card
         </Button>
       )}
       <Button
@@ -356,9 +398,6 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     )}
                   </div>
                 </Field>
-                <Field label="Subject" htmlFor="rc-subject" required error={e("subject")} className="md:col-span-2 2xl:col-span-4">
-                  <Input id="rc-subject" aria-invalid={!!e("subject")} {...register("subject")} />
-                </Field>
               </div>
             </section>
 
@@ -389,8 +428,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                       <th className="px-2 py-2.5">Specifications</th>
                       <th className="w-32 px-2 py-2.5">Rate Unit *</th>
                       <th className="w-28 px-2 py-2.5 text-right">Master Rate (₹)</th>
-                      <th className="w-32 px-2 py-2.5">Quoted Rate (₹) *</th>
-                      <th className="px-2 py-2.5">Override Reason</th>
+                      <th className="w-32 px-2 py-2.5">Quoted Rate (₹)*</th>
+                      <th className="px-2 py-2.5">Reason for Amount Override</th>
                       <th className="w-12 px-2 py-2.5">
                         <span className="sr-only">Remove</span>
                       </th>
@@ -481,9 +520,9 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                 />
               </section>
               <section>
-                <SectionTitle icon={UserRound} title="Quote & Contact" description="Business Analyst details printed on the rate card." />
+                <SectionTitle icon={UserRound} title="Quote & Contact" description="Client Service details printed on the rate card." />
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Business Analyst" htmlFor="rc-rname" required error={e("regards.name")} className="sm:col-span-2">
+                  <Field label="Client Service" htmlFor="rc-rname" required error={e("regards.name")} className="sm:col-span-2">
                     <Input id="rc-rname" aria-invalid={!!e("regards.name")} {...register("regards.name")} />
                   </Field>
                   <Field label="Email ID" htmlFor="rc-remail" required error={e("regards.email")}>
@@ -557,6 +596,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
  */
 export interface RateCardStepProps {
   onContinue?: () => void;
+  /** Create Project: Skip Rate Card (the request email goes without a rate card; saved versions are kept). */
+  onSkip?: () => Promise<void>;
   /** Rate Card Creation (no order): where its PDFs are read from, and its own save. */
   source?: FileSource;
   save?: (v: QuotationValues) => Promise<{ saved: boolean; revision: Revision }>;

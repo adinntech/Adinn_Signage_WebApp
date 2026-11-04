@@ -244,7 +244,11 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
       </Section>
 
       {d.recce.rateCard && (
-        <Section n={++n} icon={ReceiptIndianRupee} title={`Rate Card${by}`} state={d.recce.rateCard.doneAt ? "done" : "pending"} meta={d.recce.rateCard.label ? `${d.recce.rateCard.label} · last saved ${when(d.recce.rateCard.updatedAt)}` : null}>
+        <Section n={++n} icon={ReceiptIndianRupee} title={`Rate Card${by}`} state={d.recce.rateCard.doneAt ? "done" : "pending"} meta={
+            [d.recce.rateCard.choice === "SKIPPED" ? "Skipped (not sent with the request email)" : null, d.recce.rateCard.label ? `${d.recce.rateCard.label} · last saved ${when(d.recce.rateCard.updatedAt)}` : null]
+              .filter(Boolean)
+              .join(" · ") || null
+          }>
           <RateCardSaved orderId={o._id} />
         </Section>
       )}

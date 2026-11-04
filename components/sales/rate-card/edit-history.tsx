@@ -92,7 +92,7 @@ export function EditHistory({ orderId, source, revisions }: { orderId: string; s
           </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[860px] text-left text-sm">
+          <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2.5">Revision</th>
@@ -101,13 +101,34 @@ export function EditHistory({ orderId, source, revisions }: { orderId: string; s
                 <th className="px-3 py-2.5">Changed Field</th>
                 <th className="px-3 py-2.5">Previous Value</th>
                 <th className="px-3 py-2.5">Updated Value</th>
+                <th className="px-3 py-2.5">Reason</th>
                 <th className="px-3 py-2.5">Change Type</th>
                 <th className="px-3 py-2.5">View PDF</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {shown.flatMap((r) =>
-                changesOf(r).map((c, i) => (
+              {shown.flatMap((r) => {
+                const changes = changesOf(r);
+                // A first version quoted at the master rates (nothing differs): one row saying so, with its PDF.
+                if (!changes.length)
+                  return [
+                    <tr key={r._id} className="align-top">
+                      <td className="px-3 py-2.5 font-semibold">{r.label}</td>
+                      <td className="px-3 py-2.5">{r.editedBy?.name}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{formatDateTime(r.createdAt)}</td>
+                      <td colSpan={5} className="px-3 py-2.5 text-muted-foreground">
+                        {r.revision === 1 ? "Saved at the master rates: no rate differs from the master." : "No field changes recorded."}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {r.pdf?.fileId ? (
+                          <Button variant="ghost" size="sm" onClick={() => view(r)} aria-label={`View PDF ${r.label}`}>
+                            <FileText className="size-4 text-brand" aria-hidden /> {r.label}
+                          </Button>
+                        ) : null}
+                      </td>
+                    </tr>,
+                  ];
+                return changes.map((c, i) => (
                   <tr key={`${r._id}-${i}`} className="align-top">
                     <td className="px-3 py-2.5 font-semibold">{r.label}</td>
                     <td className="px-3 py-2.5">{r.editedBy?.name}</td>
@@ -115,6 +136,7 @@ export function EditHistory({ orderId, source, revisions }: { orderId: string; s
                     <td className="px-3 py-2.5 font-medium">{c.field}</td>
                     <td className="max-w-56 whitespace-pre-line px-3 py-2.5 text-muted-foreground">{showValue(c.field, c.oldValue)}</td>
                     <td className="max-w-56 whitespace-pre-line px-3 py-2.5">{showValue(c.field, c.newValue)}</td>
+                    <td className="max-w-48 px-3 py-2.5 text-muted-foreground">{c.reason || "-"}</td>
                     <td className="px-3 py-2.5">
                       <Badge tone={TYPE[c.changeType].tone}>{TYPE[c.changeType].label}</Badge>
                     </td>
@@ -126,8 +148,8 @@ export function EditHistory({ orderId, source, revisions }: { orderId: string; s
                       ) : null}
                     </td>
                   </tr>
-                )),
-              )}
+                ));
+              })}
             </tbody>
           </table>
         </div>

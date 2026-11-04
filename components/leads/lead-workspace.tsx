@@ -634,6 +634,15 @@ export function NewLeadWorkspace() {
                   void lead.refetch();
                 } else router.replace(leadUrl(created._id, "?stage=RECCE&step=email"));
               }}
+              // Previous (Rate Card -> Assign Type & Details) stays in this drawer; Skip Rate Card and later steps open
+              // on the lead page, like Save & Continue.
+              onGo={(to) => {
+                if (to === "handover" || to === "ratecard") {
+                  setCreatedStep(to);
+                  window.history.replaceState(null, "", leadUrl(created._id, `?stage=RECCE&step=${to}`));
+                  void lead.refetch();
+                } else router.replace(leadUrl(created._id, `?stage=RECCE&step=${to}`));
+              }}
               onAssigned={() => router.replace(leadUrl(created._id))}
             />
           )
@@ -828,7 +837,17 @@ export function LeadWorkspace() {
       if (branchStep.blocked) return <EmptyState icon={LockKeyhole} title="Not open yet" description={branchStep.blocked} />;
       if (selected === "RECCE") {
         const s = (branchStep.history ? "history" : branchStep.step.step) as RecceStep;
-        return <RecceBranchPanel key={s} detail={d} step={s} onDone={() => void finishStep("RECCE", s, s === "handover" || s === "ratecard" || s === "email" || s === "codes")} onAssigned={assigned} />;
+        return (
+          <RecceBranchPanel
+            key={s}
+            detail={d}
+            step={s}
+            onDone={() => void finishStep("RECCE", s, s === "handover" || s === "ratecard" || s === "email" || s === "codes")}
+            // Previous / Next / Skip Rate Card: the other step opens in this drawer (the lead reloaded first).
+            onGo={(to) => void q.refetch().then(() => openNode("RECCE", to))}
+            onAssigned={assigned}
+          />
+        );
       }
       return (
 <HandoverPanel key={branchStep.step.step} detail={d} onAssigned={assigned} />

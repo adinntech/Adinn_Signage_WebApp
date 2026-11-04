@@ -23,6 +23,8 @@ interface UserRef {
  */
 export interface RateCardStep {
   doneAt: string | null;
+  /** INCLUDED: saved with Save & Continue (its PDF goes with the request email); SKIPPED: no rate card goes. */
+  choice?: "INCLUDED" | "SKIPPED" | null;
   label: string | null;
   updatedAt: string | null;
 }

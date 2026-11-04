@@ -73,7 +73,8 @@ export interface QuotationValues {
   clientAddress?: string;
   contact: { name: string; designation?: string; phone?: string; email?: string };
   quotationDate: string;
-  subject: string;
+  /** No Subject input any more: the server keeps the previous version's subject. */
+  subject?: string;
   items: QuotationLine[];
   terms: string;
   regards: { name: string; designation: string; mobile: string; email: string };
@@ -83,6 +84,8 @@ export interface RevisionChange {
   oldValue: unknown;
   newValue: unknown;
   changeType: "ADDED" | "UPDATED" | "REMOVED";
+  /** Override reason of a changed quoted rate. */
+  reason?: string;
 }
 export interface Revision {
   _id: string;

@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import type { FileRef } from "@/lib/api/files";
 import { newRequestKey, type EmailInput, type SentEmail } from "@/lib/api/sales";
+import { clearStepDraft, useStepDraft } from "@/lib/step-drafts";
 import { AttachmentChip } from "./order-comments";
 
 const isEmail = (v: string) => z.email().safeParse(v).success;
@@ -45,6 +46,8 @@ export function EmailComposer({
   notConfigured = "Email delivery is not configured on the server (SMTP). Sending will be recorded as \"Not sent\" until it is set up.",
   attachmentArea,
   compact = false,
+  persistKey,
+  sendLabel = "Send Email",
 }: {
   idPrefix: string;
   orderId: string;
@@ -63,11 +66,15 @@ export function EmailComposer({
   attachmentArea?: React.ReactNode;
   /** Project Code Request Email: no From field (the server's configured sender), To / CC as compact rows. */
   compact?: boolean;
+  /** Workflow steps: what is typed is kept while moving to another step and back (until it is sent). */
+  persistKey?: string;
+  /** Send button text, e.g. "Resend Email" once a Project Code Request Email went. */
+  sendLabel?: string;
 }) {
   const toast = useToast();
   const id = (k: string) => `${idPrefix}-${k}`;
-  const [v, setV] = useState(draft);
-  const [notes, setNotes] = useState("");
+  const [v, setV] = useStepDraft(persistKey ? `${persistKey}:mail` : null, draft);
+  const [notes, setNotes] = useStepDraft(persistKey ? `${persistKey}:notes` : null, "");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const requestKey = useRef(newRequestKey());
   // Typed in To / CC but not yet a chip (Send without pressing Enter still uses it).
@@ -108,6 +115,8 @@ export function EmailComposer({
       else if (r.status === "SKIPPED") toast(`Saved in history, but not sent: ${r.error ?? "email is not configured on the server"}.`, "error");
       else toast(`Sending failed: ${r.error ?? "unknown error"}. It is recorded in history.`, "error");
       if (r.status === "SENT") setNotes("");
+      // Recorded (sent, or not sent only because the transport is off): the kept draft is no longer needed.
+      if (persistKey && r.status !== "FAILED") clearStepDraft(persistKey);
     } catch (err) {
       toast(errorMessage(err), "error");
     } finally {
@@ -198,7 +207,7 @@ export function EmailComposer({
       <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface/95 px-1 py-3 backdrop-blur">
         <span className="text-xs text-muted-foreground">{mailEnabled ? (compact ? "Sent from the company mailbox configured on the server." : `Sends from ${from ?? "the configured mailbox"}`) : "Email is off: the email is recorded, not sent."}</span>
         <Button variant="brand" onClick={() => void send()} loading={sending} disabled={!!blockedReason || sending}>
-          {sending ? <Mail className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />} Send Email
+          {sending ? <Mail className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />} {sendLabel}
         </Button>
       </div>
     </div>

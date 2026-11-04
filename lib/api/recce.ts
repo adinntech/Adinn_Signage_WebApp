@@ -28,7 +28,8 @@ export interface RecceState {
   handoverReady?: boolean;
   /** Handover Type & Details confirmed with "Continue" (step 1 done): unlocks the request email. */
   handoverDone?: boolean;
-  rateCard?: (RateCardStep & { items: number }) | null;
+  /** `includedLabel`: the version that goes with the request email (null when skipped). */
+  rateCard?: (RateCardStep & { items: number; includedLabel?: string | null }) | null;
   /** Gaps of the full handover (step 1). */
   handoverMissing?: string[];
   handoverType?: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
@@ -43,7 +44,7 @@ export interface RecceState {
   zohoClientId?: { value: string | null; fromZoho: boolean };
   /** Sent automatically with every request email (besides the client details and contacts in the message). */
   /** documents: chat files and (SO) Additional Documents (`so`), one copy of each. */
-  /** rateCard: the latest saved Rate Card PDF (orders with the Rate Card step). */
+  /** rateCard: the PDF of the Rate Card version included in this flow (none when skipped). */
   autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; rateCard?: (FileRef & { label: string }) | null; documents: (FileRef & { so?: boolean })[]; /** New Client only. */ gstCertificates?: FileRef[] };
   /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
   route: "HANDOVER" | "RECCE" | null;
@@ -102,6 +103,10 @@ export const useSendCodeRequest = (id: string) =>
 /** Step 1: confirms Handover Type & Details ("Continue: Project Code Request Email"). */
 export const useConfirmRecceHandover = (id: string) =>
   useRecceMutation(id, () => api<RecceState>(`/sales/orders/${id}/recce/handover-done`, { method: "POST" }), (qc) => qc.invalidateQueries({ queryKey: ["leads"] }));
+
+/** Skip Rate Card: the request email goes without a rate card (saved versions are kept). */
+export const useSkipRecceRateCard = (id: string) =>
+  useRecceMutation(id, () => api<RecceState>(`/sales/orders/${id}/recce/rate-card/skip`, { method: "POST" }), (qc) => qc.invalidateQueries({ queryKey: ["leads"] }));
 
 export const useSaveRecceCodes = (id: string) =>
   useRecceMutation(id, (body: { projectCode: string; estimationCode: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));

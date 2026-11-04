@@ -107,7 +107,9 @@ export function CsWorkflow({ order, basePath }: { order: Order; /** Page the ste
               key={step}
               detail={{ order, handover: { assignee: null } }}
               step={step}
-              onDone={() => void finish(step, step === "handover" || step === "email" || step === "codes")}
+              onDone={() => void finish(step, step === "handover" || step === "ratecard" || step === "email" || step === "codes")}
+              // Previous / Next / Skip Rate Card: the other step opens in this drawer (state reloaded first).
+              onGo={(s) => void q.refetch().then(() => openStep(s))}
               onAssigned={() => {
                 openStep(null);
                 void q.refetch().then(() => setCelebrate(true));

@@ -153,7 +153,8 @@ function recceSteps(a: AssignState): ChainStep[] {
       label: "Assign Type & Details",
       desc: "Type, client & contacts, shop list, communication",
       icon: ClipboardList,
-      done: !!r.skipHandover || !!r.handoverDone || sent > 0,
+      // Confirmed and still complete (details edited back to incomplete reopen the step), or an email already went.
+      done: !!r.skipHandover || sent > 0 || (!!r.handoverDone && r.handoverReady !== false),
       at: a.cs.updatedAt,
       atLabel: "Updated",
       types: a.cs.type ?? null,
@@ -161,17 +162,18 @@ function recceSteps(a: AssignState): ChainStep[] {
     {
       step: "ratecard",
       label: "Rate Card",
-      desc: "Signage items and rates with the live PDF preview; the PDF goes with the request email",
+      desc: "Optional: signage items and rates with the live PDF preview; the saved PDF goes with the request email",
       icon: ReceiptIndianRupee,
-      done: !!rc?.doneAt,
-      info: rc?.label ? `${rc.label} saved` : null,
+      // Done when saved and included (Save & Continue) or skipped.
+      done: !!rc?.doneAt || rc?.choice === "SKIPPED",
+      info: rc?.choice === "SKIPPED" ? `Skipped${rc.label ? ` · ${rc.label} kept, not sent` : ""}` : rc?.label ? `${rc.label} saved` : null,
       at: rc?.updatedAt ?? rc?.doneAt ?? null,
       atLabel: "Updated",
     },
     {
       step: "email",
       label: "Project Code Request Email",
-      desc: rc ? "Client, contacts, rate card PDF, shop Excel and documents go automatically" : "Client, contacts, shop Excel and documents go automatically",
+      desc: rc && rc.choice !== "SKIPPED" ? "Client, contacts, rate card PDF, shop Excel and documents go automatically" : "Client, contacts, shop Excel and documents go automatically",
       icon: Mail,
       color: EMAIL_COLOR,
       done: !!r.emails?.done,

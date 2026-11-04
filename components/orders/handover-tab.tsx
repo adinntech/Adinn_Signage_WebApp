@@ -116,7 +116,7 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
   const toast = useToast();
   const set = useSetHandoverType(orderId);
   return (
-    <Card className="p-5 sm:p-6">
+    <Card id="ho-type" className={cn("p-5 sm:p-6", editable && data.full && !data.type && "border-warning/50")}>
       <SectionTitle icon={Handshake} title="Assign Type" description={editable ? "Choose what you hand over." : "What was handed over."} action={toggle} />
       {!data.full ? (
         <p className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-sm text-muted-foreground">
@@ -155,6 +155,11 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
           );
         })}
       </div>
+      )}
+      {data.full && editable && !data.type && (
+        <p role="alert" className="mt-3 flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden /> {HANDOVER_TYPE_GAP}.
+        </p>
       )}
       {data.full && editable && <p className="mt-3 text-xs text-muted-foreground">Each type keeps its own details: switching shows that type&apos;s shop list (empty the first time) and keeps the others.</p>}
     </Card>
@@ -299,11 +304,20 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
 
 /** Shared with the step footers: the gap message of a missing SO contact, and a jump to the section. */
 export const SO_CONTACT_GAP = "Add at least one SO Contact with name and phone number";
-export function goToSoContacts() {
-  const el = document.getElementById("ho-so-contacts");
+/** Same wording as the server's first gap (handoverGaps) when no assign type is chosen. */
+const HANDOVER_TYPE_GAP = "Choose the assign type: SO, Only Shop Details or Shop + Measurement";
+function goToSection(id: string) {
+  const el = document.getElementById(id);
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "center" });
   el.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
+}
+export function goToSoContacts() {
+  goToSection("ho-so-contacts");
+}
+/** Scrolls to the section of a server gap (assign type, SO contacts, shop list); its inline error is shown there. */
+export function goToHandoverGap(gap: string) {
+  goToSection(gap === SO_CONTACT_GAP ? "ho-so-contacts" : gap.startsWith("Choose the assign type") ? "ho-type" : "ho-shops");
 }
 
 type SoRow = { key: string; name: string; phone: string; email: string; isPrimary: boolean };
@@ -823,7 +837,15 @@ export function HandoverTab({
             {data.type === "ASO" && <SoDocumentsSection orderId={order._id} saved={data.soDocuments ?? []} editable={details} />}
             {/* Each shop type has its own list; keyed by type so nothing of the other type's table stays on screen. */}
             {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT") && (
-              <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={details} canAddImages={!readOnly && (canWrite || (csEdit && !locked))} />
+              <div id="ho-shops" className="space-y-3">
+                {/* The client's Excel is taken as it is: only an empty list blocks the step. */}
+                {details && !data.shopList?.total && (
+                  <p role="alert" className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+                    <AlertTriangle className="size-4 shrink-0" aria-hidden /> Add the shop list: upload the Excel or add the shops.
+                  </p>
+                )}
+                <ShopTable key={data.type} orderId={order._id} type={data.type} summary={data.shopList} columns={data.columns} editable={details} canAddImages={!readOnly && (canWrite || (csEdit && !locked))} />
+              </div>
             )}
           </motion.div>
         )}

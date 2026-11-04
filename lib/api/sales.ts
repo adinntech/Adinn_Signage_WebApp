@@ -120,6 +120,8 @@ export interface SentEmail {
   attachments: FileRef[];
   rateCardRevision?: number;
   revisionLabel: string | null;
+  /** Project code request sent through the signage email API, e.g. PCR-2026-0105. */
+  requestId?: string | null;
   status: DeliveryStatus;
   error?: string;
   resentFrom?: string;

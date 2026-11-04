@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle2, CircleAlert, Info, LockKeyhole, UserRoundCheck } from "lucide-react";
-import { goToSoContacts, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
+import { ArrowRight, CheckCircle2, CircleAlert, Info, LockKeyhole, SkipForward, UserRoundCheck } from "lucide-react";
+import { goToHandoverGap, goToSoContacts, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
@@ -33,23 +33,54 @@ export function RouteNotice({ branch }: { branch: Branch }) {
   );
 }
 
+const FOOTER_ID = "assign-step-footer";
+
+/**
+ * A forward action (top Next, Continue, Skip) with mandatory details missing: stays on the step, briefly pulses the
+ * bottom warning banner's border and scrolls to the first invalid section (its inline error is shown there).
+ */
+export function flagHandoverGaps(missing: string[]) {
+  const el = document.getElementById(FOOTER_ID);
+  const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (el && !reduce)
+    el.animate(
+      [{ boxShadow: "0 0 0 0 rgb(245 158 11 / 0)" }, { boxShadow: "0 0 0 4px rgb(245 158 11 / 0.55)" }, { boxShadow: "0 0 0 0 rgb(245 158 11 / 0)" }],
+      { duration: 450, iterations: 2, easing: "ease-in-out" },
+    );
+  if (missing[0]) goToHandoverGap(missing[0]);
+}
+
 /**
  * Bottom of a handover details step: what is still missing, or "complete" with Continue to the next step. Reads the
  * handover itself, so it follows every save in the step.
  */
-export function StepFooter({ orderId, next, onContinue, missing: given }: { orderId: string; next: string; onContinue: () => void | Promise<void>; missing?: string[] }) {
+export function StepFooter({
+  orderId,
+  next,
+  onContinue,
+  missing: given,
+  skip,
+}: {
+  orderId: string;
+  next: string;
+  onContinue: () => void | Promise<void>;
+  missing?: string[];
+  /** A second way on that also needs the details complete (Skip: Rate Card). */
+  skip?: { label: string; onSkip: () => Promise<void> };
+}) {
   const q = useHandover(orderId);
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"continue" | "skip" | null>(null);
   if (!q.data) return null;
-  const go = async () => {
-    setBusy(true);
+  const go = async (kind: "continue" | "skip") => {
+    if (busy) return;
+    setBusy(kind);
     try {
-      await onContinue();
+      await (kind === "skip" ? skip!.onSkip() : onContinue());
     } catch (e) {
       toast(errorMessage(e), "error");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
   // The Recce team always gets the full handover: its gaps are those of the full handover.
@@ -57,7 +88,7 @@ export function StepFooter({ orderId, next, onContinue, missing: given }: { orde
   const missing = given ?? q.data.missing;
   const ready = missing.length === 0;
   return (
-    <div className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>
+    <div id={FOOTER_ID} className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>
       {ready ? <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden /> : <CircleAlert className="size-5 shrink-0 text-warning" aria-hidden />}
       <p className="min-w-0 flex-1 text-sm">
         {ready ? (
@@ -74,7 +105,12 @@ export function StepFooter({ orderId, next, onContinue, missing: given }: { orde
           <>To continue: {missing[0]}</>
         )}
       </p>
-      <Button variant="brand" disabled={!ready} loading={busy} onClick={() => void go()}>
+      {skip && (
+        <Button variant="outline" disabled={!ready || busy === "continue"} loading={busy === "skip"} onClick={() => void go("skip")}>
+          <SkipForward className="size-4" aria-hidden /> {skip.label}
+        </Button>
+      )}
+      <Button variant="brand" disabled={!ready || busy === "skip"} loading={busy === "continue"} onClick={() => void go("continue")}>
         Continue: {next} <ArrowRight className="size-4" aria-hidden />
       </Button>
     </div>

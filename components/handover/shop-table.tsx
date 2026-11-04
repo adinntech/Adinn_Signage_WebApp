@@ -2,9 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Camera, CheckCircle2, Columns3, Download, FileSpreadsheet, FileText, History, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Ruler, Store, Trash2, Upload, X, XCircle } from "lucide-react";
+import { Camera, Columns3, FileSpreadsheet, FileText, History, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Ruler, Store, Trash2, Upload, X } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -24,7 +23,6 @@ import { downloadProjectShopExcel, downloadProjectShopPdf, useProjectHandoverSho
 import {
   downloadShopExcel,
   downloadShopPdf,
-  downloadShopTemplate,
   MAX_ROW_IMAGES,
   useAddShopImages,
   useAddShopRow,
@@ -72,12 +70,6 @@ const LABELS: Record<Field, string> = {
 };
 const BASE_FIELDS: Field[] = ["shopName", "dealerName", "location", "district", "address1", "address2", "address3", "pincode", "mobile", "mobileAlt", "gstin", "contactPerson", "boardType", "quantity", "clientSiteCode", "remarks"];
 const SIZE_FIELDS: Field[] = ["width", "height", "unit"];
-const STATE_FILTERS: { key: ShopState | ""; label: string }[] = [
-  { key: "", label: "All" },
-  { key: "ERROR", label: "With errors" },
-  { key: "WARNING", label: "To check" },
-  { key: "VALID", label: "Valid" },
-];
 const ACTION_LABEL: Record<ShopLog["action"], string> = { ADD: "Added", EDIT: "Edited", DELETE: "Deleted", IMPORT: "Excel uploaded", CLEAR: "Table cleared", IMAGE_ADD: "Images added", IMAGE_REMOVE: "Image removed" };
 
 const text = (v: unknown) => (v === null || v === undefined ? "" : String(v));
@@ -672,12 +664,8 @@ export function ShopTable({
     }
   };
   const fail = (e: unknown) => toast(errorMessage(e), "error");
-  const kpis = [
-    { label: "Total Shops", value: total, icon: Store, tone: "bg-brand-soft text-brand" },
-    { label: "Valid", value: summary?.valid ?? 0, icon: CheckCircle2, tone: "bg-success-soft text-success" },
-    { label: "To Check", value: summary?.warning ?? 0, icon: AlertTriangle, tone: "bg-warning-soft text-warning" },
-    { label: "With Errors", value: summary?.error ?? 0, icon: XCircle, tone: "bg-danger-soft text-danger" },
-  ];
+  // The client's Excel is taken as it is (no mandatory fields, no row states): the shop count only.
+  const kpis = [{ label: "Total Shops", value: total, icon: Store, tone: "bg-brand-soft text-brand" }];
 
   return (
     <Card className="overflow-hidden">
@@ -694,9 +682,6 @@ export function ShopTable({
           }
           action={
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => downloadShopTemplate(measurement ? "SHOP_MEASUREMENT" : "SHOP_DETAILS").catch(fail)}>
-                <Download className="size-4" aria-hidden /> Template
-              </Button>
               {total > 0 && (
                 <>
                   <Button variant="outline" size="sm" onClick={() => (projectId ? downloadProjectShopExcel(projectId) : downloadShopExcel(orderId)).catch(fail)}>
@@ -739,7 +724,7 @@ export function ShopTable({
                 typeError="Upload an Excel file (.xlsx or .xls)"
                 compact
                 disabled={upload.isPending}
-                hint="Excel (.xlsx / .xls) in any column order; the template is optional. Rows are added as soon as you pick the file; rows with a Row ID (from Download Excel) are updated."
+                hint="Upload the client's Excel (.xlsx / .xls) as it is: every column and row is kept. Rows are added as soon as you pick the file; rows with a Row ID (from Download Excel) are updated."
               />
               {upload.isPending && !mappingStep && (
                 <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -765,24 +750,6 @@ export function ShopTable({
           </div>
         )}
         {editable && lastImport && <FlaggedRows result={lastImport} onClose={() => setLastImport(null)} />}
-        {total > 0 && (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter shops">
-            {STATE_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                aria-pressed={state === f.key}
-                onClick={() => {
-                  setState(f.key);
-                  setPage(1);
-                }}
-                className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors", state === f.key ? "border-brand bg-brand text-white" : "border-border bg-surface text-muted-foreground hover:bg-muted")}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {!total ? (
@@ -808,7 +775,7 @@ export function ShopTable({
                         <FileSpreadsheet className="size-3.5" aria-hidden /> Uploaded Excel columns ({cols.length})
                       </span>
                     </th>
-                    <th colSpan={(showSize ? 1 : 0) + (measurement ? 1 : 0) + 3} className="border-l-2 border-brand/30 bg-brand-soft/60 px-3 py-1.5 text-brand">
+                    <th colSpan={(showSize ? 1 : 0) + (measurement ? 1 : 0) + 2} className="border-l-2 border-brand/30 bg-brand-soft/60 px-3 py-1.5 text-brand">
                       App
                     </th>
                   </tr>
@@ -832,14 +799,13 @@ export function ShopTable({
                   {showSize && <th className={cn("px-3 py-2.5", cols && "border-l-2 border-brand/30 bg-brand-soft/40")}>Size</th>}
                   {!cols && hasExtra && <th className="px-3 py-2.5">Other Columns</th>}
                   {measurement && <th className={cn("px-3 py-2.5", cols && !showSize && "border-l-2 border-brand/30", cols && "bg-brand-soft/40")}>Images</th>}
-                  <th className={cn("px-3 py-2.5", cols && !showSize && !measurement && "border-l-2 border-brand/30", cols && "bg-brand-soft/40")}>Status</th>
-                  <th className={cn("px-3 py-2.5", cols && "bg-brand-soft/40")}>Modified</th>
+                  <th className={cn("px-3 py-2.5", cols && !showSize && !measurement && "border-l-2 border-brand/30", cols && "bg-brand-soft/40")}>Modified</th>
                   <th className={cn("px-3 py-2.5 text-right", cols && "bg-brand-soft/40")}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.data.data.map((r) => (
-                  <tr key={r.rowId} className={cn("align-top hover:bg-muted/40", r.state === "ERROR" && "bg-danger-soft/30")}>
+                  <tr key={r.rowId} className="align-top hover:bg-muted/40">
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{r.rowNumber}</td>
                     {cols ? (
                       cols.map((c) => (
@@ -883,11 +849,7 @@ export function ShopTable({
                         </Button>
                       </td>
                     )}
-                    <td className={cn("px-3 py-2.5", cols && !showSize && !measurement && "border-l-2 border-brand/30")}>
-                      <Badge tone={r.state === "VALID" ? "success" : r.state === "WARNING" ? "warning" : "danger"}>{r.state === "VALID" ? "Valid" : r.state === "WARNING" ? "Check" : "Error"}</Badge>
-                      {r.issues.length > 0 && <p className="mt-1 w-[200px] text-xs text-muted-foreground">{r.issues.join("; ")}</p>}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">
+                    <td className={cn("whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground", cols && !showSize && !measurement && "border-l-2 border-brand/30")}>
                       {r.updatedAt ? formatDateTimeIST(r.updatedAt) : "-"}
                       {r.updatedByName && <p>{r.updatedByName}</p>}
                     </td>
