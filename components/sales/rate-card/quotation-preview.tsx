@@ -19,6 +19,8 @@ const COL_W = [37, 179, 243, 71];
 const FONT = '"Manrope", "DejaVu Sans", Verdana, Geneva, sans-serif';
 const INK = "#0F172A";
 const SLATE = "#334155";
+/** Dark text of the Bill To address, Quote & Contact labels and the specification column (easy to read when zoomed). */
+const TEXT = "#1E293B";
 const LABEL = "#475569";
 const MUTED = "#64748B";
 const LINE = "#E5E7EB";
@@ -35,7 +37,7 @@ const lh = (size: number, gap: number) => size * 1.366 + gap;
 const CELLS = [
   { size: 8.5, weight: 600, color: INK, cap: 5 },
   { size: 9, weight: 700, color: INK, cap: 35 },
-  { size: 8.25, weight: 500, color: SLATE, cap: 57 },
+  { size: 8.25, weight: 500, color: TEXT, cap: 57 },
   { size: 8.5, weight: 600, color: INK, cap: 13 },
 ];
 
@@ -160,12 +162,12 @@ function Page({ v, spec, n, total, clientName, company, terms, cardH }: { v: Quo
                 {clientName}
               </p>
               {v.clientAddress && (
-                <p className="mt-[3px] whitespace-pre-line break-words text-[9px] font-medium" style={{ color: SLATE, lineHeight: `${lh(9, 1.5)}px` }}>
+                <p className="mt-[3px] whitespace-pre-line break-words text-[9px] font-semibold" style={{ color: TEXT, lineHeight: `${lh(9, 1.5)}px` }}>
                   {v.clientAddress}
                 </p>
               )}
               {v.contact?.name && (
-                <p className="mt-[3px] text-[9px] font-medium" style={{ color: SLATE, lineHeight: `${lh(9, 1.5)}px` }}>
+                <p className="mt-[3px] text-[9px] font-semibold" style={{ color: TEXT, lineHeight: `${lh(9, 1.5)}px` }}>
                   Kind Attn : {v.contact.name}
                 </p>
               )}
@@ -179,7 +181,7 @@ function Page({ v, spec, n, total, clientName, company, terms, cardH }: { v: Quo
                   className={cn("absolute flex items-center", i < quoteRows.length - 1 && "border-b")}
                   style={{ left: 15, right: 15, top: 34 + i * QUOTE_ROW - QUOTE_ROW / 2, height: QUOTE_ROW, borderColor: LINE }}
                 >
-                  <span className="w-[80px] shrink-0 text-[7px] font-semibold tracking-[1px]" style={{ color: LABEL }}>
+                  <span className="w-[80px] shrink-0 text-[7px] font-bold tracking-[1px]" style={{ color: TEXT }}>
                     {k}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-right text-[8.75px] font-bold">{val}</span>
