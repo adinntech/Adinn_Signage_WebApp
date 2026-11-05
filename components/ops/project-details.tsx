@@ -7,7 +7,7 @@ import {
   ArrowLeft, ArrowRight, BarChart3, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileText, Files, Handshake, History, Mail, MapPin, MessageSquareText, Paperclip,
   Phone, PlusCircle, Route, Store, UsersRound, type LucideIcon,
 } from "lucide-react";
-import { Tabs } from "@/components/ui/tabs";
+import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { KpiCard, type KpiColor } from "@/components/ui/kpi-card";
 import { ErrorState } from "@/components/ui/states";
@@ -53,19 +53,6 @@ function QuickAction({ icon: Icon, label, hint, color, onClick }: { icon: Lucide
   );
 }
 
-function Section({ id, icon: Icon, title, hint, children, className }: { id?: string; icon: LucideIcon; title: string; hint?: string; children: React.ReactNode; className?: string }) {
-  return (
-    <section id={id} className={cn("scroll-mt-4 rounded-xl border border-border bg-surface p-4 shadow-soft", className)}>
-      <div className="mb-3 flex items-center gap-2">
-        <Icon className="size-4 text-royal" aria-hidden />
-        <h2 className="text-sm font-semibold text-navy">{title}</h2>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 /**
  * One workspace per project (no tabs to hunt through): summary and stage, key numbers, the requirement's own work area,
  * then documents, contacts, quick actions and recent activity.
@@ -88,8 +75,11 @@ export function ProjectDetails() {
   const [asoPart, setAsoPart] = useState<"areas" | "shops" | "boards">("areas");
   // Notification links such as ?tab=documents jump to that section.
   const wanted = useSearchParams().get("tab");
+  const [lowerTab, setLowerTab] = useState<"documents" | "history" | "notes">(wanted === "history" || wanted === "notes" ? wanted : "documents");
   useEffect(() => {
-    if (wanted && loaded) document.getElementById(wanted)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!wanted || !loaded) return;
+    const inTabs = wanted === "documents" || wanted === "history" || wanted === "notes";
+    document.getElementById(inTabs ? "project-tabs" : wanted)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [wanted, loaded]);
 
   if (project.isPending) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading project…</p>;
@@ -204,6 +194,34 @@ export function ProjectDetails() {
         )}
       </section>
 
+      <section aria-label="Client contacts and quick actions" className="grid gap-4 rounded-xl border-2 border-royal/30 bg-[#eef4ff] p-4 shadow-soft lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><UsersRound className="size-4 text-royal" aria-hidden /> Client / SO Contacts</h2>
+          {!p.contacts?.length ? (
+            <p className="text-sm text-muted-foreground">No contacts shared.</p>
+          ) : (
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {p.contacts.map((c) => (
+                <li key={c._id ?? c.phone} className="rounded-lg border border-border bg-surface p-3 text-sm">
+                  <p className="font-semibold text-navy">{c.name}</p>
+                  <p className="mt-1 flex items-center gap-2 text-muted-foreground"><Mail className="size-3.5" aria-hidden />{c.email}</p>
+                  <p className="flex items-center gap-2 text-muted-foreground"><Phone className="size-3.5" aria-hidden />{c.phone}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {p.instructions && <p className="mt-2 rounded-lg bg-surface p-3 text-sm text-navy"><strong>Instructions:</strong> {p.instructions}</p>}
+        </div>
+        <div className="min-w-0">
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><CheckCircle2 className="size-4 text-royal" aria-hidden /> Quick Actions</h2>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+            <QuickAction icon={BarChart3} label="Cost Comparison" hint="Vendor vs in-house, bills" color="bg-[#fff0e0] text-approval" onClick={() => router.push(`/operations/cost/${p._id}`)} />
+            <QuickAction icon={MapPin} label="Shop Allocation" hint="Vendors, in-house, map" color="bg-[#e8f0ff] text-royal" onClick={() => router.push(`/operations/allocation/${p._id}`)} />
+            <QuickAction icon={Route} label="Movement" hint="Day-wise road routes" color="bg-[#ffe9ee] text-[#e11d48]" onClick={() => router.push(`/operations/movement/${p._id}`)} />
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {kpis.map((k, i) => <KpiCard key={k.label} label={k.label} value={k.value} icon={k.icon} color={k.color} delay={i * 0.04} />)}
       </div>
@@ -241,47 +259,24 @@ export function ProjectDetails() {
         <ShopDetailsStage project={p} canEdit={canWork} readOnly={cancelled} />
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Section id="documents" icon={FileText} title="Project Documents" hint="Files from BD and from Operations in one place">
-          <ProjectDocumentsPanel projectId={p._id} canEdit={canWork} />
-        </Section>
-
-        <div className="space-y-5">
-          <Section icon={CheckCircle2} title="Quick Actions">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <QuickAction icon={BarChart3} label="Cost Comparison" hint="Vendor vs in-house, bills" color="bg-[#fff0e0] text-approval" onClick={() => router.push(`/operations/cost/${p._id}`)} />
-              <QuickAction icon={MapPin} label="Shop Allocation" hint="Vendors, in-house, map" color="bg-[#e8f0ff] text-royal" onClick={() => router.push(`/operations/allocation/${p._id}`)} />
-              <QuickAction icon={Route} label="Movement" hint="Day-wise road routes" color="bg-[#ffe9ee] text-[#e11d48]" onClick={() => router.push(`/operations/movement/${p._id}`)} />
-            </div>
-          </Section>
-
-          <Section icon={UsersRound} title="Client / SO Contacts">
-            {!p.contacts?.length ? (
-              <p className="text-sm text-muted-foreground">No contacts shared.</p>
-            ) : (
-              <ul className="space-y-2">
-                {p.contacts.map((c) => (
-                  <li key={c._id ?? c.phone} className="rounded-lg bg-muted/50 p-3 text-sm">
-                    <p className="font-medium">{c.name}</p>
-                    <p className="mt-1 flex items-center gap-2 text-muted-foreground"><Mail className="size-3.5" aria-hidden />{c.email}</p>
-                    <p className="flex items-center gap-2 text-muted-foreground"><Phone className="size-3.5" aria-hidden />{c.phone}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {p.instructions && <p className="mt-3 rounded-lg bg-[#eef4ff] p-3 text-sm text-navy"><strong>Instructions:</strong> {p.instructions}</p>}
-          </Section>
-        </div>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Section id="history" icon={History} title="Activity Timeline" hint="Everything that changed on this project">
-          <ActivityTimeline projectId={p._id} />
-        </Section>
-        <Section id="notes" icon={MessageSquareText} title="Remarks & Internal Notes">
-          <ProjectNotes projectId={p._id} canWrite={can("communications:write") && !cancelled} />
-        </Section>
-      </div>
+      <section id="project-tabs" className="scroll-mt-4 overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
+        <Tabs
+          label="Project sections"
+          className="border-b border-border bg-muted/30 px-4 pt-2"
+          value={lowerTab}
+          onChange={(k) => setLowerTab(k as typeof lowerTab)}
+          tabs={[
+            { key: "documents", label: "Documents", icon: FileText },
+            { key: "history", label: "Activity Timeline", icon: History },
+            { key: "notes", label: "Remarks & Notes", icon: MessageSquareText },
+          ]}
+        />
+        <TabPanel k={lowerTab} className="p-4">
+          {lowerTab === "documents" && <ProjectDocumentsPanel projectId={p._id} canEdit={canWork} />}
+          {lowerTab === "history" && <ActivityTimeline projectId={p._id} />}
+          {lowerTab === "notes" && <ProjectNotes projectId={p._id} canWrite={can("communications:write") && !cancelled} />}
+        </TabPanel>
+      </section>
     </div>
   );
 }

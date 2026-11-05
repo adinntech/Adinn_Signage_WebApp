@@ -13,8 +13,10 @@ import { errorMessage } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import {
   commitImport,
+  bulkSkipImportRows,
   patchImportRow,
   useImportRows,
+  type BulkSkipScope,
   type DuplicatePolicy,
   type ImportBatch,
   type ImportRow,
@@ -97,8 +99,19 @@ export function ReviewStep({
     }
   }
 
+  async function bulk(scope: BulkSkipScope, skipped: boolean) {
+    setError(null);
+    try {
+      const res = await bulkSkipImportRows(projectId, batch._id, { scope, skipped });
+      onSummary(res.summary);
+      await refresh();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   // Estimate: the server decides the final numbers on commit.
-  const importable = Math.max(0, summary.valid + summary.warning - summary.skipped - (policy === "skip" ? summary.duplicates : 0));
+  const importable = summary.importable ?? Math.max(0, summary.valid + summary.warning - summary.skipped - (policy === "skip" ? summary.duplicates : 0));
 
   async function commit() {
     if (commitLock.current || importable === 0) return;
@@ -116,6 +129,7 @@ export function ReviewStep({
 
   const chips: { key: RowState | ""; label: string; n: number; tone: string; filter: boolean }[] = [
     { key: "", label: "Total", n: batch.totalRows, tone: "", filter: true },
+    { key: "IMPORT", label: "Will import", n: importable, tone: "text-success", filter: true },
     { key: "VALID", label: "Valid", n: summary.valid, tone: "text-success", filter: true },
     { key: "WARNING", label: "Warnings", n: summary.warning, tone: "text-warning", filter: true },
     { key: "ERROR", label: "Errors", n: summary.error, tone: "text-danger", filter: true },
@@ -126,7 +140,7 @@ export function ReviewStep({
   const total = 64 + 70 + COLS.reduce((n, c) => n + c.width, 0) + 280 + 90;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap gap-2" role="group" aria-label="Filter rows by state">
         {chips.map((c) => {
           const active = c.filter && state === c.key;
@@ -165,6 +179,23 @@ export function ReviewStep({
         imported. Duplicates follow your policy ({POLICY_TEXT[policy]}).
       </p>
 
+      <p className="rounded-lg bg-[#eef4ff] px-4 py-3 text-sm text-navy">
+        <strong>{formatNumber(importable)} of {formatNumber(batch.totalRows)} rows will be imported.</strong>{" "}
+        {summary.duplicates > 0 && <>{formatNumber(summary.duplicates)} are already in this project or repeated in the file (same mobile number, or same shop + dealer + location). </>}
+        {summary.error > 0 && <>{formatNumber(summary.error)} have a wrong value (for example an invalid GST number): click the red cell and correct it, and the row will be imported. </>}
+        {summary.skipped > 0 && <>{formatNumber(summary.skipped)} are skipped by you. </>}
+        Everything else is imported. Click <em>Will import</em> to see exactly which shops come in.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium">Bulk:</span>
+        <Button type="button" size="sm" variant="outline" disabled={summary.duplicates === 0} onClick={() => bulk("DUPLICATE", true)}>Skip all duplicates ({summary.duplicates})</Button>
+        <Button type="button" size="sm" variant="outline" disabled={summary.error === 0} onClick={() => bulk("ERROR", true)}>Skip all errors ({summary.error})</Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => bulk("ALL", true)}>Skip all</Button>
+        <Button type="button" size="sm" variant="outline" disabled={summary.skipped === 0} onClick={() => bulk("ALL", false)}>Unskip all ({summary.skipped})</Button>
+        <span className="text-xs text-muted-foreground">Skip = leave the row out (it is not imported). To import a wrong row instead, correct its cell. A duplicate is only the same mobile number, or the same shop name + dealer + location; a different GST number, address, dealer or area is a different shop.</span>
+      </div>
+
       {error && (
         <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
@@ -179,7 +210,7 @@ export function ReviewStep({
         ) : rows.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">No rows in this view.</p>
         ) : (
-          <div className="max-h-[42vh] overflow-auto">
+          <div className="max-h-[56vh] overflow-auto">
             <table
               className={cn("table-fixed border-separate border-spacing-0 text-left text-sm", rowsQ.isPlaceholderData && "opacity-60")}
               style={{ width: total, minWidth: "100%" }}
@@ -200,15 +231,13 @@ export function ReviewStep({
               <tbody>
                 {rows.map((r) => {
                   const bg = r.skipped ? "bg-muted text-muted-foreground" : "bg-surface group-hover:bg-muted";
-                  const td = cn("px-2 py-1.5 align-top", bg);
+                  const td = cn("px-3 py-2.5 align-top", bg);
                   const dupLabel =
                     r.dup?.type === "FILE"
                       ? `Duplicate of row ${r.dup.ref}`
                       : r.dup?.type === "EXISTING"
                         ? "Already in project"
-                        : r.dup?.type === "DEALER"
-                          ? "Same dealer"
-                          : null;
+                        : null;
                   return (
                     <tr key={r._id} className="group border-b border-border">
                       <td className={cn(td, "sticky left-0 z-10 font-mono text-xs")}>{r.rowNumber}</td>

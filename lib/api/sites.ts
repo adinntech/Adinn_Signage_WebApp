@@ -135,6 +135,9 @@ export type MissingKey = "address" | "mobile" | "measurement" | "gst" | "distric
 export interface SiteFilter {
   q?: string;
   district?: string;
+  location?: string;
+  /** A smart-plan cluster key. */
+  planArea?: string;
   status?: string;
   scenario?: Scenario | "";
   missing?: MissingKey | "";
@@ -150,6 +153,11 @@ export interface SiteStats {
   total: number;
   totalSqft: number;
   districts: { district: string; count: number }[];
+  /** Shops saved without an address: recce starts for them only after the address is filled. */
+  waitingForAddress?: number;
+  readyForRecce?: number;
+  locations: { district: string; location: string; count: number }[];
+  clusters: { key: string; name: string; district: string; count: number }[];
   missing: { address: number; mobile: number; measurement: number; gst: number };
 }
 export interface SiteWarning {
@@ -293,6 +301,8 @@ export interface ImportSummary {
   error: number;
   duplicates: number;
   skipped: number;
+  /** Rows the commit will really bring in (not an error, not skipped, not a duplicate under the skip policy). */
+  importable?: number;
 }
 export interface ImportBatch {
   _id: string;
@@ -316,6 +326,8 @@ export interface UploadResult {
   suggestedMapping: Record<string, MapTarget>;
   sample: { rowNumber: number; raw: Record<string, string> }[];
   problems: string[];
+  /** Every sheet of the workbook and whether it was used (hidden and summary sheets are skipped). */
+  sheets?: { name: string; used: boolean; rows: number; note?: string }[];
 }
 export interface ImportRow {
   _id: string;
@@ -329,7 +341,7 @@ export interface ImportRow {
   dup?: { type?: "FILE" | "EXISTING" | "DEALER"; ref?: string } | null;
   skipped: boolean;
 }
-export type RowState = "VALID" | "WARNING" | "ERROR" | "DUPLICATE";
+export type RowState = "VALID" | "WARNING" | "ERROR" | "DUPLICATE" | "IMPORT";
 
 export function uploadImport(pid: string, file: File): Promise<UploadResult> {
   const fd = new FormData();
@@ -386,3 +398,7 @@ export function useImportHistory(pid: string, enabled: boolean) {
     enabled,
   });
 }
+
+export type BulkSkipScope = "ALL" | "DUPLICATE" | "ERROR" | "WARNING";
+export const bulkSkipImportRows = (pid: string, batchId: string, body: { scope: BulkSkipScope; skipped: boolean }) =>
+  api<{ changed: number; summary: ImportSummary }>(`/projects/${pid}/sites/imports/${batchId}/rows/skip`, { method: "POST", body: JSON.stringify(body) });

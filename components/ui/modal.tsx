@@ -18,6 +18,7 @@ export function Modal({
   className,
   titleClassName,
   dismissible = true,
+  persistent,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -30,6 +31,8 @@ export function Modal({
   titleClassName?: string;
   /** false: closes only through its Close button (or the caller's Cancel), not by Escape or a click outside. */
   dismissible?: boolean;
+  /** Forms: a click, toast or another popup outside must not close it and lose what was typed. Only Close / Cancel (and Esc) do. */
+  persistent?: boolean;
 }) {
   const keep = (e: Event) => {
     if (!dismissible) e.preventDefault();
@@ -55,7 +58,7 @@ export function Modal({
                 drawer ? "justify-end" : "items-center justify-center p-4",
               )}
             >
-              <Dialog.Content asChild forceMount onEscapeKeyDown={keep} onPointerDownOutside={keep} onInteractOutside={keep}>
+              <Dialog.Content asChild forceMount onEscapeKeyDown={keep} onPointerDownOutside={keep} onInteractOutside={persistent ? (e: Event) => e.preventDefault() : keep}>
                 <motion.div
                   className={cn(
                     "pointer-events-auto flex max-h-full min-h-0 flex-col bg-surface shadow-card focus:outline-none",

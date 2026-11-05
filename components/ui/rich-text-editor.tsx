@@ -104,7 +104,7 @@ export function RichTextEditor({
             document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
           }}
           style={{ minHeight }}
-          className={cn("prose-editor max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none", RICH)}
+          className={cn("prose-editor bare-field max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none", RICH)}
         />
       </div>
     </div>

@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Ban, CheckCircle2, ClipboardList, Clock3, Eye, FileEdit, FolderKanban, Inbox, Loader, Pencil, Plus, Search, ThumbsUp, X } from "lucide-react";
+import { Ban, CheckCircle2, ClipboardList, Clock3, Eye, FileEdit, FolderKanban, Inbox, Loader, Pencil, Search, ThumbsUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GradientHeader } from "@/components/ui/gradient-header";
 import { Input } from "@/components/ui/input";
@@ -105,13 +104,6 @@ export function BdDashboard() {
           code="A"
           title="BD / Client Servicing"
           subtitle="Projects dashboard · assign recce projects to Operations"
-          right={
-            <Button asChild className="bg-white text-navy hover:bg-white/90">
-              <Link href="/bd/projects/new">
-                <Plus className="size-4" aria-hidden /> Create Project
-              </Link>
-            </Button>
-          }
         />
         <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-7">
           <KpiCard label="Total Projects" value={summary.data ? total : "–"} icon={FolderKanban} color="blue" active={tab === "all"} onClick={() => pickTab("all")} />
@@ -125,7 +117,7 @@ export function BdDashboard() {
         {draftCount > 0 && tab !== "drafts" && (
           <div className="mx-4 mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-[#ffd9a8] bg-[#fff6e8] px-3 py-2 text-sm text-approval">
             <FileEdit className="size-4" aria-hidden />
-            <span className="flex-1">You have <strong>{draftCount}</strong> unfinished draft{draftCount > 1 ? "s" : ""}. Click a draft to continue it; <strong>Create Project</strong> always starts a fresh one.</span>
+            <span className="flex-1">You have <strong>{draftCount}</strong> unfinished draft{draftCount > 1 ? "s" : ""}. Click a draft to continue it.</span>
             <Button size="sm" variant="outline" onClick={() => pickTab("drafts")}>View drafts</Button>
           </div>
         )}
@@ -208,8 +200,7 @@ export function BdDashboard() {
             {list.isSuccess && rows.length === 0 && (
               <EmptyState
                 title={tab === "drafts" && !filtered ? "No drafts" : filtered || tab !== "all" ? "No projects match your filters" : "No projects yet"}
-                description={filtered || tab !== "all" ? "Try clearing the search or switching tab." : "Create your first recce project to assign it to Operations."}
-                action={<Button asChild className="bg-royal hover:bg-royal/90"><Link href="/bd/projects/new"><Plus className="size-4" aria-hidden /> Create Project</Link></Button>}
+                description={filtered || tab !== "all" ? "Try clearing the search or switching tab." : "Projects are created by Client Servicing once the client code and project code are confirmed."}
               />
             )}
           </div>

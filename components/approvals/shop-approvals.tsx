@@ -100,7 +100,11 @@ export function ShopApprovals({ projectId, compact, readOnly, hideSummary, mode 
                 loading={all.isPending}
                 onClick={() =>
                   all.mutate(level, {
-                    onSuccess: (r) => toast(r.approved ? `Approved ${r.approved} shop(s)` : "Nothing pending to approve"),
+                    onSuccess: (r) =>
+                      toast(
+                        (r.approved ? `Verified ${r.approved} shop(s)` : "Nothing pending to verify") +
+                          (r.waitingForAddress ? `. ${r.waitingForAddress} shop(s) have no address and wait until it is filled` : ""),
+                      ),
                     onError: (e) => toast(errorMessage(e), "error"),
                   })
                 }

@@ -12,6 +12,7 @@ export type InputFormat =
   | "pan" // 10 letters / digits, capitals
   | "ifsc" // 11 letters / digits, capitals
   | "account" // bank account number, up to 18 digits
+  | "aadhaar" // 12 digits
   | "email"; // no spaces, lower case
 
 const decimal = (v: string, places: number, signed = false) => {
@@ -34,6 +35,7 @@ export const FORMATS: Record<InputFormat, Spec> = {
   pan: { clean: (v) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10), max: 10, inputMode: "text", title: "10 characters: letters and numbers" },
   ifsc: { clean: (v) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11), max: 11, inputMode: "text", title: "11 characters: letters and numbers" },
   account: { clean: (v) => v.replace(/\D/g, "").slice(0, 18), max: 18, inputMode: "numeric", title: "Numbers only, up to 18 digits" },
+  aadhaar: { clean: (v) => v.replace(/\D/g, "").slice(0, 12), max: 12, inputMode: "numeric", title: "12 digits, numbers only" },
   email: { clean: (v) => v.replace(/\s/g, "").toLowerCase(), inputMode: "email", autoComplete: "email", title: "An email address" },
 };
 
@@ -51,6 +53,7 @@ export function isValidFormat(format: InputFormat, value: string): boolean {
     case "pan": return /^[A-Z]{5}\d{4}[A-Z]$/.test(v);
     case "ifsc": return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(v);
     case "account": return /^\d{9,18}$/.test(v);
+    case "aadhaar": return /^[2-9]\d{11}$/.test(v);
     case "email": return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
     case "digits": return /^\d+$/.test(v);
     case "decimal": return /^\d+(\.\d{1,2})?$/.test(v);

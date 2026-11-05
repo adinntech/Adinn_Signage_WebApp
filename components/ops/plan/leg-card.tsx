@@ -65,7 +65,7 @@ export function LegCard({
     <article aria-label={`${leg.name} plan`} className={cn("overflow-hidden rounded-2xl border bg-surface shadow-soft", picked ? "border-royal/40" : "border-border")}>
       <header className="flex flex-wrap items-center gap-3 border-b border-border bg-[#f4f8ff] px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h3 className="flex flex-wrap items-center gap-2 text-base font-bold text-navy">{leg.name} <span className="rounded-full bg-royal px-2.5 py-0.5 text-xs font-semibold text-white">{leg.shops} shops</span>{unsaved && <Badge tone="warning">Unsaved changes</Badge>}</h3>
+          <h3 className="flex flex-wrap items-center gap-2 text-base font-bold text-navy">{leg.name} <span className="rounded-full bg-royal px-2.5 py-0.5 text-xs font-semibold text-white">{leg.shops} shops</span>{leg.autoSelected && !unsaved && <Badge tone="info"><BadgeCheck className="size-3" aria-hidden />Auto-selected</Badge>}{unsaved && <Badge tone="warning">Unsaved changes</Badge>}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">{leg.distanceKm ? `${leg.distanceKm} km from the start point` : "Distance not set"}</p>
         </div>
         <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">

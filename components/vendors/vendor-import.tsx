@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileSpreadsheet, Upload } from "lucide-react";
+import { Download, FileSpreadsheet, Info, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ export function VendorImport({ open, onClose }: { open: boolean; onClose: () => 
     imp.mutate({ file: f, commit: false }, { onSuccess: setReport, onError: (e) => toast(errorMessage(e), "error") });
   };
   const commit = () =>
-    file && imp.mutate({ file, commit: true }, { onSuccess: (r) => { toast(`${r.created} vendor(s) imported. Complete their KYC to activate`); close(); }, onError: (e) => toast(errorMessage(e), "error") });
+    file && imp.mutate({ file, commit: true }, { onSuccess: (r) => { toast(`${r.created} vendor(s) imported. Open each vendor to add the KYC documents and activate`); close(); }, onError: (e) => toast(errorMessage(e), "error") });
 
   return (
     <Modal
@@ -45,6 +45,10 @@ export function VendorImport({ open, onClose }: { open: boolean; onClose: () => 
         </div>
       }
     >
+      <p role="note" className="mb-3 flex items-start gap-2 rounded-lg border border-[#ffd8a8] bg-[#fff8ee] p-3 text-sm text-navy">
+        <Info className="mt-0.5 size-4 shrink-0 text-approval" aria-hidden />
+        <span><span className="font-semibold">KYC documents are not part of this upload.</span> The file brings in vendor details only. Add the KYC documents afterwards by opening each vendor and editing it manually.</span>
+      </p>
       <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/30 p-6 text-center hover:border-royal/50">
         <FileSpreadsheet className="size-8 text-royal" aria-hidden />
         <span className="text-sm font-medium text-navy">{file ? file.name : "Choose the vendor Excel / CSV file"}</span>

@@ -86,6 +86,12 @@ export function MappingStep({
         {upload.batch.sheetName ? `, sheet "${upload.batch.sheetName}"` : ""}. Check how each column maps to a site field. Suggested matches are preselected.
       </p>
 
+      {upload.sheets && upload.sheets.length > 1 && (
+        <p className="rounded-lg bg-[#eef4ff] px-3 py-2 text-xs text-navy">
+          Sheets in this file: {upload.sheets.map((s) => (s.used ? `${s.name} (${s.rows} rows, used)` : `${s.name} (${s.note ?? "skipped"})`)).join(" · ")}
+        </p>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[620px] text-left text-sm">
           <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">

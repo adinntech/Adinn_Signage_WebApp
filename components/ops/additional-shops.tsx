@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, PlusCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -10,49 +10,70 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { useSetAdditionalShops } from "@/lib/api/pipeline";
 import type { Project } from "@/lib/api/projects";
+import { cn } from "@/lib/utils";
 
-/** Shops found beyond the client's list. Saving raises the project's total expected shop count. */
+/** Shops found beyond the client's list. Saving raises the project's total expected shop count. Collapsed by default to save space. */
 export function AdditionalShops({ project, canEdit }: { project: Project; canEdit: boolean }) {
   const toast = useToast();
   const save = useSetAdditionalShops(project._id);
   const base = project.expectedShops ?? 0;
   const saved = project.additionalShops ?? 0;
+  const [open, setOpen] = useState(false);
   const [count, setCount] = useState(String(saved));
   const [note, setNote] = useState(project.additionalShopsNote ?? "");
   const n = Number(count);
   const valid = /^\d+$/.test(count) && n <= 100000;
+  const shown = valid ? n : saved;
 
   return (
-    <div className="rounded-xl border border-[#f9c6dd] bg-[#fdf2f8] p-4">
-      <h3 className="flex items-center gap-2 text-sm font-bold text-[#be185d]">
-        <span className="flex size-6 items-center justify-center rounded-full bg-[#ec4899] text-white"><PlusCircle className="size-4" aria-hidden /></span>
-        Additional Shop Count Support
-      </h3>
-      <p className="mt-1 text-xs text-muted-foreground">If more shops are identified during the recce, add them below.</p>
-      <div className="mt-3 grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1.4fr)]">
-        <Field label="Additional shops count" htmlFor="addl-count" error={valid ? undefined : "Enter a whole number, 0 or more"}>
-          <Input id="addl-count" format="digits" value={count} disabled={!canEdit} onChange={(e) => setCount(e.target.value)} aria-invalid={!valid} />
-        </Field>
-        <div className="flex items-end">
-          <p className="flex w-full items-start gap-2 rounded-lg border border-[#bbf0d3] bg-[#e7f9ef] px-3 py-2 text-xs text-finance">
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <span>Total expected shops {valid && n !== saved ? "will be updated to" : "is"} <strong>{base + (valid ? n : saved)}</strong> ({base} + {valid ? n : saved} additional)</span>
-          </p>
-        </div>
-        <Field label="Remarks" htmlFor="addl-note">
-          <Textarea id="addl-note" rows={2} value={note} disabled={!canEdit} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Additional shops identified during recce in nearby streets." />
-        </Field>
-      </div>
-      {canEdit && (
-        <div className="mt-3 flex justify-end">
-          <Button
-            className="bg-[#be185d] hover:bg-[#9d174d]"
-            loading={save.isPending}
-            disabled={!valid || (n === saved && note.trim() === (project.additionalShopsNote ?? ""))}
-            onClick={() => save.mutate({ count: n, note: note.trim() || undefined }, { onSuccess: () => toast(`Total expected shops: ${base + n}`), onError: (e) => toast(errorMessage(e), "error") })}
-          >
-            Save additional shops
-          </Button>
+    <div className="overflow-hidden rounded-xl border border-[#f9c6dd] bg-[#fdf2f8]">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="addl-shops-body"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#fce7f3] focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#ec4899] text-white"><PlusCircle className="size-4" aria-hidden /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-[#be185d]">Additional Shop Count Support</span>
+          <span className="block text-xs text-muted-foreground">If more shops are identified during the recce, add them here.</span>
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full border border-[#bbf0d3] bg-[#e7f9ef] px-3 py-1 text-xs font-medium text-finance">
+          <CheckCircle2 className="size-3.5" aria-hidden /> Total expected <strong>{base + saved}</strong> ({base} + {saved})
+        </span>
+        <ChevronDown className={cn("size-5 shrink-0 text-[#be185d] transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+
+      {open && (
+        <div id="addl-shops-body" className="border-t border-[#f9c6dd] p-4">
+          <div className="grid items-start gap-4 md:grid-cols-[200px_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <Field label="Additional shops count" htmlFor="addl-count" error={valid ? undefined : "Enter a whole number, 0 or more"}>
+                <Input id="addl-count" format="digits" value={count} disabled={!canEdit} onChange={(e) => setCount(e.target.value)} aria-invalid={!valid} />
+              </Field>
+              <p className="rounded-lg border border-[#bbf0d3] bg-[#e7f9ef] px-3 py-2 text-xs text-finance">
+                Total expected shops {valid && n !== saved ? "will be" : "is"} <strong>{base + shown}</strong> ({base} + {shown} additional)
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Field label="Remarks" htmlFor="addl-note">
+                <Textarea id="addl-note" rows={3} value={note} disabled={!canEdit} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Additional shops identified during recce in nearby streets." />
+              </Field>
+              {canEdit && (
+                <div className="flex justify-end">
+                  <Button
+                    className="bg-[#be185d] hover:bg-[#9d174d]"
+                    loading={save.isPending}
+                    disabled={!valid || (n === saved && note.trim() === (project.additionalShopsNote ?? ""))}
+                    onClick={() => save.mutate({ count: n, note: note.trim() || undefined }, { onSuccess: () => { toast(`Total expected shops: ${base + n}`); setOpen(false); }, onError: (e) => toast(errorMessage(e), "error") })}
+                  >
+                    Save additional shops
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import { ChevronDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { navFor, type NavItem } from "@/lib/nav";
 import { resolveHref } from "@/lib/role-routes";
+import { useConnectUnread } from "@/hooks/use-connect-socket";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -22,6 +23,7 @@ export function SidebarNav({ collapsed = false, scope, onNavigate, onExpandReque
   const pathname = usePathname();
   const { can, user } = useAuth();
   const items = navFor(user?.role, can).map((i) => (i.href ? { ...i, href: resolveHref(i.href, user?.home) } : i));
+  const connect = useConnectUnread(can("connect:use"));
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   const isGroupOpen = (item: NavItem) =>
@@ -105,9 +107,10 @@ export function SidebarNav({ collapsed = false, scope, onNavigate, onExpandReque
 
         // Sub-pages (e.g. /clients/new, /sales/<id>) keep their module highlighted.
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const hot = item.href === "/connect";
         return (
           <div key={item.label} className="relative">
-            {active && (
+            {active && !hot && (
               <motion.span
                 layoutId={`${scope}-active`}
                 className="absolute inset-0 rounded-lg bg-white/10"
@@ -123,12 +126,21 @@ export function SidebarNav({ collapsed = false, scope, onNavigate, onExpandReque
               aria-current={active ? "page" : undefined}
               className={cn(
                 "relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-white/70 transition-colors hover:bg-white/5 hover:text-white",
-                active && "text-white hover:bg-transparent",
+                active && !hot && "text-white hover:bg-transparent",
+                // Adinn Connect always stands out: a blue-to-violet pill with a live dot.
+                hot && "bg-gradient-to-r from-royal to-vendor text-white shadow-soft ring-1 ring-white/20 hover:from-royal hover:to-vendor hover:brightness-110",
+                hot && active && "ring-2 ring-white/60",
                 collapsed && "justify-center px-0",
               )}
             >
-              <Icon className="size-5 shrink-0" aria-hidden />
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              <Icon className={cn("size-5 shrink-0", hot && "drop-shadow")} aria-hidden />
+              {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+              {hot && connect.unread === 0 && !collapsed && <span className="size-2 rounded-full bg-[#34d399] ring-2 ring-white/30" aria-hidden title="Live" />}
+              {item.href === "/connect" && connect.unread > 0 && (
+                <span aria-label={`${connect.unread} unread messages`} className={cn("rounded-full px-1.5 text-center text-[11px] font-bold tabular-nums text-white", collapsed ? "absolute right-1 top-1 min-w-4 px-1 text-[10px]" : "min-w-5", connect.mentions > 0 ? "bg-danger" : "bg-royal")}>
+                  {connect.unread > 99 ? "99+" : connect.unread}
+                </span>
+              )}
             </Link>
           </div>
         );

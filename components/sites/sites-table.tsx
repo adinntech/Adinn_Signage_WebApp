@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Check, Copy, MoreHorizontal, Pencil, Trash2, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import type { ApprovalSite, ApprovalState } from "@/lib/api/pipeline";
 import { SITE_COLUMNS, type Site } from "@/lib/api/sites";
 import { cn } from "@/lib/utils";
 import { EditableCell } from "./editable-cell";
@@ -14,6 +15,42 @@ const SELECT_W = 44;
 const CODE_W = COL.siteCode!.width;
 const SHOP_W = COL.shopName!.width;
 const ACTION_W = 52;
+const VERIFY_W = 170;
+
+/** Row-level shop verification (Operations): set a state, or ask for a correction. */
+export interface VerifyControls {
+  canAct: boolean;
+  onSet: (s: Site, v: ApprovalState) => void;
+  onCorrect: (s: Site) => void;
+}
+
+const VERIFY_TONE: Record<ApprovalState, "neutral" | "success" | "danger"> = { PENDING: "neutral", APPROVED: "success", CORRECTION: "danger" };
+const VERIFY_LABEL: Record<ApprovalState, string> = { PENDING: "Pending", APPROVED: "Verified", CORRECTION: "Correction" };
+
+function VerifyCell({ site, verify }: { site: Site; verify: VerifyControls }) {
+  const v = (site as ApprovalSite).opsApproval ?? "PENDING";
+  const name = site.shopName || site.dealerName || site.siteCode;
+  return (
+    <div className="flex items-center gap-1">
+      <Badge tone={VERIFY_TONE[v]}>{VERIFY_LABEL[v]}</Badge>
+      {verify.canAct && v !== "APPROVED" && (
+        <button type="button" aria-label={`Verify ${name}`} title="Verify" onClick={() => verify.onSet(site, "APPROVED")} className="rounded p-1 text-finance hover:bg-[#e2f8ea]">
+          <Check className="size-4" aria-hidden />
+        </button>
+      )}
+      {verify.canAct && v === "PENDING" && (
+        <button type="button" aria-label={`Request correction for ${name}`} title="Request correction" onClick={() => verify.onCorrect(site)} className="rounded p-1 text-approval hover:bg-[#fff0e0]">
+          <AlertTriangle className="size-4" aria-hidden />
+        </button>
+      )}
+      {verify.canAct && v !== "PENDING" && (
+        <button type="button" aria-label={`Reset verification for ${name}`} title="Reset to pending" onClick={() => verify.onSet(site, "PENDING")} className="rounded p-1 text-muted-foreground hover:bg-muted">
+          <Undo2 className="size-4" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
 
 const sortField = (key: string) => (key === "siteCode" ? "seq" : key);
 
@@ -30,6 +67,7 @@ interface RowProps {
   onOpen: (s: Site) => void;
   onDuplicate: (s: Site) => void;
   onDelete: (s: Site) => void;
+  verify?: VerifyControls;
 }
 
 const SiteRow = React.memo(function SiteRow(p: RowProps) {
@@ -45,7 +83,7 @@ const SiteRow = React.memo(function SiteRow(p: RowProps) {
         label={COL[key]?.label ?? key}
         kind={kind ?? "text"}
         value={editValue(site, key)}
-        display={key === "status" ? <Badge>{displayValue(site, key)}</Badge> : displayValue(site, key)}
+        display={key === "status" ? <Badge>{displayValue(site, key)}</Badge> : key === "shopName" && !site.shopName ? displayValue(site, "dealerName") : displayValue(site, key)}
         editing={p.editingKey === key}
         canEdit={p.canWrite && !!kind}
         issue={warn ? { level: "warning", message: warn } : undefined}
@@ -79,6 +117,7 @@ const SiteRow = React.memo(function SiteRow(p: RowProps) {
       >
         {cell("shopName")}
       </td>
+      {p.verify && <td className={cn(td, bg)}><VerifyCell site={site} verify={p.verify} /></td>}
       {p.cols.map((k) => (
         <td key={k} className={cn(td, bg)}>
           {cell(k)}
@@ -130,6 +169,7 @@ export function SitesTable({
   onDuplicate,
   onDelete,
   dimmed,
+  verify,
 }: {
   rows: Site[];
   /** Visible optional column keys (Site ID and Shop are always pinned). */
@@ -145,6 +185,8 @@ export function SitesTable({
   onDuplicate: (s: Site) => void;
   onDelete: (s: Site) => void;
   dimmed?: boolean;
+  /** Adds a Verification column after Shop. */
+  verify?: VerifyControls;
 }) {
   const cols = React.useMemo(
     () => SITE_COLUMNS.map((c) => c.key).filter((k) => k !== "siteCode" && k !== "shopName" && visible.includes(k)),
@@ -166,7 +208,7 @@ export function SitesTable({
     [editable],
   );
 
-  const total = SELECT_W + CODE_W + SHOP_W + ACTION_W + cols.reduce((n, k) => n + (COL[k]?.width ?? 120), 0);
+  const total = SELECT_W + CODE_W + SHOP_W + ACTION_W + (verify ? VERIFY_W : 0) + cols.reduce((n, k) => n + (COL[k]?.width ?? 120), 0);
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r._id));
   const someSelected = !allSelected && rows.some((r) => selected.has(r._id));
   const cur = sort.replace(/^-/, "");
@@ -206,6 +248,7 @@ export function SitesTable({
         <col style={{ width: SELECT_W }} />
         <col style={{ width: CODE_W }} />
         <col style={{ width: SHOP_W }} />
+        {verify && <col style={{ width: VERIFY_W }} />}
         {cols.map((k) => (
           <col key={k} style={{ width: COL[k]?.width }} />
         ))}
@@ -255,6 +298,7 @@ export function SitesTable({
               {cur === "shopName" && (sort.startsWith("-") ? <ArrowDown className="size-3" aria-hidden /> : <ArrowUp className="size-3" aria-hidden />)}
             </button>
           </th>
+          {verify && <th scope="col" className="px-2 py-2.5 font-medium">Verification</th>}
           {cols.map((k) => header(k))}
           <th scope="col" className="px-1" style={{ right: 0, zIndex: 30 }}>
             <span className="sr-only">Actions</span>
@@ -277,6 +321,7 @@ export function SitesTable({
             onOpen={onOpen}
             onDuplicate={onDuplicate}
             onDelete={onDelete}
+            verify={verify}
           />
         ))}
       </tbody>

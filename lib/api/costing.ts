@@ -32,6 +32,8 @@ export interface LegCalc {
 /** One area (normally a district) of the project and how it will be done. */
 export interface PlanLeg {
   key: string;
+  /** Chosen by the smart plan and not changed since. */
+  autoSelected?: boolean;
   name: string;
   district?: string;
   shops: number;
@@ -204,3 +206,21 @@ export const useAddExpense = (pid: string) =>
 export const useReviewExpense = (pid: string) =>
   useExpenseMutation(pid, (b: { id: string; status: "APPROVED" | "REJECTED" | "PENDING"; remark?: string }) => api(`/expenses/${b.id}/review`, { method: "POST", body: JSON.stringify({ status: b.status, remark: b.remark }) }));
 export const useDeleteExpense = (pid: string) => useExpenseMutation(pid, (id: string) => api(`/expenses/${id}`, { method: "DELETE" }));
+
+/* ------------------------------ smart suggestion ------------------------------ */
+
+export interface SuggestVendor { vendorId: string; name: string; local: boolean; skillMatch: boolean; skills: string[]; perShopRate: number; total: number; perShop: number; needsApproval: boolean }
+export interface SuggestProposal {
+  key: string; name: string; district: string; towns: string[]; shops: number; located: number; distanceKm: number; routeKm: number;
+  inHouse: { total: number; perShop: number; needsApproval: boolean; days: number; nights: number; travel: number; food: number; stay: number };
+  vendors: SuggestVendor[];
+  zohoNearby?: ZohoNearby[];
+  recommended: { channel: Channel; vendorId: string | null; vendorName: string | null; total: number; perShop: number };
+  reasons: string[]; warnings: string[];
+}
+export interface Verification { total: number; verified: number; unverified: number; noAddress: number; allVerified: boolean }
+export interface ZohoNearby { zohoContactId: string; vendorNo?: string | null; name: string; city: string; mobile?: string | null; ratePerShop: number | null; match: "AREA" | "DISTRICT" }
+export const useReadiness = (pid: string) => useQuery({ queryKey: [...key(pid), "readiness"], queryFn: () => api<Verification>(`/projects/${pid}/cost/readiness`), enabled: !!pid, refetchInterval: 30_000 });
+export interface SuggestResult { applied: boolean; verification?: Verification; groupBy: "area" | "district"; proposals: SuggestProposal[]; totals: { shops: number; areas: number; suggested: number; allInHouse: number; allVendor: number; inHouseShops: number; vendorShops: number } }
+export const useSuggestPlan = (pid: string) =>
+  usePlanMutation(pid, (b: { skills: string[]; requireSkills: boolean; apply: boolean; groupBy: "area" | "district" }) => post<SuggestResult>(`/projects/${pid}/cost/suggest`, b));

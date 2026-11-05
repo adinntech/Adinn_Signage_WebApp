@@ -5,7 +5,7 @@ import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
-import { useImportHistory, type BatchStatus } from "@/lib/api/sites";
+import { useImportHistory, type BatchStatus, type ImportBatch } from "@/lib/api/sites";
 import { formatDateTime, formatNumber, label } from "@/lib/format";
 
 const TONE: Record<BatchStatus, Tone> = {
@@ -21,10 +21,13 @@ export function ImportHistory({
   projectId,
   onClose,
   onViewSites,
+  onDelete,
 }: {
   projectId: string;
   onClose: () => void;
   onViewSites: (batchId: string) => void;
+  /** Remove every shop this import created (asks for confirmation first). */
+  onDelete?: (batch: ImportBatch) => void;
 }) {
   const q = useImportHistory(projectId, true);
   return (
@@ -65,6 +68,11 @@ export function ImportHistory({
                       : "Not imported"}
                   </td>
                   <td className="px-2 py-2 text-right">
+                    {b.status === "COMMITTED" && onDelete && (b.result?.created ?? 0) > 0 && (
+                      <Button size="sm" variant="outline" className="mr-2 text-danger" onClick={() => onDelete(b)}>
+                        Delete imported shops
+                      </Button>
+                    )}
                     {b.status === "COMMITTED" && (
                       <Button size="sm" variant="outline" onClick={() => onViewSites(b._id)}>
                         View sites

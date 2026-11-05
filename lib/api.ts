@@ -18,6 +18,8 @@ export interface User {
   employeeId?: string | null;
   phone?: string | null;
   role: Role;
+  /** 0 Admin, 1 Operations, 2 BD, 3 Client Servicing, 4 Recce/Vendor; null for Finance. Derived from the role by the backend. */
+  userType?: 0 | 1 | 2 | 3 | 4 | null;
   isActive: boolean;
   authMethod?: AuthMethod;
   permissions: string[];
@@ -46,6 +48,8 @@ export class ApiError extends Error {
 
 // Access token is kept in memory only (never localStorage).
 let accessToken: string | null = null;
+/** The current access token, for the live (Socket.IO) connection. */
+export const getAccessToken = () => accessToken;
 let refreshInFlight: Promise<AuthPayload> | null = null;
 let onSessionExpired: (() => void) | null = null;
 
@@ -247,6 +251,17 @@ export async function registerAccount({ credential, ...rest }: RegisterInput): P
   });
   accessToken = p.accessToken;
   return p;
+}
+
+/** Emails a 6-digit reset code. The reply is always the same, whether or not the account exists. */
+export function requestResetCode(identifier: string): Promise<{ message: string; expiresInMinutes: number; resendAfterSeconds: number }> {
+  return raw("/auth/forgot", { method: "POST", body: JSON.stringify({ identifier }), auth: false });
+}
+
+/** Checks the emailed code and sets the new MPIN or password. The user signs in again afterwards. */
+export function confirmReset(identifier: string, code: string, credential: Credential, confirmReuse = false): Promise<{ authMethod: AuthMethod }> {
+  const newSecret = credential.authMethod === "MPIN" ? credential.mpin : credential.password;
+  return raw("/auth/forgot/confirm", { method: "POST", body: JSON.stringify({ identifier, code, authMethod: credential.authMethod, newSecret, confirmReuse }), auth: false });
 }
 
 export async function logout(): Promise<void> {
