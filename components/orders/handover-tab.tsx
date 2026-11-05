@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -326,6 +326,14 @@ function ClientSection({
   );
 }
 
+/** Save of unsaved order contact persons (registered while there are any), run by the step's forward actions. */
+let pendingOrderContacts: (() => Promise<boolean>) | null = null;
+/**
+ * Before leaving Assign Type & Details: saves unsaved contact persons (true when saved or nothing to save; false
+ * when a row needs fixing, shown inline).
+ */
+export const saveOrderContactsBeforeLeaving = async () => (pendingOrderContacts ? pendingOrderContacts() : true);
+
 type ContactRow = { key: string; name: string; designation: string; phone: string; email: string; isPrimary: boolean };
 type ContactField = "name" | "designation" | "phone" | "email";
 const blankContact = (): ContactRow => ({ key: Math.random().toString(36).slice(2), name: "", designation: "", phone: "", email: "", isPrimary: false });
@@ -385,7 +393,10 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
 
   const submit = async () => {
     setTried(true);
-    if (invalid) return;
+    if (invalid) {
+      goToSection("ho-order-contacts");
+      return false;
+    }
     const primary = Math.max(0, kept.findIndex((r) => r.isPrimary));
     try {
       await save.mutateAsync(
@@ -395,6 +406,7 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
       setTried(false);
       setBase("");
       toast(kept.length ? `${kept.length} contact person${kept.length === 1 ? "" : "s"} saved for this order` : "Contact persons cleared");
+      return true;
     } catch (e) {
       // Server paths index the kept (non-blank) rows; point them back at the rows on screen.
       const map: Record<string, string> = {};
@@ -405,8 +417,21 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
       }
       setServerErrors(map);
       toast(errorMessage(e), "error");
+      goToSection("ho-order-contacts");
+      return false;
     }
   };
+  // Continue / Next / Skip save unsaved rows first (so the Rate Card gets them), through the latest submit.
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    if (!editable || !dirty) return;
+    const run = () => submitRef.current();
+    pendingOrderContacts = run;
+    return () => {
+      if (pendingOrderContacts === run) pendingOrderContacts = null;
+    };
+  }, [editable, dirty]);
 
   return (
     <div id="ho-order-contacts" className="mt-5 border-t border-border pt-4">

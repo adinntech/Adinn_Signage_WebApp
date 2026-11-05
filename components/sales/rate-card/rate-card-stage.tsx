@@ -69,13 +69,14 @@ type FormValues = z.infer<typeof schema>;
 const csSchema = schema.extend({ contact: schema.shape.contact.extend({ name: z.string().trim().max(120) }) });
 
 /**
- * `typedContact` (Rate Card step): the contact is typed, so a new rate card starts blank (no Zoho contact prefill).
+ * `typedContact` (Rate Card step): the contact is typed; a new rate card starts with the name of the order's primary
+ * contact person (the Zoho client's, else the one saved in Assign Type & Details; from the server's draft), editable.
  * Same step: a saved Bill To that is empty or only the city (the earlier default) starts as the full address instead;
  * an address typed by the user is kept.
  */
 function toForm(d: QuotationState, typedContact = false): FormValues {
   const src = d.latest ?? d.draft!;
-  const contact = typedContact && !d.latest ? null : src.contact;
+  const contact = typedContact && !d.latest ? { name: src.contact?.name ?? "", designation: "", phone: "", email: "" } : src.contact;
   const saved = (src.clientAddress ?? "").trim();
   const full = d.billTo?.full;
   const cityOnly = !saved || saved.toLowerCase() === (d.billTo?.city ?? "").trim().toLowerCase();
@@ -177,6 +178,15 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     // Once per opening of the step.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Rate Card step, new rate card: the contact name of a draft read later (e.g. refetched after contacts were saved in
+  // Assign Type & Details) fills an untouched, empty Contact Person; a typed or saved name is never overwritten.
+  const draftContact = !data.latest ? (data.draft?.contact?.name ?? "") : "";
+  useEffect(() => {
+    if (!step || data.latest || !draftContact) return;
+    if (form.getFieldState("contact.name").isDirty || form.getValues("contact.name")) return;
+    form.resetField("contact.name", { defaultValue: draftContact });
+  }, [step, data.latest, draftContact, form]);
 
   // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
   // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).

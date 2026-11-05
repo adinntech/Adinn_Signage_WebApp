@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
-import { HandoverTab } from "@/components/orders/handover-tab";
+import { HandoverTab, saveOrderContactsBeforeLeaving } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
 import { DeliveryBadge, EmailHistory, emailTypes } from "@/components/sales/email-history";
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
@@ -632,6 +632,8 @@ export function RecceBranchPanel({
    * otherwise it saves step 1 as done (server-checked) and the caller moves on.
    */
   const leaveHandover = async () => {
+    // Unsaved contact persons (Zoho client without any) are saved first, so the Rate Card prefills them.
+    if (!(await saveOrderContactsBeforeLeaving())) return false;
     const gaps = r.handoverMissing ?? [];
     if (gaps.length) {
       flagHandoverGaps(gaps);
