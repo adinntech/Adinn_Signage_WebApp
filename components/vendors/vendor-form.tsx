@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Building2, FileUp, IndianRupee, Mail, Plus, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -10,9 +10,11 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { useAddVendorType, useGstCheck, useKycFiles, useSaveVendor, useVendorTypes, type KycDocKey, type KycFile, type Vendor, type VendorInput, type VendorType } from "@/lib/api/vendors";
+import { useAddVendorType, useGstCheck, useKycFiles, usePincode, useSaveVendor, useVendorTypes, type KycDocKey, type KycFile, type Vendor, type VendorInput, type VendorType } from "@/lib/api/vendors";
 import { KycDocuments, missingDocs, type PendingKyc } from "./kyc-documents";
 import { gstinInfo } from "@/lib/gstin";
+import { INDIA_STATES } from "@/lib/india-states";
+import { isValidFormat } from "@/lib/input-format";
 import { VendorRegistrationPanel } from "./vendor-registration-mail";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +30,9 @@ const BUILT_IN: Record<VendorType, string> = { ORGANIZATION: "Organization", ONE
 const NEW_TYPE = "__new__";
 type StepKey = (typeof STEPS)[number]["key"];
 
-type Form = { typeName: string; typed: Record<"pan" | "gst" | "bank", boolean>; name: string; contactPerson: string; mobile: string; mobileAlt: string; email: string; address: string; district: string; pan: string; gstin: string; accountName: string; accountNo: string; ifsc: string; serviceAreas: string; ratePerShop: string; farRatePerShop: string; notes: string };
+type Form = { typeName: string; typed: Record<"pan" | "gst" | "bank" | "aadhaar", boolean>; /** null until the person answers "Does the vendor have GST?"; then an organization defaults to yes. */ hasGst: boolean | null; name: string; contactPerson: string; designation: string; mobile: string; mobileAlt: string; email: string; address: string; pincode: string; state: string; district: string; aadhaar: string; pan: string; gstin: string; accountName: string; accountNo: string; ifsc: string; serviceAreas: string; ratePerShop: string; farRatePerShop: string; notes: string };
 const fromVendor = (v?: Vendor): Form => ({
-  typeName: v?.typeName ?? BUILT_IN[v?.type ?? "ONE_MAN"], typed: { pan: !!v?.pan, gst: !!v?.gstin, bank: !!v?.bank?.accountNo }, name: v?.name ?? "", contactPerson: v?.contactPerson ?? "", mobile: v?.mobile ?? "", mobileAlt: v?.mobileAlt ?? "", email: v?.email ?? "", address: v?.address ?? "", district: v?.district ?? "",
+  typeName: v?.typeName ?? BUILT_IN[v?.type ?? "ONE_MAN"], typed: { pan: !!v?.pan, gst: !!v?.gstin, bank: !!v?.bank?.accountNo, aadhaar: !!v?.aadhaar }, hasGst: v ? (v.hasGst ?? !!v.gstin) : null, name: v?.name ?? "", contactPerson: v?.contactPerson ?? "", designation: v?.designation ?? "", mobile: v?.mobile ?? "", mobileAlt: v?.mobileAlt ?? "", email: v?.email ?? "", address: v?.address ?? "", pincode: v?.pincode ?? "", state: v?.state ?? "", district: v?.district ?? "", aadhaar: v?.aadhaar ?? "",
   pan: v?.pan ?? "", gstin: v?.gstin ?? "", accountName: v?.bank?.accountName ?? "", accountNo: v?.bank?.accountNo ?? "", ifsc: v?.bank?.ifsc ?? "",
   serviceAreas: (v?.serviceAreas ?? []).join(", "), ratePerShop: v?.ratePerShop != null ? String(v.ratePerShop) : "", farRatePerShop: v?.farRatePerShop != null ? String(v.farRatePerShop) : "", notes: v?.notes ?? "",
 });
@@ -64,11 +66,21 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set =(k: keyof Form) => (e: { target: { value: string } }) => setF((s) => ({ ...s, [k]: e.target.value }));
   const options = types.data ?? Object.entries(BUILT_IN).map(([rules, name]) => ({ _id: rules, name, rules: rules as VendorType }));
-  // The chosen type decides the rules: an organization needs a contact person and GST, one-man / freelancer needs neither.
   const rules: VendorType = options.find((t) => t.name === f.typeName)?.rules ?? vendor?.type ?? "ONE_MAN";
   const org = rules === "ORGANIZATION";
-  // A number is typed only when its toggle is on; GST is always typed for an organization.
-  const typedOpen = { pan: !quick && f.typed.pan, gst: org || (!quick && f.typed.gst), bank: !quick && f.typed.bank };
+  /** Does the vendor have GST? It decides the GST number and certificate (yes) or the Aadhaar number and card (no). */
+  const hasGst = f.hasGst ?? org;
+  /** A new vendor on the full form: every detail is mandatory. Quick registration and editing ask for less. */
+  const strict = !quick && !vendor;
+  // PAN, and the GST number (GST yes) or Aadhaar number (GST no), are typed and mandatory on the full form; the bank number is optional.
+  const typedOpen = { pan: !quick && (strict || f.typed.pan), gst: hasGst, aadhaar: !quick && !hasGst && (strict || f.typed.aadhaar), bank: !quick && f.typed.bank };
+  // The pincode fills the state and city. Only after the person typed a pincode, so an existing vendor's own values are never overwritten.
+  const pinTyped = useRef(false);
+  const pin = usePincode(f.pincode);
+  useEffect(() => {
+    const d = pin.data;
+    if (pinTyped.current && d && d.pincode === f.pincode) setF((s) => ({ ...s, state: d.state, district: d.district }));
+  }, [pin.data, f.pincode]);
   const pickType = (v: string) => (v === NEW_TYPE ? setNewType({ name: "", rules: "ONE_MAN", error: "" }) : setF((s) => ({ ...s, typeName: v })));
 
   function createType() {
@@ -94,19 +106,37 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
     const e: Record<string, string> = {};
     if (k === "business") {
       if (f.name.trim().length < 2) e.name = "Enter the vendor name";
-      if (!f.mobile.trim()) e.mobile = org ? "Enter the Recce contact number" : "Enter the mobile number";
-      if (org && !f.contactPerson.trim()) e.contactPerson = "Enter the Recce contact person";
+      if (!f.mobile.trim()) e.mobile = "Enter the phone number";
+      if (f.email.trim() && !isValidFormat("email", f.email)) e.email = "Enter a valid email";
+      if (strict) {
+        if (!f.contactPerson.trim()) e.contactPerson = "Enter the contact person name";
+        if (!f.designation.trim()) e.designation = "Enter the designation";
+        if (!f.email.trim()) e.email = "Enter the email";
+        if (!f.pincode.trim()) e.pincode = "Enter the pincode";
+        else if (!isValidFormat("pincode", f.pincode)) e.pincode = "Enter a 6-digit pincode";
+        if (!f.state.trim()) e.state = "Choose the state";
+        if (!f.district.trim()) e.district = "Enter the city / district";
+        if (!f.address.trim()) e.address = "Enter the address";
+      }
     }
     if (k === "kyc") {
-      if (org && !f.gstin.trim()) e.gstin = "GST number is required for an organization";
+      if (hasGst && !f.gstin.trim()) e.gstin = "Enter the GST number";
+      if (strict) {
+        if (!f.pan.trim()) e.pan = "Enter the PAN number";
+        else if (!isValidFormat("pan", f.pan)) e.pan = "Enter a valid PAN, e.g. ABCDE1234F";
+        if (!hasGst) {
+          if (!f.aadhaar.trim()) e.aadhaar = "Enter the Aadhaar number";
+          else if (!isValidFormat("aadhaar", f.aadhaar)) e.aadhaar = "Aadhaar number must be 12 digits";
+        }
+      }
       // A new vendor's documents are uploaded after saving, so they are checked here. An existing vendor keeps what it has.
-      if (!vid && !quick) { const m = missingDocs(rules, [], pending); if (m.length) e.documents = `Upload: ${m.map((x) => x.label.split(" (")[0]).join(", ")}`; }
+      if (!vid && !quick) { const m = missingDocs({ type: rules, hasGst }, [], pending); if (m.length) e.documents = `Upload: ${m.map((x) => x.label.split(" (")[0]).join(", ")}`; }
     }
     if (k === "rates") for (const k of ["ratePerShop", "farRatePerShop"] as const) if (f[k].trim() !== "" && !(Number(f[k]) >= 0)) e[k] = "Enter an amount";
     return e;
   };
   const stepOf = (errs: Record<string, string>) => STEPS.findIndex((s) => (s.fields as readonly string[]).some((x) => x in errs));
-  const flagMissing = (e: Record<string, string>) => setMissing(e.documents ? missingDocs(rules, [], pending).map((x) => x.key) : []);
+  const flagMissing = (e: Record<string, string>) => setMissing(e.documents ? missingDocs({ type: rules, hasGst }, [], pending).map((x) => x.key) : []);
   const next = () => { const e = stepErrors(key); setErrors(e); flagMissing(e); if (!Object.keys(e).length) setStep((s) => s + 1); };
 
   /** Saves the vendor (a new one once, then it is edited). `advance`: go on to the mail step afterwards. */
@@ -118,8 +148,10 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
     const t = (s: string) => (s.trim() === "" ? undefined : s.trim());
     const body: VendorInput = {
       type: rules, typeName: f.typeName, name: f.name.trim(), mobile: f.mobile.trim(),
-      ...(org && t(f.contactPerson) ? { contactPerson: t(f.contactPerson) as string } : {}), ...(!quick && t(f.mobileAlt) ? { mobileAlt: t(f.mobileAlt) as string } : {}), ...(!quick && t(f.email) ? { email: t(f.email) as string } : {}),
-      ...(!quick && t(f.address) ? { address: t(f.address) as string } : {}), ...(!quick && t(f.district) ? { district: t(f.district) as string } : {}), ...(typedOpen.pan && t(f.pan) ? { pan: t(f.pan) as string } : {}), ...(typedOpen.gst && t(f.gstin) ? { gstin: t(f.gstin) as string } : {}),
+      hasGst, ...(strict ? { fullDetails: true } : {}),
+      ...(!quick && t(f.contactPerson) ? { contactPerson: t(f.contactPerson) as string } : {}), ...(!quick && t(f.designation) ? { designation: t(f.designation) as string } : {}), ...(!quick && t(f.mobileAlt) ? { mobileAlt: t(f.mobileAlt) as string } : {}), ...(!quick && t(f.email) ? { email: t(f.email) as string } : {}),
+      ...(!quick && t(f.address) ? { address: t(f.address) as string } : {}), ...(!quick && t(f.pincode) ? { pincode: t(f.pincode) as string } : {}), ...(!quick && t(f.state) ? { state: t(f.state) as string } : {}), ...(!quick && t(f.district) ? { district: t(f.district) as string } : {}),
+      ...(typedOpen.pan && t(f.pan) ? { pan: t(f.pan) as string } : {}), ...(typedOpen.gst && t(f.gstin) ? { gstin: t(f.gstin) as string } : {}), ...(typedOpen.aadhaar && t(f.aadhaar) ? { aadhaar: t(f.aadhaar) as string } : {}),
       ...(typedOpen.bank && (f.accountName.trim() || f.accountNo.trim() || f.ifsc.trim()) ? { bank: { ...(t(f.accountName) ? { accountName: t(f.accountName) as string } : {}), ...(t(f.accountNo) ? { accountNo: t(f.accountNo) as string } : {}), ...(t(f.ifsc) ? { ifsc: t(f.ifsc) as string } : {}) } } : {}),
       ...(quick ? {} : { serviceAreas: f.serviceAreas.split(/[,;]/).map((x) => x.trim()).filter(Boolean) }),
       ...(!quick && t(f.ratePerShop) ? { ratePerShop: Number(f.ratePerShop) } : {}), ...(!quick && t(f.farRatePerShop) ? { farRatePerShop: Number(f.farRatePerShop) } : {}), ...(!quick && t(f.notes) ? { notes: t(f.notes) as string } : {}),
@@ -154,10 +186,21 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
   }
 
   const err = (k: string) => errors[k];
-  const panField = <Field label="PAN number" htmlFor="v-pan" error={err("pan")} hint="e.g. ABCDE1234F"><Input id="v-pan" format="pan" value={f.pan} onChange={set("pan")} /></Field>;
+  const panField = <Field label="PAN number" htmlFor="v-pan" required={strict} error={err("pan")} hint="e.g. ABCDE1234F"><Input id="v-pan" format="pan" value={f.pan} onChange={set("pan")} /></Field>;
   const gst = gstinInfo(f.gstin);
   const gstCheck = useGstCheck(gst ? f.gstin.trim().toUpperCase() : "", !!gst);
   const known = gstCheck.data?.zoho ?? gstCheck.data?.registered ?? null;
+  const portal = gstCheck.data?.portal;
+  const gd = portal?.available ? portal.details : null;
+  /** Fills the empty fields from the GST portal details (the name, address, pincode, state, city and PAN); what was typed is kept. */
+  const fillFromGst = () => {
+    if (!gd) return;
+    pinTyped.current = false;
+    setF((s) => ({
+      ...s, name: s.name.trim() ? s.name : (gd.legalName ?? s.name), address: s.address.trim() ? s.address : (gd.address ?? s.address), pincode: s.pincode || gd.pincode || "",
+      state: s.state || gd.state || "", district: s.district.trim() ? s.district : (gd.district ?? s.district), pan: s.pan || gd.pan || "", typed: { ...s.typed, pan: s.typed.pan || !!gd.pan },
+    }));
+  };
   const onGst = (e: { target: { value: string } }) => {
     const v = e.target.value;
     const info = gstinInfo(v);
@@ -165,7 +208,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
     setF((s) => ({ ...s, gstin: v, ...(info && !s.pan ? { pan: info.pan, typed: { ...s.typed, pan: true } } : {}) }));
   };
   const gstField = (
-    <Field label="GST number" htmlFor="v-gst" required={org} error={err("gstin")} hint={org ? "Required for an organization" : "Optional"}>
+    <Field label="GST number" htmlFor="v-gst" required error={err("gstin")} hint="Required: the vendor has GST">
       <Input id="v-gst" format="gst" value={f.gstin} onChange={onGst} aria-invalid={!!err("gstin")} />
       {gst && (
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-lg bg-[#eef4ff] p-2.5 text-xs" aria-label="Details from the GST number">
@@ -174,6 +217,20 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
           <dt className="text-muted-foreground">Business type</dt><dd className="font-medium text-navy">{gst.entity}</dd>
         </dl>
       )}
+      {gst && gd && (
+        <div role="status" aria-label="GST portal details" className={cn("mt-2 rounded-lg border p-2.5 text-xs", /^active$/i.test(gd.status ?? "") ? "border-[#bbf0d3] bg-[#f4fcf7]" : "border-loss bg-[#fff5f5]")}>
+          <p className="flex flex-wrap items-center gap-2 font-semibold text-navy">
+            {gd.legalName ?? "Name not available"}
+            {gd.status && <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", /^active$/i.test(gd.status) ? "bg-[#e2f8ea] text-finance" : "bg-[#fde8e8] text-loss")}>{gd.status}</span>}
+          </p>
+          {gd.tradeName && gd.tradeName !== gd.legalName && <p className="text-muted-foreground">Trade name: {gd.tradeName}</p>}
+          <p className="text-muted-foreground">{[gd.constitution, gd.taxpayerType, gd.registrationDate && `Registered ${gd.registrationDate}`].filter(Boolean).join(" · ")}</p>
+          {gd.address && <p className="mt-0.5 text-muted-foreground">{gd.address}</p>}
+          {gd.status && !/^active$/i.test(gd.status) && <p className="mt-1 font-medium text-loss">This GST registration is {gd.status}. Check before registering this vendor.</p>}
+          <button type="button" className="mt-1 font-semibold text-royal hover:underline" onClick={fillFromGst}>Fill name, address and PAN from GST</button>
+        </div>
+      )}
+      {gst && portal?.available && portal.error && <p role="status" className="mt-2 text-xs text-muted-foreground">GST portal: {portal.error}</p>}
       {gst && (
         <div role="status" className="mt-2 text-xs">
           {gstCheck.isPending ? <span className="text-muted-foreground">Checking the GST number…</span>
@@ -201,7 +258,8 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
       <Field label="IFSC" htmlFor="v-ifsc" error={err("bank.ifsc")}><Input id="v-ifsc" format="ifsc" value={f.ifsc} onChange={set("ifsc")} /></Field>
     </>
   );
-  const toggle = (k: "pan" | "gst" | "bank") => (on: boolean) => setF((s) => ({ ...s, typed: { ...s.typed, [k]: on } }));
+  const aadhaarField = <Field label="Aadhaar number" htmlFor="v-aadhaar" required={strict} error={err("aadhaar")} hint="12 digits"><Input id="v-aadhaar" format="aadhaar" value={f.aadhaar} onChange={set("aadhaar")} aria-invalid={!!err("aadhaar")} /></Field>;
+  const toggle = (k: "pan" | "gst" | "bank" | "aadhaar") => (on: boolean) => setF((s) => ({ ...s, typed: { ...s.typed, [k]: on } }));
 
   return (
     <>
@@ -238,43 +296,72 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
       {key === "business" && !vendor && !created && (
         <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-xl border border-[#cfe0ff] bg-gradient-to-br from-[#eef4ff] to-[#f7f0ff] p-3 has-[:checked]:border-royal">
           <input type="checkbox" className="mt-1 size-4" checked={quick} onChange={(e) => { setQuick(e.target.checked); setStep(0); }} />
-          <span className="text-sm"><span className="flex items-center gap-1.5 font-semibold text-navy"><Zap className="size-4 text-royal" aria-hidden /> Quick registration</span><span className="text-xs text-muted-foreground">Give only the vendor name and mobile and go straight to the mail. The PAN, bank and GST documents are uploaded there and attached to it.</span></span>
+          <span className="text-sm"><span className="flex items-center gap-1.5 font-semibold text-navy"><Zap className="size-4 text-royal" aria-hidden /> Quick registration</span><span className="text-xs text-muted-foreground">Give only the name, phone and whether the vendor has GST, and go straight to the mail. The documents are uploaded there and attached to it.</span></span>
         </label>
       )}
       {key === "business" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Vendor type" htmlFor="v-type" error={err("typeName")} hint={org ? "Recce contact person and GST number are required" : "No contact person or GST needed"}>
+          <Field label="Vendor type" htmlFor="v-type" error={err("typeName")}>
             <Select id="v-type" value={f.typeName} onChange={(e) => pickType(e.target.value)}>
               {options.map((t) => <option key={t._id} value={t.name}>{t.name}</option>)}
               <option value={NEW_TYPE}>+ Add new type…</option>
             </Select>
           </Field>
-          <Field label="Vendor / firm name" htmlFor="v-name" required error={err("name")}><Input id="v-name" value={f.name} onChange={set("name")} aria-invalid={!!err("name")} /></Field>
-          {org && quick && gstField}
-          {org && <Field label="Recce contact person" htmlFor="v-cp" required error={err("contactPerson")}><Input id="v-cp" value={f.contactPerson} onChange={set("contactPerson")} aria-invalid={!!err("contactPerson")} /></Field>}
-          <Field label={org ? "Recce contact number" : "Mobile"} htmlFor="v-mobile" required error={err("mobile")}><Input id="v-mobile" format="phone" value={f.mobile} onChange={set("mobile")} aria-invalid={!!err("mobile")} /></Field>
-          {!quick && <Field label="Alternate mobile" htmlFor="v-alt" error={err("mobileAlt")}><Input id="v-alt" format="phone" value={f.mobileAlt} onChange={set("mobileAlt")} /></Field>}
-          {!quick && <Field label="Email" htmlFor="v-email" error={err("email")}><Input id="v-email" type="email" value={f.email} onChange={set("email")} /></Field>}
-          {!quick && <Field label="District" htmlFor="v-district" error={err("district")}><Input id="v-district" value={f.district} onChange={set("district")} /></Field>}
-          {!quick && <Field label="Address" htmlFor="v-address" error={err("address")}><Input id="v-address" value={f.address} onChange={set("address")} /></Field>}
+          <Field label="Name of the company / firm" htmlFor="v-name" required error={err("name")}><Input id="v-name" value={f.name} onChange={set("name")} aria-invalid={!!err("name")} /></Field>
+          <fieldset className="sm:col-span-2">
+            <legend className="mb-1.5 text-sm font-medium text-navy">Does the vendor have GST? <span className="text-loss" aria-hidden>*</span></legend>
+            <div className="flex flex-wrap gap-2">
+              {([[true, "Yes, has GST", "GST number, PAN number, GST certificate, PAN card and cancelled cheque"], [false, "No GST", "PAN number, Aadhaar number, PAN card, Aadhaar card and cancelled cheque"]] as const).map(([v, label, hint]) => (
+                <label key={label} className="flex min-w-60 flex-1 cursor-pointer items-start gap-2 rounded-lg border border-border p-2.5 text-sm has-[:checked]:border-royal has-[:checked]:bg-[#eef4ff]">
+                  <input type="radio" name="v-hasgst" className="mt-1" checked={hasGst === v} onChange={() => setF((s) => ({ ...s, hasGst: v }))} />
+                  <span><span className="block font-medium">{label}</span><span className="text-xs text-muted-foreground">{hint}</span></span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          {quick && hasGst && gstField}
+          {!quick && <Field label="Contact person name" htmlFor="v-cp" required={strict} error={err("contactPerson")}><Input id="v-cp" value={f.contactPerson} onChange={set("contactPerson")} aria-invalid={!!err("contactPerson")} /></Field>}
+          {!quick && <Field label="Designation" htmlFor="v-desig" required={strict} error={err("designation")}><Input id="v-desig" maxLength={80} value={f.designation} onChange={set("designation")} aria-invalid={!!err("designation")} placeholder="e.g. Owner, Manager" /></Field>}
+          <Field label="Phone" htmlFor="v-mobile" required error={err("mobile")}><Input id="v-mobile" format="phone" value={f.mobile} onChange={set("mobile")} aria-invalid={!!err("mobile")} /></Field>
+          {!quick && <Field label="Alternate phone" htmlFor="v-alt" error={err("mobileAlt")}><Input id="v-alt" format="phone" value={f.mobileAlt} onChange={set("mobileAlt")} /></Field>}
+          {!quick && <Field label="Email" htmlFor="v-email" required={strict} error={err("email")}><Input id="v-email" format="email" value={f.email} onChange={set("email")} aria-invalid={!!err("email")} /></Field>}
+          {!quick && (
+            <>
+              <Field label="Pincode" htmlFor="v-pin" required={strict} error={err("pincode")} hint={pin.isFetching ? "Fetching the state and city…" : pin.isError && /^\d{6}$/.test(f.pincode) ? "Could not fetch the state and city. Choose them yourself." : pin.data ? "State and city filled from the pincode" : "6 digits: the state and city are filled from it"}>
+                <Input id="v-pin" format="pincode" value={f.pincode} onChange={(e) => { pinTyped.current = true; set("pincode")(e); }} aria-invalid={!!err("pincode")} />
+              </Field>
+              <Field label="State" htmlFor="v-state" required={strict} error={err("state")}>
+                <Select id="v-state" value={f.state} onChange={set("state")} aria-invalid={!!err("state")}>
+                  <option value="">Select the state</option>
+                  {f.state && !(INDIA_STATES as readonly string[]).includes(f.state) && <option value={f.state}>{f.state}</option>}
+                  {INDIA_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </Select>
+              </Field>
+              <Field label="City / district" htmlFor="v-district" required={strict} error={err("district")}><Input id="v-district" value={f.district} onChange={set("district")} aria-invalid={!!err("district")} /></Field>
+              <Field label="Address" htmlFor="v-address" required={strict} error={err("address")} hint="Door number, street, area"><Input id="v-address" value={f.address} onChange={set("address")} aria-invalid={!!err("address")} /></Field>
+            </>
+          )}
         </div>
       )}
 
       {key === "kyc" && (
         <section aria-label="KYC documents">
-          <p className="mb-2 text-sm text-muted-foreground">Upload each document. To also type its number, tick the option inside that document. Anything missed can go under Other documents.{!vendor && " Everything uploaded is attached to the registration mail to Accounts."}</p>
+          <p className="mb-2 text-sm text-muted-foreground">{hasGst ? "GST vendor: GST certificate, PAN card and cancelled cheque are required." : "Vendor without GST: PAN card, Aadhaar card and cancelled cheque are required."} The vendor agreement is optional (upload it under Vendor agreement / other documents).{!vendor && " Everything uploaded is attached to the registration mail to Accounts."}</p>
           <KycDocuments
             type={rules}
+            hasGst={hasGst}
             {...(vid ? { vendorId: vid, saved } : {})}
             pending={pending}
             missing={missing}
             busy={busy}
             readOnly={vendor?.status === "BLACKLISTED"}
             typed={quick
-              ? (org ? { gst: { label: "Type the GST number too", open: true, locked: true, onToggle: toggle("gst"), children: gstField } } : {})
+              ? (hasGst ? { gst: { label: "GST number", open: true, locked: true, onToggle: toggle("gst"), children: gstField } } : {})
               : {
-                  pan: { label: "Type the PAN number too", open: typedOpen.pan, onToggle: toggle("pan"), children: panField },
-                  gst: { label: "Type the GST number too", open: typedOpen.gst, locked: org, onToggle: toggle("gst"), children: gstField },
+                  pan: { label: strict ? "PAN number" : "Type the PAN number too", open: typedOpen.pan, locked: strict, onToggle: toggle("pan"), children: panField },
+                  ...(hasGst
+                    ? { gst: { label: "GST number", open: true, locked: true, onToggle: toggle("gst"), children: gstField } }
+                    : { aadhaar: { label: strict ? "Aadhaar number" : "Type the Aadhaar number too", open: typedOpen.aadhaar, locked: strict, onToggle: toggle("aadhaar"), children: aadhaarField } }),
                   bank: { label: "Type the account number and IFSC too", open: typedOpen.bank, onToggle: toggle("bank"), children: bankFields },
                 }}
             onAdd={addDocs}
@@ -309,7 +396,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
           <Field label="Type name" htmlFor="nt-name" required error={newType.error}><Input id="nt-name" maxLength={60} value={newType.name} onChange={(e) => setNewType({ ...newType, name: e.target.value, error: "" })} placeholder="e.g. Partnership firm" /></Field>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium text-navy">Which rules should it follow?</legend>
-            {([["ORGANIZATION", "Like an organization", "Recce contact person and GST number are required"], ["ONE_MAN", "Like a one-man / freelancer", "No contact person, GST optional"]] as const).map(([v, label, hint]) => (
+            {([["ORGANIZATION", "Like an organization", "A company or firm"], ["ONE_MAN", "Like a one-man / freelancer", "An individual"]] as const).map(([v, label, hint]) => (
               <label key={v} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-2.5 text-sm has-[:checked]:border-royal has-[:checked]:bg-[#eef4ff]">
                 <input type="radio" name="nt-rules" className="mt-1" checked={newType.rules === v} onChange={() => setNewType({ ...newType, rules: v })} />
                 <span><span className="block font-medium">{label}</span><span className="text-xs text-muted-foreground">{hint}</span></span>

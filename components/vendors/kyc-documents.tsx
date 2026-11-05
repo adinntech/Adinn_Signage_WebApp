@@ -1,12 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckCircle2, FilePlus2, IdCard, Landmark, MapPinned, Paperclip, Receipt, UploadCloud, X } from "lucide-react";
+import { CheckCircle2, FilePlus2, Fingerprint, IdCard, Landmark, MapPinned, Paperclip, Receipt, UploadCloud, X } from "lucide-react";
 import { AttachmentChip } from "@/components/sales/order-comments";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { KYC_ITEMS, useKycFiles, type KycDocKey, type KycFile, type VendorType } from "@/lib/api/vendors";
+import { KYC_ITEMS, requiredDocKeys, useKycFiles, type KycDocKey, type KycFile, type VendorType } from "@/lib/api/vendors";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -17,14 +17,17 @@ const MAX_MB = 10;
 const MAX_PER_ITEM = 3;
 const MAX_OTHER = 5;
 const maxOf = (k: KycDocKey) => (k === "other" ? MAX_OTHER : MAX_PER_ITEM);
-const ICON: Record<KycDocKey, typeof IdCard> = { pan: IdCard, gst: Receipt, bank: Landmark, address: MapPinned, other: FilePlus2 };
-const HINT: Record<KycDocKey, string> = { pan: "PAN card scan", gst: "GST registration certificate", bank: "Cancelled cheque or passbook first page", address: "Aadhaar, electricity bill or rent agreement", other: "Any document missed above (agreement, visiting card, licence…)" };
-/** The four checklist documents plus a tile for any extra document that was missed. */
-const TILES: { key: KycDocKey; label: string }[] = [...KYC_ITEMS.map((i) => ({ key: i.key as KycDocKey, label: i.label })), { key: "other", label: "Other documents" }];
+const ICON: Record<KycDocKey, typeof IdCard> = { pan: IdCard, gst: Receipt, bank: Landmark, aadhaar: Fingerprint, address: MapPinned, other: FilePlus2 };
+const HINT: Record<KycDocKey, string> = { pan: "PAN card scan", gst: "GST registration certificate", bank: "Cancelled cheque leaf, name and account number visible", aadhaar: "Aadhaar card, front and back", address: "Electricity bill or rent agreement", other: "Vendor agreement or any other document" };
+const LABEL: Record<KycDocKey, string> = { pan: "PAN card", gst: "GST certificate", bank: "Cancelled cheque", aadhaar: "Aadhaar card", address: "Address proof", other: "Vendor agreement / other documents" };
+/** The tiles shown: a GST vendor uploads the GST certificate, one without GST the Aadhaar. A vendor from before the GST question keeps the old set (with address proof). */
+const tilesFor = (hasGst?: boolean | null): KycDocKey[] => (hasGst === true ? ["pan", "gst", "bank", "other"] : hasGst === false ? ["pan", "aadhaar", "bank", "other"] : ["pan", "gst", "bank", "address", "other"]);
 
-/** Documents still to be uploaded before the registration mail can go: PAN, bank proof, and GST for an organization (address proof is optional). */
-export function missingDocs(type: VendorType, saved: KycFile[] = [], pending: PendingKyc = {}) {
-  return KYC_ITEMS.filter((i) => i.key !== "address" && (i.key !== "gst" || type === "ORGANIZATION")).filter((i) => !saved.some((f) => f.docType === i.key) && !(pending[i.key]?.length));
+/** Documents still to be uploaded before the registration mail can go (the same rule as the server: see requiredDocKeys). */
+export function missingDocs(rules: { type?: VendorType | undefined; hasGst?: boolean | null | undefined }, saved: KycFile[] = [], pending: PendingKyc = {}) {
+  return requiredDocKeys(rules)
+    .filter((k) => !saved.some((f) => f.docType === k) && !(pending[k]?.length))
+    .map((k) => ({ key: k, label: KYC_ITEMS.find((i) => i.key === k)?.label ?? LABEL[k] }));
 }
 
 /**
@@ -33,8 +36,10 @@ export function missingDocs(type: VendorType, saved: KycFile[] = [], pending: Pe
  * - vendor drawer: pass `vendorId`, files are uploaded the moment they are picked.
  * A scan never ticks the KYC checklist; Operations ticks it after viewing the document.
  */
-export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, onRemovePending, busy, missing = [], typed = {}, readOnly }: {
+export function KycDocuments({ type, hasGst, vendorId, saved = [], pending = {}, onAdd, onRemovePending, busy, missing = [], typed = {}, readOnly }: {
   type: VendorType;
+  /** Does the vendor have GST? Decides the tiles and which documents are required. */
+  hasGst?: boolean | null | undefined;
   vendorId?: string | undefined;
   saved?: KycFile[];
   pending?: PendingKyc;
@@ -68,13 +73,13 @@ export function KycDocuments({ type, vendorId, saved = [], pending = {}, onAdd, 
   return (
     <>
       <div className="grid items-start gap-3 sm:grid-cols-2">
-        {TILES.map((item) => {
-          const k = item.key;
+        {tilesFor(hasGst).map((k) => {
+          const item = { key: k, label: LABEL[k] };
           const Icon = ICON[k];
           const mine = saved.filter((f) => f.docType === k);
           const waiting = pending[k] ?? [];
           const count = mine.length + waiting.length;
-          const required = k !== "other" && k !== "address" && (k !== "gst" || type === "ORGANIZATION");
+          const required = requiredDocKeys({ type, hasGst }).includes(k as never);
           const full = count >= maxOf(k);
           const lacking = missing.includes(k) && count === 0;
           return (

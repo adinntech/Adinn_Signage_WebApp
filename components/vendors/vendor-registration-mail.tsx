@@ -30,10 +30,13 @@ type Attached = RegistrationMailDraft["attachments"][number];
 const SLOTS: { key: KycDocKey; label: string }[] = [
   { key: "gst", label: "GSTN" },
   { key: "pan", label: "PAN" },
-  { key: "bank", label: "Bank" },
+  { key: "aadhaar", label: "Aadhaar" },
+  { key: "bank", label: "Cancelled cheque" },
   { key: "address", label: "Address" },
-  { key: "other", label: "Other documents" },
+  { key: "other", label: "Vendor agreement / other" },
 ];
+/** Which slots a vendor sees: GST vendors the GSTN, others the Aadhaar; address proof only for vendors from before the GST question. */
+const slotsFor = (hasGst: boolean | null): KycDocKey[] => (hasGst === true ? ["gst", "pan", "bank", "other"] : hasGst === false ? ["pan", "aadhaar", "bank", "other"] : ["gst", "pan", "bank", "address", "other"]);
 
 /**
  * The vendor registration request, written in the same mail screen as the code requests (shared MailCompose): To / Cc /
@@ -99,7 +102,6 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   if (!d) return null;
 
-  const org = d.vendorType === "ORGANIZATION";
   const attachments = (
     <aside className="flex flex-col rounded-xl border border-border bg-background" aria-label="Attachments">
       <div className="border-b border-border px-4 py-3">
@@ -108,9 +110,9 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
       </div>
       <input ref={input} type="file" hidden accept={ACCEPT.join(",")} multiple onChange={(e) => { void onPicked(e.target.files); e.target.value = ""; }} />
       <div className="grid grid-cols-2 gap-px bg-border">
-        {SLOTS.map((slot) => {
+        {SLOTS.filter((s) => slotsFor(d.hasGst).includes(s.key)).map((slot) => {
           const files = d.attachments.filter((a) => a.docType === slot.key);
-          const required = slot.key === "pan" || slot.key === "bank" || (slot.key === "gst" && org);
+          const required = d.required.includes(slot.key as never);
           const lacking = required && files.length === 0;
           const full = files.length >= (slot.key === "other" ? MAX_OTHER : MAX_PER_TYPE);
           return (

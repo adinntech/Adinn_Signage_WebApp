@@ -11,12 +11,29 @@ export const VENDOR_STATUS_LABEL: Record<VendorStatus, string> = { PENDING_KYC: 
 export const KYC_ITEMS = [
   { key: "pan", label: "PAN card" },
   { key: "gst", label: "GST certificate" },
-  { key: "bank", label: "Bank proof (cancelled cheque / passbook)" },
+  { key: "bank", label: "Cancelled cheque (bank proof)" },
   { key: "address", label: "Address proof" },
+  { key: "aadhaar", label: "Aadhaar card" },
 ] as const;
 export type KycKey = (typeof KYC_ITEMS)[number]["key"];
 /** A scan can also be filed under "other": a document that was missed. It is not part of the checklist. */
 export type KycDocKey = KycKey | "other";
+
+/**
+ * The documents that must be uploaded (the server applies the same rule). With the new form (`hasGst` set): PAN, cancelled
+ * cheque, and the GST certificate for a GST vendor or the Aadhaar for one without GST. Older vendors: PAN and cancelled
+ * cheque, plus GST for an organization. Address proof and other documents (the vendor agreement) are optional.
+ */
+export function requiredDocKeys(v: { type?: VendorType | undefined; hasGst?: boolean | null | undefined }): KycKey[] {
+  if (v.hasGst === true) return ["pan", "gst", "bank"];
+  if (v.hasGst === false) return ["pan", "aadhaar", "bank"];
+  return v.type === "ORGANIZATION" ? ["pan", "gst", "bank"] : ["pan", "bank"];
+}
+
+/** State and district of a pincode (looked up by the backend). Runs only for a complete 6-digit pincode. */
+export interface PincodeInfo { pincode: string; state: string; district: string; areas: string[] }
+export const usePincode = (pin: string) =>
+  useQuery({ queryKey: ["vendors", "pincode", pin], queryFn: () => api<PincodeInfo>(`/vendors/pincode/${pin}`), enabled: /^[1-9]\d{5}$/.test(pin), retry: false, staleTime: 3_600_000 });
 
 /** A KYC scan stored for a vendor; `docType` is the checklist item it proves. */
 export interface KycFile extends FileRef {
@@ -31,12 +48,18 @@ export interface Vendor {
   type: VendorType;
   typeName?: string;
   contactPerson?: string;
+  designation?: string;
   mobile: string;
   mobileAlt?: string;
   email?: string;
   gstin?: string;
   pan?: string;
+  aadhaar?: string;
+  /** Registered with GST? Set by the new registration form; older vendors have no value. */
+  hasGst?: boolean;
   address?: string;
+  pincode?: string;
+  state?: string;
   district?: string;
   serviceAreas?: string[];
   bank?: { accountName?: string; accountNo?: string; ifsc?: string };
@@ -61,12 +84,19 @@ export interface VendorInput {
   type: VendorType;
   typeName?: string;
   contactPerson?: string;
+  designation?: string;
   mobile: string;
   mobileAlt?: string;
   email?: string;
   gstin?: string;
   pan?: string;
+  aadhaar?: string;
+  hasGst?: boolean;
+  /** The full registration form: the server then requires every detail. Not stored. */
+  fullDetails?: boolean;
   address?: string;
+  pincode?: string;
+  state?: string;
   district?: string;
   serviceAreas?: string[];
   bank?: { accountName?: string; accountNo?: string; ifsc?: string };
@@ -189,6 +219,9 @@ export function useAddVendorType() {
 export interface RegistrationMailDraft {
   mail: { enabled: boolean; identities: string[] };
   vendorType: VendorType;
+  hasGst: boolean | null;
+  /** The documents the vendor must have before the mail can go. */
+  required: KycKey[];
   /** Recipients from the settings (VENDOR_REGISTRATION_RECIPIENTS). */
   groups: string[];
   to: string[];
@@ -222,8 +255,15 @@ export function useSendRegistrationMail(vendorId: string) {
   });
 }
 /** What the company already knows about a typed GST number: the Zoho Books vendor and the registered vendor with it. */
+/** What the GST portal says about a GST number (through the paid lookup service). */
+export interface GstPortalDetails {
+  gstin: string; legalName: string | null; tradeName: string | null; status: string | null; constitution: string | null; taxpayerType: string | null; registrationDate: string | null;
+  state: string | null; pan: string | null; address: string | null; district: string | null; pincode: string | null; natureOfBusiness: string[];
+}
+export type GstPortal = { available: false; reason: "NOT_CONFIGURED" } | { available: true; details: GstPortalDetails; error: null } | { available: true; details: null; error: string };
 export interface GstCheck {
   gstin: string;
+  portal: GstPortal;
   zoho: { name: string; vendorNo: string | null; status: "active" | "inactive"; city: string | null; zohoContactId: string } | null;
   registered: { id: string; name: string; code: string; status: VendorStatus } | null;
 }
