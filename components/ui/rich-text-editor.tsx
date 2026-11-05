@@ -4,6 +4,14 @@ import * as React from "react";
 import { Bold, Italic, List, ListOrdered, Underline } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Rich text look shared by the editor and the read-only view (headings, label / value tables of email templates). */
+const RICH =
+  "[&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-2 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-primary " +
+  "[&_h3]:mb-1.5 [&_h3]:mt-5 [&_h3]:border-b [&_h3]:border-border [&_h3]:pb-1.5 [&_h3]:text-[15px] [&_h3]:font-bold [&_h3]:text-primary " +
+  "[&_table]:mb-2 [&_table]:w-full [&_table]:border-collapse [&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-border [&_th]:py-1.5 [&_th]:pr-4 " +
+  "[&_th]:text-left [&_th]:align-top [&_th]:text-xs [&_th]:font-semibold [&_th]:text-muted-foreground [&_td]:border-b [&_td]:border-border " +
+  "[&_td]:py-1.5 [&_td]:pr-4 [&_td]:align-top [&_td]:text-primary";
+
 const TOOLS = [
   { cmd: "bold", icon: Bold, label: "Bold" },
   { cmd: "italic", icon: Italic, label: "Italic" },
@@ -96,7 +104,7 @@ export function RichTextEditor({
             document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
           }}
           style={{ minHeight }}
-          className="prose-editor max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-2"
+          className={cn("prose-editor max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none", RICH)}
         />
       </div>
     </div>
@@ -107,7 +115,7 @@ export function RichTextEditor({
 export function RichTextView({ html, className }: { html: string; className?: string }) {
   return (
     <div
-      className={cn("text-sm leading-relaxed [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_p]:mb-2", className)}
+      className={cn("text-sm leading-relaxed", RICH, className)}
       // Content is sanitized server-side (common/html.ts) to simple formatting tags without attributes.
       dangerouslySetInnerHTML={{ __html: html }}
     />
