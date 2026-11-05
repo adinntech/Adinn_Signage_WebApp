@@ -260,13 +260,17 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     }
   };
 
+  // Create Project > Recce Team > Rate Card and Rate Card Creation: the save button (Save & Continue / Save Changes)
+  // sits at the bottom right of the editor, below Quote & Contact, instead of in the top toolbar.
+  const bottomSave = !!step;
+  const saveButton = editable && (
+    <Button variant="brand" onClick={onSave} loading={saving}>
+      <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
+    </Button>
+  );
   const actions = (
     <>
-      {editable && (
-        <Button variant="brand" onClick={onSave} loading={saving}>
-          <Save className="size-4" aria-hidden /> {step?.onContinue ? "Save & Continue" : "Save Changes"}
-        </Button>
-      )}
+      {!bottomSave && saveButton}
       {step?.onSkip && (
         <Button variant="outline" onClick={() => void onSkip()} loading={skipping} disabled={saving}>
           <SkipForward className="size-4" aria-hidden /> Skip Rate Card
@@ -547,6 +551,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
           </fieldset>
 
           {!step && <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">{actions}</div>}
+          {bottomSave && saveButton && <div className="mt-6 flex justify-end border-t border-border pt-4">{saveButton}</div>}
         </Card>
       </div>
 
