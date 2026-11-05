@@ -57,10 +57,12 @@ import {
   useSetHandoverType,
   useAddSoDocuments,
   useRemoveSoDocument,
+  useSetOrderContacts,
   useSetSoContacts,
   type HandoverState,
   type HandoverType,
   type Order,
+  type OrderContact,
   type SoContact,
 } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
@@ -170,8 +172,25 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
  * Company and contact persons, straight from Client Management. Contact persons can be added and edited here (saved on
  * the client). GST certificate and custom fields: New (Client Management) clients only, not Existing (Zoho) ones.
  */
-function ClientSection({ order, canAddContact, aso }: { order: Order; canAddContact: boolean; aso: boolean }) {
+function ClientSection({
+  order,
+  canAddContact,
+  aso,
+  orderContacts,
+  manualEditable,
+}: {
+  order: Order;
+  canAddContact: boolean;
+  aso: boolean;
+  /** Contact persons saved for this order only. */
+  orderContacts: OrderContact[];
+  /** Client Servicing (Recce Team > Assign Type & Details): may add contact persons when the Zoho client has none. */
+  manualEditable: boolean;
+}) {
   const c = order.client;
+  // Zoho client without contact persons: this order's own contact persons replace the empty table (decided by Zoho's
+  // contacts only, not by the ones added here).
+  const manual = c.contacts.length === 0 && (manualEditable || orderContacts.length > 0);
   // null: closed; -1: add; >= 0: edit that contact.
   const [editing, setEditing] = useState<number | null>(null);
   // Each open gets a fresh form (no values, errors or index left from the previous add / edit).
@@ -191,7 +210,8 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
         title="Client & Contact Persons"
         description={aso ? "Auto-filled from Client Management. Contact persons are optional; add the client's SO contacts in the SO section below." : "Auto-filled from Client Management. Contact persons are optional."}
         action={
-          canAddContact && (
+          canAddContact &&
+          !manual && (
             <Button variant="brand-outline" size="sm" onClick={() => openContact(-1)}>
               <UserPlus className="size-4" aria-hidden /> Add Contact Person
             </Button>
@@ -247,6 +267,9 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
           </dl>
         </div>
       )}
+      {manual ? (
+        <OrderContactsSection orderId={order._id} saved={orderContacts} editable={manualEditable} />
+      ) : (
       <div className="mt-5 max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -298,7 +321,208 @@ function ClientSection({ order, canAddContact, aso }: { order: Order; canAddCont
           </tbody>
         </table>
       </div>
+      )}
     </Card>
+  );
+}
+
+type ContactRow = { key: string; name: string; designation: string; phone: string; email: string; isPrimary: boolean };
+type ContactField = "name" | "designation" | "phone" | "email";
+const blankContact = (): ContactRow => ({ key: Math.random().toString(36).slice(2), name: "", designation: "", phone: "", email: "", isPrimary: false });
+const contactRowsOf = (list: OrderContact[]): ContactRow[] =>
+  list.map((k, i) => ({ key: k._id ?? String(i), name: k.name, designation: k.designation ?? "", phone: k.phone, email: k.email ?? "", isPrimary: k.isPrimary }));
+const isBlankContact = (r: ContactRow) => !r.name.trim() && !r.designation.trim() && !r.phone.trim() && !r.email.trim();
+/** Inline checks, same as the server: contact person and 10-digit mobile for a row that is kept; the rest optional. */
+function contactRowErrors(r: ContactRow) {
+  if (isBlankContact(r)) return {};
+  const e: Partial<Record<ContactField, string>> = {};
+  if (!r.name.trim()) e.name = "Enter the contact person";
+  if (!/^[6-9]\d{9}$/.test(r.phone)) e.phone = "10-digit mobile number";
+  if (r.email.trim() && !EMAIL_RE.test(r.email.trim())) e.email = "Enter a valid email";
+  return e;
+}
+const CONTACT_FIELDS: { f: ContactField; label: string; placeholder: string; max: number }[] = [
+  { f: "name", label: "Contact Person", placeholder: "Contact name", max: 120 },
+  { f: "designation", label: "Designation", placeholder: "Optional", max: 120 },
+  { f: "phone", label: "Mobile", placeholder: "10-digit mobile", max: 10 },
+  { f: "email", label: "Email", placeholder: "name@company.com", max: 200 },
+];
+
+/**
+ * Zoho client without contact persons: optional contact persons for this order only (SO Contacts style). Saved as one
+ * list with "Save Contacts" on the order; Zoho and the client record are not changed. None are needed to continue.
+ */
+function OrderContactsSection({ orderId, saved, editable }: { orderId: string; saved: OrderContact[]; editable: boolean }) {
+  const toast = useToast();
+  const save = useSetOrderContacts(orderId);
+  const savedKey = JSON.stringify(saved);
+  const [rows, setRows] = useState<ContactRow[]>(() => contactRowsOf(saved));
+  const [base, setBase] = useState(savedKey);
+  const [dirty, setDirty] = useState(false);
+  const [tried, setTried] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
+  // Saved list changed elsewhere (another tab, a reload) while nothing is being edited here: show it.
+  if (savedKey !== base && !dirty) {
+    setBase(savedKey);
+    setRows(contactRowsOf(saved));
+  }
+  const edit = (next: ContactRow[]) => {
+    setRows(next);
+    setDirty(true);
+    setServerErrors({});
+  };
+  const setField = (i: number, f: ContactField, v: string) => edit(rows.map((r, j) => (j === i ? { ...r, [f]: f === "phone" ? v.replace(/\D/g, "").slice(0, 10) : v } : r)));
+  const makePrimary = (i: number) => edit(rows.map((r, j) => ({ ...r, isPrimary: j === i })));
+  const remove = (i: number) => {
+    const next = rows.filter((_, j) => j !== i);
+    // Deleting the primary hands it to the first remaining contact.
+    if (rows[i]?.isPrimary && next.length && !next.some((r) => r.isPrimary)) next[0] = { ...next[0]!, isPrimary: true };
+    edit(next);
+  };
+  const kept = rows.filter((r) => !isBlankContact(r));
+  const errors = rows.map(contactRowErrors);
+  const invalid = errors.some((e) => Object.keys(e).length);
+
+  const submit = async () => {
+    setTried(true);
+    if (invalid) return;
+    const primary = Math.max(0, kept.findIndex((r) => r.isPrimary));
+    try {
+      await save.mutateAsync(
+        kept.map((r, i) => ({ name: r.name.trim(), designation: r.designation.trim() || undefined, phone: r.phone, email: r.email.trim() || undefined, isPrimary: i === primary })),
+      );
+      setDirty(false);
+      setTried(false);
+      setBase("");
+      toast(kept.length ? `${kept.length} contact person${kept.length === 1 ? "" : "s"} saved for this order` : "Contact persons cleared");
+    } catch (e) {
+      // Server paths index the kept (non-blank) rows; point them back at the rows on screen.
+      const map: Record<string, string> = {};
+      for (const [path, msg] of Object.entries(fieldErrorsOf(e))) {
+        const m = /^contacts\.(\d+)\.(\w+)$/.exec(path);
+        const row = m ? rows.indexOf(kept[Number(m[1])]!) : -1;
+        if (m && row >= 0) map[`${row}.${m[2]}`] = msg;
+      }
+      setServerErrors(map);
+      toast(errorMessage(e), "error");
+    }
+  };
+
+  return (
+    <div id="ho-order-contacts" className="mt-5 border-t border-border pt-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+            <Contact className="size-4" aria-hidden /> Contact Persons <span className="font-normal text-muted-foreground">(optional)</span>
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {editable ? "This Zoho client has no contact persons. Add them for this order only; Zoho and the client record are not changed." : "Contact persons added for this order (the Zoho client has none)."}
+          </p>
+        </div>
+        {editable && (
+          <Button variant="brand-outline" size="sm" onClick={() => edit([...rows, { ...blankContact(), isPrimary: !rows.some((r) => r.isPrimary) }])} disabled={rows.length >= 50}>
+            <UserPlus className="size-4" aria-hidden /> Add Contact Person
+          </Button>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+          No contact persons{editable ? " yet. Optional: add one with name and mobile number if needed." : "."}
+        </p>
+      ) : (
+        <div className="max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
+          <table className="w-full min-w-[880px] text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <tr>
+                {CONTACT_FIELDS.map(({ f, label }) => (
+                  <th key={f} className="px-3 py-2.5">
+                    {label}
+                    {editable && (f === "name" || f === "phone") && <span className="text-danger"> *</span>}
+                  </th>
+                ))}
+                <th className="px-3 py-2.5">Primary</th>
+                {editable && (
+                  <th className="px-3 py-2.5 text-right">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r, i) => {
+                const err = (f: ContactField) => serverErrors[`${i}.${f}`] ?? (tried ? errors[i]![f] : undefined);
+                return editable ? (
+                  <tr key={r.key} className="align-top">
+                    {CONTACT_FIELDS.map(({ f, label, placeholder, max }) => (
+                      <td key={f} className="px-3 py-2">
+                        <Input
+                          aria-label={`Contact person ${i + 1} ${label.toLowerCase()}`}
+                          aria-invalid={!!err(f)}
+                          value={r[f]}
+                          inputMode={f === "phone" ? "numeric" : f === "email" ? "email" : undefined}
+                          placeholder={placeholder}
+                          maxLength={max}
+                          autoComplete="off"
+                          onChange={(e) => setField(i, f, e.target.value)}
+                        />
+                        {err(f) && <p className="mt-1 text-xs text-danger">{err(f)}</p>}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2">
+                      <label className="flex h-10 items-center gap-2 text-sm">
+                        <input type="radio" name={`order-contact-primary-${orderId}`} checked={r.isPrimary} onChange={() => makePrimary(i)} className="size-4 accent-brand" />
+                        Primary
+                      </label>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Button variant="ghost" size="icon" onClick={() => remove(i)} aria-label={`Remove contact person ${r.name || i + 1}`} title="Remove">
+                        <Trash2 className="size-4 text-danger" aria-hidden />
+                      </Button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={r.key}>
+                    <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                    <td className="px-3 py-2.5">{r.designation || "-"}</td>
+                    <td className="px-3 py-2.5 tabular-nums">+91 {r.phone}</td>
+                    <td className="px-3 py-2.5">{r.email || "-"}</td>
+                    <td className="px-3 py-2.5">
+                      {r.isPrimary ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">
+                          <Star className="size-3" aria-hidden /> Primary
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editable && dirty && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+          <span className="mr-auto text-xs text-warning">Unsaved changes</span>
+          <Button
+            variant="outline"
+            disabled={save.isPending}
+            onClick={() => {
+              setRows(contactRowsOf(saved));
+              setDirty(false);
+              setTried(false);
+              setServerErrors({});
+            }}
+          >
+            Discard
+          </Button>
+          <Button variant="brand" loading={save.isPending} onClick={() => void submit()}>
+            <Save className="size-4" aria-hidden /> Save Contacts
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -826,7 +1050,14 @@ export function HandoverTab({
   return (
     <div className="space-y-4">
       {!recce && <StatusBanner data={data} />}
-      <ClientSection order={order} canAddContact={canWrite && open && can("clients:write")} aso={data.full && data.type === "ASO"} />
+      <ClientSection
+        order={order}
+        canAddContact={canWrite && open && can("clients:write")}
+        aso={data.full && data.type === "ASO"}
+        orderContacts={data.orderContacts ?? []}
+        // Client Servicing, Recce Team > Assign Type & Details, Zoho client: contact persons for this order only.
+        manualEditable={recce && csEdit && details && order.clientType === "EXISTING"}
+      />
       <TypeSection orderId={order._id} data={data} editable={details} toggle={toggle} />
       <AnimatePresence initial={false}>
         {data.full && (

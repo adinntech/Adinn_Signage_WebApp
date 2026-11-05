@@ -75,6 +75,8 @@ export interface Order extends Omit<OrderCard, "client"> {
   rateCardPdf?: FileRef | null;
   /** Lead Management state (null until the order is taken up as a lead). */
   lead?: { stage: string; status: "OPEN" | "CLOSED" | "COMPLETED" } | null;
+  /** Contact persons saved for this order only (used while the Zoho client has none). */
+  orderContacts?: OrderContact[];
   updatedAt: string;
 }
 export interface BoardColumn {
@@ -432,6 +434,8 @@ export interface HandoverState {
   messages: HandoverMessage[];
   /** ASO: the client's SO contacts (kept apart from the contact persons; shown for ASO only). */
   soContacts: SoContact[];
+  /** Contact persons saved for this order only (Zoho client without contact persons). */
+  orderContacts?: OrderContact[];
   /** SO (ASO): Additional Documents, kept apart from the chat files (empty for the other types; kept on the order). */
   soDocuments?: (FileRef & { addedAt?: string | null })[];
   /** Last save of any handover detail. */
@@ -448,6 +452,17 @@ export interface SoContact {
   email?: string;
   isPrimary: boolean;
 }
+/** A contact person kept on the order only (not in Zoho or the client record). */
+export interface OrderContact {
+  _id?: string;
+  name: string;
+  designation?: string;
+  phone: string;
+  email?: string;
+  isPrimary: boolean;
+}
+/** The order's contact persons: the client's own when it has any, otherwise the ones saved for this order. */
+export const contactPersonsOf = (o: Pick<Order, "client" | "orderContacts">) => (o.client.contacts?.length ? o.client.contacts : (o.orderContacts ?? []));
 /** One column of the uploaded Excel: internal id, original header (may be blank / repeated), the shop field it feeds internally. */
 export interface ShopColumn {
   id: string;
@@ -567,6 +582,9 @@ export const useSetHandoverType = (id: string) =>
 /** ASO: saves the whole SO contact list (blank rows are dropped; one primary). */
 export const useSetSoContacts = (id: string) =>
   useHandoverMutation(id, (contacts: SoContact[]) => api<HandoverState>(`/sales/orders/${id}/handover/so-contacts`, { method: "PUT", body: JSON.stringify({ contacts }) }));
+/** Contact persons for this order only (Zoho client without any): saves the whole list (blank rows dropped; one primary). */
+export const useSetOrderContacts = (id: string) =>
+  useHandoverMutation(id, (contacts: OrderContact[]) => api<HandoverState>(`/sales/orders/${id}/handover/order-contacts`, { method: "PUT", body: JSON.stringify({ contacts }) }));
 /** SO: Additional Documents (multipart `files`); a file already added is skipped by the server (`skipped`). */
 export const useAddSoDocuments = (id: string) =>
   useHandoverMutation(id, (body: FormData) => api<HandoverState & { skipped?: number }>(`/sales/orders/${id}/handover/so-documents`, { method: "POST", body }));

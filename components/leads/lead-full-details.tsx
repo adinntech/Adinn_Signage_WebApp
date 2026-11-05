@@ -21,6 +21,7 @@ import { downloadFile, openFile } from "@/lib/api/files";
 import type { LeadDetail } from "@/lib/api/leads";
 import { rateCardFileName, rateText, useQuotation } from "@/lib/api/ratecards";
 import { useRecce } from "@/lib/api/recce";
+import { contactPersonsOf } from "@/lib/api/sales";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AssignedBanner, CodesView } from "./recce-panel";
@@ -205,7 +206,7 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
           </dl>
         </Card>
         <CompanyDetailsCard client={o.client} extras={o.clientType === "NEW"} clientType={o.clientType} />
-        <ContactsCard contacts={o.client.contacts ?? []} />
+        <ContactsCard contacts={contactPersonsOf(o)} />
       </Section>
 
       <Section
