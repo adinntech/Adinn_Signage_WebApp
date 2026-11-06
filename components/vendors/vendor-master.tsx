@@ -125,13 +125,13 @@ function SearchResults({ canWrite, onCost, onView, syncing, empty }: { canWrite:
           <div className={cn("overflow-x-auto border-t border-border transition-opacity", list.isFetching && "opacity-60")}>
             <table className="w-full min-w-[820px] text-sm">
               <thead className="bg-[#eef4ff] text-left text-xs uppercase tracking-wide text-navy">
-                <tr><th className="px-4 py-3">Vendor ID</th><th className="px-4 py-3">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">GST / PAN</th><th className="px-4 py-3">City</th><th className="px-4 py-3">Cost</th><th className="px-4 py-3 text-right">Action</th></tr>
+                <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#eef4ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#eef4ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">GST / PAN</th><th className="px-4 py-3">City</th><th className="px-4 py-3">Cost</th><th className="px-4 py-3 text-right">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.map((v) => (
-                  <tr key={v._id} className="cursor-pointer hover:bg-[#f4f8ff]" onClick={() => onView(v)} title="Click to see all details">
-                    <td className="px-4 py-3 font-mono font-semibold text-navy">{v.vendorNo ?? "–"}</td>
-                    <td className="max-w-60 px-4 py-3 font-semibold text-navy"><span className="block truncate" title={v.name}>{v.name}</span></td>
+                  <tr key={v._id} className="group cursor-pointer hover:bg-[#f4f8ff]" onClick={() => onView(v)} title="Click to see all details">
+                    <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#f4f8ff]`}>{v.vendorNo ?? "–"}</td>
+                    <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#f4f8ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span></td>
                     <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
                     <td className="px-4 py-3 text-xs">{v.gstin ?? "–"}<span className="block text-muted-foreground">{v.pan ?? ""}</span></td>
                     <td className="max-w-36 truncate px-4 py-3">{v.city || "–"}</td>
@@ -179,16 +179,17 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
         ) : rows.length === 0 ? (
           <EmptyState title="No vendor has a cost yet" description="Search a vendor above and press “Add cost”. It will be listed here." />
         ) : (
-          <table className="w-full min-w-[860px] text-sm">
+          <table className="w-full min-w-[1000px] text-sm">
             <thead className="bg-[#f6f0ff] text-left text-xs uppercase tracking-wide text-navy">
-              <tr><th className="px-4 py-3">Vendor ID</th><th className="px-4 py-3">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3 text-right">Price / shop</th><th className="px-4 py-3 text-right">Far price</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#f6f0ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#f6f0ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">City</th><th className="px-4 py-3 text-right">Price / shop</th><th className="px-4 py-3 text-right">Far price</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((v) => (
-                <tr key={v._id} className="cursor-pointer hover:bg-[#faf6ff]" onClick={() => onView(v)} title="Click to see all details">
-                  <td className="px-4 py-3 font-mono font-semibold text-navy">{v.vendorNo ?? "–"}</td>
-                  <td className="max-w-60 px-4 py-3 font-semibold text-navy"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
+                <tr key={v._id} className="group cursor-pointer hover:bg-[#faf6ff]" onClick={() => onView(v)} title="Click to see all details">
+                  <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#faf6ff]`}>{v.vendorNo ?? "–"}</td>
+                  <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#faf6ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
                   <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
+                  <td className="max-w-40 px-4 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(v.price.ratePerShop)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(v.price.farRatePerShop)}</td>
                   <td className="px-4 py-3"><div className="flex max-w-60 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>

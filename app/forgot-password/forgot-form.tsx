@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormProvider, useForm, useWatch } from "react-hook-form";
+import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, KeyRound, Mail } from "lucide-react";
+import { ArrowLeft, ArrowRight, Mail } from "lucide-react";
+import { CodeInput } from "@/components/ui/code-input";
 import { AuthShell, FormAlert } from "@/components/auth/auth-shell";
 import { CredentialFields } from "@/components/auth/credential-fields";
 import { Button } from "@/components/ui/button";
@@ -65,7 +66,6 @@ export function ForgotForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const {
-    register,
     handleSubmit,
     formState: { errors },
   } = form;
@@ -173,21 +173,13 @@ export function ForgotForm() {
                 <Label htmlFor="code" className="text-sm font-semibold text-[#102449] 2xl:text-base">
                   6-digit verification code (from the email)
                 </Label>
-                <div className="relative">
-                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                  <Input
-                    id="code"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    maxLength={6}
-                    placeholder="000000"
-                    className="h-11 pl-10 tracking-[0.4em] 2xl:h-12 2xl:text-base"
-                    disabled={busy}
-                    autoFocus
-                    aria-invalid={!!errors.code}
-                    {...register("code", { onChange: (e) => (e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6)) })}
-                  />
-                </div>
+                <Controller
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => (
+                    <CodeInput id="code" value={field.value} onChange={field.onChange} disabled={busy} autoFocus invalid={!!errors.code} />
+                  )}
+                />
                 {errors.code && (
                   <p role="alert" className="text-xs text-danger">
                     {errors.code.message}
