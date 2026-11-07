@@ -108,8 +108,40 @@ export const useConfirmRecceHandover = (id: string) =>
 export const useSkipRecceRateCard = (id: string) =>
   useRecceMutation(id, () => api<RecceState>(`/sales/orders/${id}/recce/rate-card/skip`, { method: "POST" }), (qc) => qc.invalidateQueries({ queryKey: ["leads"] }));
 
+/** One Zoho Books estimate of the client: reference_number = project code, estimate_number = estimation code. */
+export interface ZohoEstimateOption {
+  estimateId: string;
+  projectCode: string;
+  estimationCode: string;
+  date: string | null;
+  total: number | null;
+  status: string | null;
+  salesperson: string | null;
+  location: string | null;
+  /** 8-digit project code and EST- + 6 digits (the codes the CRM accepts). */
+  valid: boolean;
+  /** Already used: "order 2026...ORD#2" or "an existing project". */
+  usedBy: string | null;
+}
+export interface ZohoEstimates {
+  clientId: string | null;
+  searchedBy: "ZOHO_CONTACT" | "CLIENT_ID" | null;
+  items: ZohoEstimateOption[];
+}
+
+/** Codes step: the client's estimates in Zoho (all statuses). `clientId`: the Client ID typed for a New client. */
+export function useRecceZohoEstimates(id: string, clientId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: [...recceKey(id), "zoho-estimates", clientId ?? ""],
+    queryFn: ({ signal }) => api<ZohoEstimates>(`/sales/orders/${id}/recce/zoho-estimates${qs({ clientId })}`, { signal }),
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export const useSaveRecceCodes = (id: string) =>
-  useRecceMutation(id, (body: { projectCode: string; estimationCode: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
+  useRecceMutation(id, (body: { projectCode: string; estimationCode: string; zohoEstimateId: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
 
 /** Creates the operations project, assigns it and completes the lead. */
 export const useAssignRecce = (id: string) =>

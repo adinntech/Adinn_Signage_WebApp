@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Send, SkipForward, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Search, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { HandoverTab, saveOrderContactsBeforeLeaving } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
@@ -28,9 +28,9 @@ import { downloadFile } from "@/lib/api/files";
 import { downloadShopExcel, useOrderEmails } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
-import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState } from "@/lib/api/recce";
+import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useRecceZohoEstimates, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState, type ZohoEstimateOption } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
-import { formatDateTimeIST } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTimeIST } from "@/lib/format";
 import { clearStepDraft, useStepDraft } from "@/lib/step-drafts";
 import { flagHandoverGaps, RouteNotice, StepFooter } from "./assign-panels";
 import { branchSteps, canOpen, csRecceAssign } from "./assign-steps";
@@ -302,8 +302,9 @@ function CodeRequestComposer({
 }
 
 /**
- * Step 3: the 8-digit project code and the EST- estimation code, with the Client ID in Zoho: typed for a New client
- * (created in Zoho after the request email), read-only from Zoho for an Existing client.
+ * Step 3: the project code and estimation code, chosen only from the client's Zoho Books estimates
+ * (reference_number = project code, estimate_number = estimation code). Existing client: its estimates load from its
+ * Zoho contact; New client: type the Client ID created in Zoho, then Find in Zoho.
  */
 function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onSaved: () => void }) {
   const toast = useToast();
@@ -311,21 +312,75 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const csUser = user?.role === "CLIENT_SERVICING";
   const save = useSaveRecceCodes(r.orderId);
   const key = `${r.orderId}:codes`;
-  const [project, setProject] = useStepDraft(`${key}:project`, r.codes?.projectCode ?? "");
-  const [est, setEst] = useStepDraft(`${key}:est`, (r.codes?.estimationCode ?? "").replace(/^EST-/, ""));
   const fromZoho = !!r.zohoClientId?.fromZoho;
   const [clientId, setClientId] = useStepDraft(`${key}:client`, r.codes?.clientId ?? (fromZoho ? "" : (r.zohoClientId?.value ?? "")));
+  const clientIdOk = /^[A-Za-z0-9-]{2,20}$/.test(clientId.trim());
+  // New client: the Client ID the list was searched with (Find in Zoho).
+  const [lookupId, setLookupId] = useState(!fromZoho && clientIdOk ? clientId.trim() : "");
+  const estimates = useRecceZohoEstimates(r.orderId, fromZoho ? undefined : lookupId || undefined, !(locked && r.codes) && (fromZoho || !!lookupId));
+  const [project, setProject] = useStepDraft(`${key}:project`, r.codes?.projectCode ?? "");
+  const [estimateId, setEstimateId] = useStepDraft(`${key}:estimate`, "");
+  const [query, setQuery] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   if (locked && r.codes) return <CodesView r={r} />;
+
+  const usable = (e: ZohoEstimateOption) => e.valid && !e.usedBy;
+  const byCode = new Map<string, ZohoEstimateOption[]>();
+  for (const e of estimates.data?.items ?? []) byCode.set(e.projectCode, [...(byCode.get(e.projectCode) ?? []), e]);
+  /** Why a project code cannot be chosen, or a short summary of its estimate. */
+  const codeNote = (list: ZohoEstimateOption[]) => {
+    if (!list.some(usable)) {
+      const used = list.find((e) => e.usedBy);
+      return used ? `Already used by ${used.usedBy}` : "Not a valid code (needs 8 digits and EST- + 6 digits)";
+    }
+    const first = list[0];
+    const more = list.length > 1 ? `${list.length} estimates · ` : `${first.estimationCode} · `;
+    return `${more}${formatDate(first.date)} · ${formatCurrency(first.total)}${first.status ? ` · ${first.status}` : ""}`;
+  };
+  const q = query.trim().toLowerCase();
+  const options: SearchOption[] = [...byCode]
+    .filter(([code, list]) => !q || code.includes(q) || list.some((e) => e.estimationCode.toLowerCase().includes(q)))
+    .map(([code, list]) => ({ value: code, label: code, sublabel: codeNote(list) }));
+  const list = byCode.get(project) ?? [];
+  const free = list.filter(usable);
+  // The chosen estimate; one free estimate (or the saved one) is taken without asking.
+  const estimate =
+    list.find((e) => e.estimateId === estimateId && usable(e)) ??
+    (free.length === 1 ? free[0] : null) ??
+    free.find((e) => e.estimationCode === r.codes?.estimationCode) ??
+    null;
+
+  const pickProject = (o: SearchOption) => {
+    const rows = byCode.get(o.value) ?? [];
+    if (!rows.some(usable)) {
+      toast(`${o.value}: ${codeNote(rows)}`, "error");
+      return;
+    }
+    setProject(o.value);
+    setEstimateId("");
+    setQuery("");
+    setErrors({});
+  };
+  const find = () => {
+    if (!clientIdOk) {
+      setErrors({ clientId: "Enter the Client ID created in Zoho (2-20 letters, digits or -)" });
+      return;
+    }
+    setErrors({});
+    setProject("");
+    setEstimateId("");
+    setLookupId(clientId.trim());
+  };
   const submit = async () => {
     const e: Record<string, string> = {};
-    if (!/^\d{8}$/.test(project)) e.projectCode = "Project code must be exactly 8 digits";
-    if (!/^\d{6}$/.test(est)) e.estimationCode = "Enter the 6 digits after EST-";
-    if (!fromZoho && !/^[A-Za-z0-9-]{2,20}$/.test(clientId.trim())) e.clientId = "Enter the Client ID created in Zoho (2-20 letters, digits or -)";
+    if (!fromZoho && !clientIdOk) e.clientId = "Enter the Client ID created in Zoho (2-20 letters, digits or -)";
+    else if (!fromZoho && clientId.trim() !== lookupId) e.clientId = "Click Find in Zoho for this Client ID";
+    if (!project) e.projectCode = "Choose the project code from Zoho";
+    else if (!estimate) e.estimationCode = "Choose the estimation code";
     setErrors(e);
-    if (Object.keys(e).length) return;
+    if (Object.keys(e).length || !estimate) return;
     try {
-      await save.mutateAsync({ projectCode: project, estimationCode: `EST-${est}`, clientId: fromZoho ? undefined : clientId.trim() });
+      await save.mutateAsync({ projectCode: estimate.projectCode, estimationCode: estimate.estimationCode, zohoEstimateId: estimate.estimateId, clientId: fromZoho ? undefined : clientId.trim() });
       toast("Project and estimation codes saved");
       clearStepDraft(key);
       onSaved();
@@ -335,42 +390,108 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       toast(errorMessage(err), "error");
     }
   };
-  const changed = project !== (r.codes?.projectCode ?? "") || `EST-${est}` !== (r.codes?.estimationCode ?? "EST-") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? ""));
+  const changed =
+    !!estimate &&
+    (estimate.projectCode !== (r.codes?.projectCode ?? "") || estimate.estimationCode !== (r.codes?.estimationCode ?? "") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? "")));
+  const searching = fromZoho || !!lookupId;
+  const emptyText = estimates.data && !estimates.data.items.length ? `No estimates in Zoho for Client ID ${estimates.data.clientId ?? "-"}` : "No matching project code";
+
   return (
     <div className="space-y-4">
       <div className={fromZoho ? "grid gap-4 sm:grid-cols-2" : "grid gap-4 sm:grid-cols-3"}>
-        <Field label="Project Code" htmlFor="recce-project-code" required error={errors.projectCode} hint="8 digits, e.g. 22070277">
-          <Input
-            id="recce-project-code"
-            inputMode="numeric"
-            className="font-mono tracking-wider"
-            placeholder="22070277"
-            value={project}
-            aria-invalid={!!errors.projectCode}
-            onChange={(e) => setProject(e.target.value.replace(/\D/g, "").slice(0, 8))}
-          />
-        </Field>
-        <Field label="Estimation Code" htmlFor="recce-est-code" required error={errors.estimationCode} hint="EST- and 6 digits, e.g. EST-323343">
-          <div className="flex">
-            <span className="inline-flex items-center rounded-l-lg border border-r-0 border-border bg-muted px-3 font-mono text-sm font-semibold text-muted-foreground">EST-</span>
-            <Input
-              id="recce-est-code"
-              inputMode="numeric"
-              className="rounded-l-none font-mono tracking-wider"
-              placeholder="323343"
-              value={est}
-              aria-invalid={!!errors.estimationCode}
-              onChange={(e) => setEst(e.target.value.replace(/^EST-?/i, "").replace(/\D/g, "").slice(0, 6))}
-            />
-          </div>
-        </Field>
-        {/* Existing client: its client code is kept automatically (no input). New client: the code created in Zoho. */}
+        {/* New client: the Client ID created in Zoho finds its estimates. Existing client: kept automatically (no input). */}
         {!fromZoho && (
           <Field label="Client ID (Zoho)" htmlFor="recce-client-id" required error={errors.clientId} hint="New client: the client code created in Zoho">
-            <Input id="recce-client-id" className="font-mono tracking-wider" maxLength={20} placeholder="e.g. 30196" value={clientId} aria-invalid={!!errors.clientId} onChange={(e) => setClientId(e.target.value.replace(/[^A-Za-z0-9-]/g, ""))} />
+            <div className="flex gap-2">
+              <Input
+                id="recce-client-id"
+                className="font-mono tracking-wider"
+                maxLength={20}
+                placeholder="e.g. 30196"
+                value={clientId}
+                aria-invalid={!!errors.clientId}
+                onChange={(e) => setClientId(e.target.value.replace(/[^A-Za-z0-9-]/g, ""))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    find();
+                  }
+                }}
+              />
+              <Button variant="outline" onClick={find} loading={estimates.isFetching && !!lookupId} className="shrink-0">
+                <Search className="size-4" aria-hidden /> Find in Zoho
+              </Button>
+            </div>
           </Field>
         )}
+        <Field label="Project Code" htmlFor="recce-project-code" required error={errors.projectCode} hint="From Zoho estimates (reference number)">
+          <SearchSelect
+            id="recce-project-code"
+            inputClassName="font-mono tracking-wider"
+            value={project ? { value: project, label: project, sublabel: list.length ? codeNote(list) : undefined } : null}
+            options={options}
+            query={query}
+            onQueryChange={setQuery}
+            onSelect={pickProject}
+            onClear={() => {
+              setProject("");
+              setEstimateId("");
+            }}
+            loading={estimates.isFetching}
+            disabled={!searching || estimates.isError}
+            invalid={!!errors.projectCode}
+            placeholder={searching ? "Search project code or EST- number" : "Enter the Client ID, then Find in Zoho"}
+            emptyText={emptyText}
+          />
+        </Field>
+        <Field label="Estimation Code" htmlFor="recce-est-code" required error={errors.estimationCode} hint={list.length > 1 ? `${list.length} estimates for this project code` : "From Zoho, for the chosen project code"}>
+          <Select
+            id="recce-est-code"
+            className="font-mono tracking-wider"
+            value={estimate?.estimateId ?? ""}
+            disabled={!project || !list.length}
+            aria-invalid={!!errors.estimationCode}
+            onChange={(e) => {
+              setEstimateId(e.target.value);
+              setErrors((x) => ({ ...x, estimationCode: "" }));
+            }}
+          >
+            <option value="" disabled>
+              {project ? "Choose the estimation code" : "Choose a project code first"}
+            </option>
+            {list.map((e) => (
+              <option key={e.estimateId} value={e.estimateId} disabled={!usable(e)}>
+                {e.estimationCode} · {formatDate(e.date)} · {formatCurrency(e.total)}
+                {e.status ? ` · ${e.status}` : ""}
+                {e.usedBy ? ` (used by ${e.usedBy})` : !e.valid ? " (invalid)" : ""}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </div>
+      {estimates.isError && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger">
+          <span className="flex items-center gap-1.5">
+            <CircleAlert className="size-4 shrink-0" aria-hidden /> {errorMessage(estimates.error)}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => estimates.refetch()} loading={estimates.isFetching}>
+            Retry
+          </Button>
+        </div>
+      )}
+      {estimate && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border px-3 py-2 text-xs text-muted-foreground" style={{ borderColor: `${TEAL}55`, background: ASSIGN_META.RECCE.soft }}>
+          <span className="flex items-center gap-1.5 font-semibold text-foreground">
+            <BadgeCheck className="size-4" style={{ color: TEAL }} aria-hidden /> From Zoho
+          </span>
+          <span>
+            Project <b className="font-mono text-foreground">{estimate.projectCode}</b> · <b className="font-mono text-foreground">{estimate.estimationCode}</b>
+          </span>
+          {estimate.status && <span>{estimate.status}</span>}
+          {estimate.salesperson && <span>{estimate.salesperson}</span>}
+          {estimate.location && <span>{estimate.location}</span>}
+        </div>
+      )}
       {fromZoho && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock className="size-3.5" aria-hidden /> {csUser ? "" : "Existing client: "}Client ID <span className="font-mono font-semibold text-foreground">{r.zohoClientId?.value ?? "not found in Zoho"}</span> is kept automatically.
