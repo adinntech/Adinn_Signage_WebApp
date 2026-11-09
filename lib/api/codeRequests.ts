@@ -27,8 +27,19 @@ export interface SentMail {
   error?: string;
   attachments: { name?: string; size?: number }[];
 }
+/** The reply mail read from the reply mailbox: who answered, what they wrote, and the code found in it (a person still verifies it). */
+export interface CodeReply {
+  from: string;
+  receivedAt: string;
+  snippet?: string;
+  detectedCode?: string;
+  autoConfirmError?: string;
+}
 export interface CodeRequestRow {
   _id: string;
+  /** ADN-Signage-prj-06122601: in the mail subject; the reply is matched by it. */
+  requestId?: string;
+  reply?: CodeReply | null;
   kind: CodeKind;
   status: CodeStatus;
   active: boolean;
@@ -66,7 +77,11 @@ export interface CodesOverview {
   client: { _id: string; name: string; clientNo: string | null; gstin: string | null; pan: string | null; approvedCode: string | null; primaryEmail: string | null; documents: { fileId: string; name?: string; size?: number }[] };
   kinds: Record<CodeKind, KindOverview>;
   requests: CodeRequestRow[];
-  mail: { enabled: boolean; from: string | null; identities: string[]; groups: Record<CodeKind, string[]> };
+  mail: {
+    enabled: boolean; from: string | null; identities: string[]; groups: Record<CodeKind, string[]>;
+    /** Admin panel > Mail settings: the To / Cc / Bcc each request email opens with. */
+    routing: Record<CodeKind, { to: string[]; cc: string[]; bcc: string[] }>;
+  };
   defaults: { COMBINED: MailDefault; CLIENT_CODE: MailDefault; PROJECT_CODE: MailDefault };
   drafts: { kind: CodeKind; to: string[]; cc: string[]; bcc: string[]; subject: string; body: string }[];
 }

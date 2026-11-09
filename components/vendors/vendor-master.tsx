@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { BadgeIndianRupee, Check, CloudDownload, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { BadgeIndianRupee, Check, CloudDownload, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -14,8 +13,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { downloadZohoVendors, useAddVendorSkill, useSetZohoPrice, useStartZohoSync, useVendorSkills, useZohoDirectory, useZohoSyncStatus, type ZohoVendorRow } from "@/lib/api/vendors";
-import { formatDateTime } from "@/lib/format";
+import { downloadZohoVendors, useAddVendorSkill, useSetZohoPrice, useVendorSkills, useZohoDirectory, type ZohoVendorRow } from "@/lib/api/vendors";
 import { cn } from "@/lib/utils";
 import { ExportMenu } from "./export-menu";
 import { ZohoToggle } from "./zoho-toggle";
@@ -24,27 +22,13 @@ import { ZohoVendorDrawer } from "./zoho-vendor-drawer";
 const money = (n: number | null) => (n == null ? "–" : `₹${n}`);
 
 /**
- * Vendor master. Search the vendors fetched from Zoho (by vendor ID, name, GST, PAN, phone or anything else known), add
+ * Vendor master. Search the vendors in Zoho (read live from Zoho Books, nothing of Zoho's list is stored: by vendor name, phone or e-mail), add
  * the cost of the vendor you found (price per shop, far-distance price, skills), and only vendors with a cost are listed
- * below. A registered vendor keeps its cost on the vendor (used by allocation and costing); a Zoho vendor not registered
- * yet keeps it here and it carries over when it is registered.
+ * below. Only those vendors are stored. A registered vendor keeps its cost on the vendor (used by allocation and costing); a Zoho
+ * vendor not registered yet keeps it here and it carries over when it is registered.
  */
-export function VendorMaster({ canWrite }: { canWrite: boolean }) {
+export function VendorMaster({ canWrite, signageOnly, onSignageOnly, costed, contactCode, browse, onBrowse }: { canWrite: boolean; signageOnly: boolean; onSignageOnly: (v: boolean) => void; browse: boolean; onBrowse: (v: boolean) => void; costed: number; contactCode?: string }) {
   const toast = useToast();
-  const qc = useQueryClient();
-  const status = useZohoSyncStatus();
-  const start = useStartZohoSync();
-  const s = status.data;
-  const running = !!s?.sync.running;
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    if (running) { wasRunning.current = true; return; }
-    if (!wasRunning.current) return;
-    wasRunning.current = false;
-    void qc.invalidateQueries({ queryKey: ["zoho", "directory"] });
-    if (s?.sync.error) toast(s.sync.error, "error");
-    else toast(`Zoho sync complete: ${s?.total ?? 0} vendors stored`);
-  }, [running, s?.sync.error, s?.total, qc, toast]);
 
   const [costFor, setCostFor] = useState<ZohoVendorRow | null>(null);
   const [removing, setRemoving] = useState<ZohoVendorRow | null>(null);
@@ -58,20 +42,21 @@ export function VendorMaster({ canWrite }: { canWrite: boolean }) {
           <span className="flex size-10 items-center justify-center rounded-xl bg-royal text-white"><CloudDownload className="size-5" aria-hidden /></span>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-bold text-navy">Find a vendor in Zoho</h2>
-            <p className="text-xs text-muted-foreground">{s?.lastSyncedAt ? `Zoho list synced ${formatDateTime(s.lastSyncedAt)}` : "Zoho list not synced yet"} · {s?.total ?? 0} Signage creditors</p>
+            <p className="text-xs text-muted-foreground">Read live from Zoho Books. Only vendors you add a cost to are saved here ({costed} so far).</p>
           </div>
-          {canWrite && (
-            <Button size="sm" className="bg-royal hover:bg-royal/90" disabled={running} loading={start.isPending} onClick={() => start.mutate(undefined, { onError: (e) => toast(errorMessage(e), "error") })}>
-              <RefreshCw className={cn("size-4", running && "animate-spin")} aria-hidden /> {running ? "Syncing…" : "Sync from Zoho"}
-            </Button>
-          )}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={signageOnly}
+            onClick={() => onSignageOnly(!signageOnly)}
+            title={signageOnly ? `Showing only ${contactCode ?? "Signage"} vendors. Click to show every Zoho vendor.` : "Showing every vendor in Zoho. Click to show only the Signage creditors."}
+            className="flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1.5 text-xs font-semibold text-navy shadow-soft focus-visible:outline-2 focus-visible:outline-royal"
+          >
+            <span className={cn("relative h-5 w-9 rounded-full transition-colors", signageOnly ? "bg-vendor" : "bg-[#cbd5e1]")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-all", signageOnly ? "left-[18px]" : "left-0.5")} /></span>
+            {signageOnly ? "Signage creditors only" : "All Zoho vendors"}
+          </button>
         </div>
-        {running && (
-          <p role="status" className="border-b border-border px-4 py-2.5 text-xs font-medium text-navy">
-            {s?.sync.phase === "details" ? `Reading city, address and created-by… ${s.sync.detailsDone} of ${s.sync.detailsTotal}` : `Reading the vendor list from Zoho… ${s?.sync.fetched ?? 0} so far`}. You can keep working.
-          </p>
-        )}
-        <SearchResults canWrite={canWrite} onCost={setCostFor} onView={setViewing} syncing={running} empty={s?.total === 0} />
+        <SearchResults canWrite={canWrite} onCost={setCostFor} onView={setViewing} signageOnly={signageOnly} all={browse} onAll={onBrowse} />
       </section>
 
       <WithCost canWrite={canWrite} onView={setViewing} onEdit={setCostFor} onRemove={setRemoving} />
@@ -93,33 +78,32 @@ export function VendorMaster({ canWrite }: { canWrite: boolean }) {
 }
 
 /** The search box and what it finds. Nothing is listed until something is typed, so the 500+ vendors never fill the screen. */
-function SearchResults({ canWrite, onCost, onView, syncing, empty }: { canWrite: boolean; onCost: (v: ZohoVendorRow) => void; onView: (v: ZohoVendorRow) => void; syncing: boolean; empty: boolean }) {
+function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { canWrite: boolean; onCost: (v: ZohoVendorRow) => void; onView: (v: ZohoVendorRow) => void; signageOnly: boolean; all: boolean; onAll: (v: boolean) => void }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim());
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  /** Off: nothing is fetched until something is typed. On: the whole Zoho list is fetched (page by page) and the search narrows it. */
-  const [all, setAll] = useState(false);
+  /** Off (the default): Zoho is not called until the toggle is switched on or something is typed. On: the list is read page by page; the search narrows it. */
   const searching = all || dq.length >= 2;
-  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active" }, searching);
+  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active", signageOnly: signageOnly ? "true" : "false" }, searching);
   const rows = list.data?.data ?? [];
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 p-3">
         <div className="relative min-w-52 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search by vendor ID, name, GST, PAN, phone, email, city…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
+          <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search Zoho by vendor ID, name, phone or e-mail…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
         </div>
-        <ZohoToggle on={all} onChange={(v) => { setAll(v); setPage(1); }} />
+        <ZohoToggle on={all} onChange={(v) => { onAll(v); setPage(1); }} />
       </div>
       {!searching ? (
-        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">{empty && !syncing ? "No Zoho vendors stored yet. Press “Sync from Zoho” first." : ""}</p>
+        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">Type a vendor name, number, phone or e-mail, or switch on “Zoho vendors” to browse the list (read live from Zoho, page by page; nothing is saved until you add a cost).</p>
       ) : list.isPending ? (
         <RowsSkeleton rows={4} className="p-4" />
       ) : list.isError ? (
         <ErrorState error={list.error} onRetry={() => list.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState title="No vendor found" description="Check the spelling, or try the vendor ID, GST, PAN or phone number." />
+        <EmptyState title="No vendor found" description="Check the spelling, or try the vendor number, phone number or e-mail. GST and PAN are not searchable in Zoho." />
       ) : (
         <>
           <div className={cn("overflow-x-auto border-t border-border transition-opacity", list.isFetching && "opacity-60")}>

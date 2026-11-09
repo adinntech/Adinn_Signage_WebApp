@@ -56,7 +56,7 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
   const setId = useSetVendorId();
   const { upload, remove } = useKycFiles();
   const [resend, setResend] = useState(false);
-  const [no, setNo] = useState("");
+  const [typed, setTyped] = useState<string | null>(null);
   const [noError, setNoError] = useState("");
   const [busy, setBusy] = useState<KycDocKey | null>(null);
   const [deleting, setDeleting] = useState<Attached | null>(null);
@@ -67,6 +67,10 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
   const d = q.data;
   const sent = !!d?.registration?.mailSentAt;
   const saved = d?.zohoVendorNo;
+  const reply = d?.registration?.reply;
+  /** What is in the box: what the person typed, else the vendor ID read from Accounts' reply. */
+  const no = typed ?? reply?.detectedVendorNo ?? "";
+  const setNo = (v: string) => setTyped(v);
 
   const saveId = () => {
     if (!/^\d{2,8}$/.test(no)) return setNoError("Enter the vendor ID Accounts sent (2 to 8 digits)");
@@ -225,7 +229,11 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
             <p className="mt-2 flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-finance" aria-hidden /> Vendor ID <span className="font-mono font-bold text-navy">{saved}</span> saved. The vendor is now active.</p>
           ) : (
             <>
-              <p className="mt-1 text-xs text-muted-foreground">When Accounts reply to the mail with the vendor ID, type it here and proceed.</p>
+              {reply ? (
+                <p role="status" className="mt-1 text-sm text-navy">Reply received from {reply.from}. {reply.detectedVendorNo ? <>Vendor ID found: <span className="font-mono font-bold">{reply.detectedVendorNo}</span>. Check it against the reply, then save.</> : "No vendor ID could be read from it. Type it from the mail."}</p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">When Accounts reply to the mail with the vendor ID, it appears here on its own. You can also type it.</p>
+              )}
               <form className="mt-3 flex flex-wrap items-start gap-2" onSubmit={(e) => { e.preventDefault(); saveId(); }}>
                 <div className="min-w-44 flex-1">
                   <label htmlFor="reg-vid" className="sr-only">Vendor ID</label>

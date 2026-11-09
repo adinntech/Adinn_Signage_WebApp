@@ -276,8 +276,8 @@ function MailForm({ data: d, kinds, templateKey, enclosed, toOverride, busy, att
   const useSaved = !!saved && templateKey === (kinds.length === 2 ? "COMBINED" : kinds[0]);
   const initial: MailValues = {
     to: toOverride ?? (useSaved ? saved.to : group),
-    cc: useSaved ? saved.cc : [],
-    bcc: useSaved ? saved.bcc : [],
+    cc: useSaved ? saved.cc : [...new Set(kinds.flatMap((k) => d.mail.routing[k].cc))],
+    bcc: useSaved ? saved.bcc : [...new Set(kinds.flatMap((k) => d.mail.routing[k].bcc))],
     subject: useSaved && saved.subject ? saved.subject : base.subject,
     body: useSaved && saved.body ? saved.body : withEnclosures(base.body, enclosed),
   };

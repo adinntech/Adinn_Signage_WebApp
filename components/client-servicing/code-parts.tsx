@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Paperclip } from "lucide-react";
+import { MailCheck, Paperclip } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,7 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { evidenceLink, useConfirmCode, useRejectCode, CODE_LABEL, STATUS_LABEL, type CodeKind, type CodeStatus, type KindState } from "@/lib/api/codeRequests";
+import { evidenceLink, useConfirmCode, useRejectCode, CODE_LABEL, STATUS_LABEL, type CodeKind, type CodeReply, type CodeStatus, type KindState } from "@/lib/api/codeRequests";
 
 const STATUS_TONE: Record<CodeStatus, Tone> = { DRAFT: "neutral", PENDING_CONFIRMATION: "warning", CONFIRMED: "success", REJECTED: "danger", FAILED: "danger" };
 export const CodeStatusBadge = ({ status }: { status: CodeStatus }) => <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>;
@@ -31,12 +31,24 @@ export const cleanCode = (kind: CodeKind, v: string) => (kind === "PROJECT_CODE"
 export const codeError = (kind: CodeKind, v: string) =>
   !v ? "Enter the code received" : kind === "PROJECT_CODE" ? (/^\d{8}$/.test(v) ? "" : "Project code must be exactly 8 digits") : /^[A-Z0-9][A-Z0-9-]{2,19}$/.test(v) ? "" : "Client code must be 3 to 20 letters, digits or dashes";
 
+/** What the reply mailbox read for a request: who answered and the code found (or that none could be found). */
+export function ReplyNotice({ reply }: { reply: CodeReply }) {
+  return (
+    <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
+      <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
+      {reply.detectedCode ? <p className="mt-1">Code found: <span className="font-mono font-bold">{reply.detectedCode}</span>. Check it against the reply, then confirm.</p> : <p className="mt-1 text-muted-foreground">No single code could be read from the reply. Type the code from the mail.</p>}
+      {reply.snippet && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">&ldquo;{reply.snippet}&rdquo;</p>}
+      {reply.autoConfirmError && <p className="mt-1 text-xs text-danger">Not confirmed automatically: {reply.autoConfirmError}</p>}
+    </div>
+  );
+}
+
 /** Enter the real code that came back. Never generated here. */
-export function ConfirmCodeDialog({ orderId, kind, onClose }: { orderId: string; kind: CodeKind | null; onClose: () => void }) {
+export function ConfirmCodeDialog({ orderId, kind, reply, onClose }: { orderId: string; kind: CodeKind | null; /** The reply mail read for this request: its code is filled in for the person to check. */ reply?: CodeReply | null; onClose: () => void }) {
   const toast = useToast();
   const confirm = useConfirmCode(orderId);
-  const [code, setCode] = useState("");
-  const [note, setNote] = useState("");
+  const [code, setCode] = useState(reply?.detectedCode ?? "");
+  const [note, setNote] = useState(reply ? `From the reply of ${reply.from}` : "");
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   if (!kind) return null;
@@ -70,6 +82,7 @@ export function ConfirmCodeDialog({ orderId, kind, onClose }: { orderId: string;
       }
     >
       <div className="space-y-4">
+        {reply && <ReplyNotice reply={reply} />}
         <Field label={CODE_LABEL[kind]} htmlFor="confirm-code" required error={error}>
           <Input id="confirm-code" autoFocus inputMode={kind === "PROJECT_CODE" ? "numeric" : "text"} value={code} aria-invalid={!!error} placeholder={kind === "PROJECT_CODE" ? "8 digits" : "e.g. CLI-1234"} onChange={(e) => setCode(cleanCode(kind, e.target.value))} />
         </Field>

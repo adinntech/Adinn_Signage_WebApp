@@ -176,31 +176,30 @@ export interface ZohoVendorRow {
   vendor: { id: string; code: string; status: VendorStatus } | null;
   price: ZohoPrice;
 }
-export interface ZohoSyncStatus {
-  sync: { running: boolean; phase: "list" | "details" | null; fetched: number; detailsDone: number; detailsTotal: number; startedAt: string | null; finishedAt: string | null; error: string | null };
-  total: number;
-  active: number;
+/** Counts for the tiles. Zoho is read live and its list is not stored, so only vendors that got a cost (and registered ones) are counted. */
+export interface ZohoDirectoryStatus {
+  live: boolean;
+  costed: number;
   registered: number;
-  lastSyncedAt: string | null;
+  /** true when the backend lists only the Signage creditors unless told otherwise (ZOHO_SIGNAGE_CREDITORS_ONLY). */
+  signageOnlyDefault: boolean;
+  contactCode: string;
+  /** Zoho's own counts for the chosen scope; counted page by page in the background, so null until `ready`. */
+  zoho: { ready: boolean; counting: boolean; counted: number; error?: string; total: number | null; active: number | null; inactive: number | null };
 }
-export interface ZohoDirectoryParams { page?: number; limit?: number; q?: string; status?: "active" | "inactive" | ""; registered?: "yes" | "no" | ""; price?: "set" | "missing" | "" }
+export interface ZohoDirectoryParams { page?: number; limit?: number; q?: string; status?: "active" | "inactive" | ""; registered?: "yes" | "no" | ""; price?: "set" | "missing" | ""; signageOnly?: "true" | "false" | "" }
 
+/** The Zoho vendor list is read from Zoho Books on every call (nothing is stored); "price: set" is read from the stored vendors with a cost. */
 export function useZohoDirectory(params: ZohoDirectoryParams, enabled = true) {
   return useQuery({ queryKey: ["zoho", "directory", params], queryFn: () => apiPage<ZohoVendorRow>(`/vendors/zoho-directory${qs(params)}`), placeholderData: keepPreviousData, enabled });
 }
-/** Counts and sync progress; polls every 1.5 s only while a sync is running. */
-export function useZohoSyncStatus() {
+/** signageOnly: true / false picks which Zoho vendors are counted; left out, the backend's setting is used. Polls while Zoho is still being counted. */
+export function useZohoDirectoryStatus(signageOnly?: boolean | null, count = false) {
+  const p = `?${signageOnly == null ? "" : `signageOnly=${signageOnly}&`}count=${count}`;
   return useQuery({
-    queryKey: ["zoho", "directory-status"],
-    queryFn: () => api<ZohoSyncStatus>("/vendors/zoho-directory/status"),
-    refetchInterval: (q) => (q.state.data?.sync.running ? 1500 : false),
-  });
-}
-export function useStartZohoSync() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api<ZohoSyncStatus["sync"]>("/vendors/zoho-directory/sync", { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["zoho", "directory-status"] }),
+    queryKey: ["zoho", "directory-status", signageOnly ?? "default", count],
+    queryFn: () => api<ZohoDirectoryStatus>(`/vendors/zoho-directory/status${p}`),
+    refetchInterval: (q) => { const z = q.state.data?.zoho; return count && z && !z.ready && !z.error ? 2500 : false; },
   });
 }
 
@@ -222,7 +221,7 @@ export interface RegistrationMailDraft {
   hasGst: boolean | null;
   /** The documents the vendor must have before the mail can go. */
   required: KycKey[];
-  /** Recipients from the settings (VENDOR_REGISTRATION_RECIPIENTS). */
+  /** Recipients from Admin panel > Mail settings. */
   groups: string[];
   to: string[];
   cc: string[];
@@ -234,12 +233,12 @@ export interface RegistrationMailDraft {
   /** Required documents that are not uploaded yet (labels). */
   missing: string[];
   attachments: { fileId: string; name: string; size: number; docType: KycDocKey }[];
-  registration: { mailSentAt?: string; vendorIdAt?: string } | null;
+  registration: { mailSentAt?: string; vendorIdAt?: string; reply?: { from: string; receivedAt: string; snippet?: string; detectedVendorNo?: string } } | null;
   zohoVendorNo: string | null;
   /** The mail being written: who first saved it and who saved it last. Null when there is no draft. */
   draft: { subject: string; createdAt: string; createdBy: string | null; updatedAt: string; updatedBy: string | null } | null;
   history: {
-    _id: string; from?: string; to: string[]; cc: string[]; bcc: string[]; subject: string; body?: string; status: "SENT" | "FAILED" | "SKIPPED"; error?: string; attachmentNames: string[];
+    _id: string; requestId?: string | null; from?: string; to: string[]; cc: string[]; bcc: string[]; subject: string; body?: string; status: "SENT" | "FAILED" | "SKIPPED"; error?: string; attachmentNames: string[];
     writtenAt: string; writtenBy: string | null; lastEditedAt: string; sentAt: string; sentBy: string | null;
   }[];
 }

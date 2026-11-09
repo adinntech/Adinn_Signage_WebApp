@@ -105,7 +105,7 @@ export function CodeConfirmOrder() {
             ) : k.state === "PENDING" || k.state === "BD_SENT" ? (
               <div className="mt-5 flex flex-wrap items-center gap-3 rounded-lg border border-[#ffd9b0] bg-[#fff6ea] px-4 py-3 text-sm text-approval">
                 <Clock3 className="size-4 shrink-0" aria-hidden />
-                <span className="flex-1 font-medium">Waiting for {kind === "PROJECT_CODE" ? "project" : "client"} code confirmation from the team.</span>
+                <span className="flex-1 font-medium">{r?.reply ? `Reply received from ${r.reply.from}${r.reply.detectedCode ? `: code ${r.reply.detectedCode}. Check and confirm.` : ". Open it to read the code."}` : `Waiting for ${kind === "PROJECT_CODE" ? "project" : "client"} code confirmation from the team.`}</span>
                 <Button size="sm" variant="brand" onClick={() => setConfirm(kind)}>
                   Enter Confirmed Code
                 </Button>
@@ -147,7 +147,7 @@ export function CodeConfirmOrder() {
         );
       })}
 
-      <ConfirmCodeDialog orderId={orderId} kind={confirm} onClose={() => setConfirm(null)} />
+      <ConfirmCodeDialog key={confirm ?? "c"} orderId={orderId} kind={confirm} reply={confirm ? rowOf(confirm)?.reply : null} onClose={() => setConfirm(null)} />
       <RejectCodeDialog orderId={orderId} kind={reject} onClose={() => setReject(null)} />
       <ViewMailModal
         mail={mailRow?.mail ?? (bd ? { ...bd, status: bd.status as "SENT" } : null)}

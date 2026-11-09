@@ -15,7 +15,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoDirectory, useZohoSyncStatus, type Vendor, type VendorStatus, type VendorType, type ZohoVendorRow } from "@/lib/api/vendors";
+import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoDirectory, useZohoDirectoryStatus, type Vendor, type VendorStatus, type VendorType, type ZohoVendorRow } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -66,7 +66,16 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
   const [view, setView] = useState<Vendor | null>(null);
   const [toDelete, setToDelete] = useState<Vendor | null>(null);
   const s = list.data?.summary;
-  const zoho = useZohoSyncStatus().data;
+  /** Signage creditors only, or every vendor in Zoho. null: not picked yet, which shows as off (every Zoho vendor); nothing is read from Zoho until the Zoho vendors toggle or this switch is used. */
+  const [signagePick, setSignagePick] = useState<boolean | null>(null);
+  /** The "Zoho vendors" toggle: off, Zoho is not called at all (no list, no count); on, the list is read and the vendors are counted. */
+  const [browse, setBrowse] = useState(false);
+  const signageOnly = signagePick ?? false;
+  const zohoStatus = useZohoDirectoryStatus(registration ? undefined : signageOnly, !registration && browse);
+  const zoho = zohoStatus.data;
+  const zc = zoho?.zoho;
+  const zsub = !browse ? "Switch on Zoho vendors to count" : zc?.error ? "Zoho could not be counted" : zc && !zc.ready ? `Counting in Zoho… ${zc.counted}` : signageOnly ? `Contact Code: ${zoho?.contactCode ?? "Signage"}` : "Every vendor in Zoho";
+  const scopeName = signageOnly ? "Signage creditors" : "All Zoho vendors";
   const rows = list.data?.data ?? [];
   /** Upload vendor list and New vendor: registration page only, at the right corner. */
   const actions = canWrite && registration && (
@@ -84,15 +93,19 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
           title={registration ? "Vendor Registration" : "Vendor Master"}
           subtitle={registration ? "Register new vendors with their documents, send the registration mail and enter the vendor ID Accounts reply with." : "Find a vendor from Zoho and add its cost. Only active vendors can be given shops."}
         />
-        {/* One dashboard for the whole vendor base: the Zoho vendors plus the vendors registered here. A Zoho vendor also registered here is counted once (as Zoho). */}
-        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-4">
-          {([
-            ["All vendors", zoho && s ? zoho.total + s.NEW : undefined, `${zoho?.total ?? 0} Zoho + ${s?.NEW ?? 0} new`, "bg-[#e8f0ff] text-royal", "MASTER"],
-            ["Zoho vendors", zoho?.total, zoho ? `${zoho.active} active · ${zoho.total - zoho.active} inactive` : "", "bg-[#f1e6ff] text-vendor", "MASTER"],
-            ["New registered", s?.NEW, s ? `${s.NEW_ACTIVE} active` : "", "bg-[#e2f8ea] text-finance", "REGISTERED"],
-            ["New - pending KYC", s?.NEW_PENDING_KYC, "Need documents and activation", "bg-[#fff0e0] text-approval", "REGISTERED"],
-          ] as const).map(([l, v, sub, c, target]) => (
-            <button key={l} type="button" onClick={() => { const toRegistration = target === "REGISTERED"; if (toRegistration !== registration) return router.push(toRegistration ? "/vendors/registration" : "/vendors/master"); if (l === "New - pending KYC") { setTab("PENDING_KYC"); setPage(1); } }} className={cn("rounded-xl p-3 text-left transition-shadow hover:shadow-soft focus-visible:outline-2 focus-visible:outline-ring", c)}>
+        {/* Vendor master: the counts follow the switch (Signage creditors or every Zoho vendor), counted in Zoho. Registration: the vendors registered here. */}
+        <div className={cn("grid grid-cols-1 gap-3 p-4 sm:grid-cols-2", registration ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
+          {(registration ? [
+            ["Registered here", s?.NEW, "Vendors registered in this CRM", "bg-[#e2f8ea] text-finance"],
+            ["Active", s?.NEW_ACTIVE, "Registered and active", "bg-[#e8f0ff] text-royal"],
+            ["Pending KYC", s?.NEW_PENDING_KYC, "Need documents and activation", "bg-[#fff0e0] text-approval"],
+          ] : [
+            [`Total · ${scopeName}`, zc?.total, zsub, "bg-[#f1e6ff] text-vendor"],
+            ["Active", zc?.active, scopeName, "bg-[#e2f8ea] text-finance"],
+            ["Inactive", zc?.inactive, scopeName, "bg-[#fdecec] text-destructive"],
+            ["Vendors with cost", zoho?.costed, "Saved here with a cost", "bg-[#e8f0ff] text-royal"],
+          ] as [string, number | null | undefined, string, string][]).map(([l, v, sub, c]) => (
+            <button key={l} type="button" onClick={() => { if (l === "Pending KYC") { setTab("PENDING_KYC"); setPage(1); } }} className={cn("rounded-xl p-3 text-left transition-shadow hover:shadow-soft focus-visible:outline-2 focus-visible:outline-ring", c)}>
               <span className="block text-xs font-medium opacity-80">{l}</span>
               <span className="block text-2xl font-bold tabular-nums">{v ?? "–"}</span>
               <span className="block truncate text-[11px] opacity-80">{sub}</span>
@@ -101,7 +114,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
         </div>
       </div>
 
-      {!registration && <VendorMaster canWrite={canWrite} />}
+      {!registration && <VendorMaster canWrite={canWrite} signageOnly={signageOnly} onSignageOnly={(v) => { setSignagePick(v); setBrowse(true); }} browse={browse} onBrowse={setBrowse} costed={zoho?.costed ?? 0} contactCode={zoho?.contactCode} />}
 
       {registration && (
       <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
@@ -129,7 +142,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
             ) : zlist.isError ? (
               <ErrorState error={zlist.error} onRetry={() => zlist.refetch()} />
             ) : (zlist.data?.data ?? []).length === 0 ? (
-              <EmptyState title="No Zoho vendor found" description="Check the spelling, or sync the Zoho list in Vendor master." />
+              <EmptyState title="No Zoho vendor found" description="Check the spelling. The list is read live from Zoho." />
             ) : (
               <table className="w-full min-w-[860px] text-sm">
                 <thead className="bg-[#f6f0ff] text-left text-xs uppercase tracking-wide text-navy">
