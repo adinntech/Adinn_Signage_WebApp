@@ -13,7 +13,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { Tabs } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useClientOptions } from "@/lib/api/clients";
-import { REQUIREMENT_TYPES, useProjects, useProjectSummary, type Project } from "@/lib/api/projects";
+import { handedOverBy, REQUIREMENT_TYPES, useProjects, useProjectSummary, type Project } from "@/lib/api/projects";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
@@ -134,7 +134,7 @@ export function OpsProjects({ target = "projects" }: { target?: ProjectsTarget }
                         
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{reqLabel(p.requirementType)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground"><span className="block font-medium text-navy">{p.owner?.name ?? "BD"}</span>{formatDateTime(p.assignedAt)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground"><span className="block font-medium text-navy">{handedOverBy(p).name}{handedOverBy(p).role && <span className="ml-1 rounded bg-[#eef4ff] px-1 text-[10px] font-semibold text-royal">{handedOverBy(p).role}</span>}</span>{formatDateTime(p.assignedAt)}</td>
                       <td className={cn("whitespace-nowrap px-4 py-3", overdue ? "font-semibold text-loss" : "text-muted-foreground")}>{overdue && <AlertTriangle className="mr-1 inline size-3.5" aria-hidden />}{formatDate(p.targetDate)}</td>
                       <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", PRIORITY_CLASS[p.priority])}>{PRIORITY_LABEL[p.priority]}</span></td>
                       <td className="px-4 py-3"><Badge tone={STATUS_META[p.status]?.tone ?? "neutral"}>{OPS_STAGE_LABEL[p.status] ?? STATUS_META[p.status]?.label ?? p.status}</Badge></td>

@@ -14,6 +14,7 @@ import { useAssignPlan, useClientDecision, useDecidePlan, useSubmitPlan, type Co
 import { useAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { VendorLogins } from "@/components/vendors/vendor-logins";
 import { inr } from "./leg-card";
 
 const who = (l: PlanLeg) => (l.channel === "IN_HOUSE" ? "In-house team" : l.channel === "VENDOR" ? (l.vendorName ?? "Vendor") : null);
@@ -42,6 +43,7 @@ export function PlanReview({ projectId, view, dirty, closed }: { projectId: stri
   const [remark, setRemark] = useState("");
   const [clientNo, setClientNo] = useState(false);
   const [lossWhy, setLossWhy] = useState("");
+  const [noLogin, setNoLogin] = useState<{ id: string; name: string; email: string | null; mobile: string | null }[]>([]);
 
   const { plan, totals } = view;
   const legs = plan.legs;
@@ -142,7 +144,7 @@ export function PlanReview({ projectId, view, dirty, closed }: { projectId: stri
       {canPlan && mayAssign && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#bbf0d3] bg-[#e7f9ef] p-4">
           <p className="text-sm text-finance"><strong>Final review done.</strong> Assigning gives every district&apos;s shops to the team or vendor above.</p>
-          <Button className="bg-finance hover:bg-finance/90" loading={assign.isPending} onClick={() => assign.mutate(undefined, { onSuccess: (r) => toast(`${r.assigned} shop(s) assigned${r.skipped.length ? `; not matched: ${r.skipped.join(", ")}` : ""}`), onError: (e) => toast(errorMessage(e), "error") })}><CheckCircle2 className="size-4" aria-hidden /> Confirm &amp; assign shops</Button>
+          <Button className="bg-finance hover:bg-finance/90" loading={assign.isPending} onClick={() => assign.mutate(undefined, { onSuccess: (r) => { toast(`${r.assigned} shop(s) assigned${r.skipped.length ? `; not matched: ${r.skipped.join(", ")}` : ""}${r.stage === "IN_PROGRESS" ? ". Project is now in progress" : ""}`); setNoLogin(r.vendorsWithoutLogin); }, onError: (e) => toast(errorMessage(e), "error") })}><CheckCircle2 className="size-4" aria-hidden /> Confirm &amp; assign shops</Button>
         </div>
       )}
       {plan.status === "ASSIGNED" && <Button asChild variant="outline"><Link href={`/operations/allocation/${projectId}`}>See the allocation <ArrowRight className="size-4" aria-hidden /></Link></Button>}
@@ -188,6 +190,21 @@ export function PlanReview({ projectId, view, dirty, closed }: { projectId: stri
         footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setClientNo(false)}>Back</Button><Button className="bg-loss hover:bg-loss/90" loading={client.isPending} disabled={lossWhy.trim().length < 3} onClick={() => client.mutate({ decision: "REJECTED", remark: lossWhy.trim() }, { onSuccess: () => { toast("Project moved to LOSS"); setClientNo(false); }, onError: (e) => toast(errorMessage(e), "error") })}>Mark as LOSS</Button></div>}
       >
         <Field label="Client's reason" htmlFor="loss" required><Textarea id="loss" rows={3} value={lossWhy} onChange={(e) => setLossWhy(e.target.value)} placeholder="e.g. Cost per sq.ft is too high" /></Field>
+      </Modal>
+
+      <Modal
+        open={noLogin.length > 0}
+        onOpenChange={(o) => !o && setNoLogin([])}
+        title="These vendors need a mobile login"
+        description="Shops are assigned. A vendor sees them in the mobile app only after a login is created. Name, email and mobile are taken from the vendor record."
+        className="max-w-lg"
+        footer={<div className="flex justify-end"><Button variant="outline" onClick={() => setNoLogin([])}>Later</Button></div>}
+      >
+        <div className="space-y-3">
+          {noLogin.map((v) => (
+            <VendorLogins key={v.id} vendor={{ _id: v.id, name: v.name }} prefill={{ name: v.name, email: v.email ?? "", phone: v.mobile ?? "" }} />
+          ))}
+        </div>
       </Modal>
     </div>
   );

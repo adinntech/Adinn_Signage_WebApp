@@ -14,12 +14,13 @@ import { useCreateVendorLogin, useVendorLogins, type Vendor, type VendorLoginInp
 const EMPTY: VendorLoginInput = { name: "", phone: "", employeeId: "", email: "", mpin: "" };
 
 /** Mobile logins of one vendor. A login created here is linked to this vendor, so the app shows only the shops given to it. */
-export function VendorLogins({ vendor }: { vendor: Vendor }) {
+export function VendorLogins({ vendor, prefill, startOpen }: { vendor: Pick<Vendor, "_id" | "name">; /** Details already known (from the vendor's email / mobile), so only the MPIN and employee ID are typed. */ prefill?: Partial<VendorLoginInput>; startOpen?: boolean }) {
   const toast = useToast();
   const logins = useVendorLogins(vendor._id);
   const create = useCreateVendorLogin(vendor._id);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState(EMPTY);
+  const [open, setOpen] = useState(!!startOpen);
+  const start = { ...EMPTY, ...prefill };
+  const [f, setF] = useState(start);
   const [server, setServer] = useState<Record<string, string>>({});
   const set = (k: keyof VendorLoginInput) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
 
@@ -38,7 +39,7 @@ export function VendorLogins({ vendor }: { vendor: Vendor }) {
     setTried(true);
     if (!valid) return;
     create.mutate({ ...f, name: f.name.trim(), email: f.email.trim().toLowerCase() }, {
-      onSuccess: () => { toast(`Login created for ${f.name.trim()}`); setOpen(false); setF(EMPTY); setTried(false); setServer({}); },
+      onSuccess: () => { toast(`Login created for ${f.name.trim()}`); setOpen(false); setF(start); setTried(false); setServer({}); },
       onError: (e) => { setServer(fieldErrorsOf(e)); toast(errorMessage(e), "error"); },
     });
   };

@@ -14,7 +14,7 @@ import { Stepper } from "@/components/workflow/stepper";
 import { errorMessage } from "@/lib/api";
 import { useCost, useReadiness } from "@/lib/api/costing";
 import { useAdvanceStage, useSurveyAreas } from "@/lib/api/pipeline";
-import { useProject } from "@/lib/api/projects";
+import { handedOverBy, useProject } from "@/lib/api/projects";
 import { useProjectHandover } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -103,7 +103,9 @@ export function ProjectDetails() {
   const planning = p.status !== "RECCE_ASSIGNED"; // the work area opens once planning has started
   const h = handover.data;
   const hasPoc = !!p.contacts?.length || !!p.instructions;
-  const assignedBy = h?.assignedBy ?? p.owner?.name ?? p.createdBy?.name ?? "BD";
+  const by = handedOverBy(p);
+  const assignedBy = h?.assignedBy ?? by.name;
+  const assignedRole = h?.assignedBy ? "" : by.role;
   const assignedAt = h?.assignedAt ?? p.assignedAt;
 
   const canNext = step === 0 ? p.siteCount > 0 : step === 1 ? (ready?.verified ?? 0) > 0 : step === 2 ? (cost.data?.plan.legs.length ?? 0) > 0 : false;
@@ -144,7 +146,7 @@ export function ProjectDetails() {
               <Row icon={UserCheck} k="Assigned to" v={p.assignedTo.name} />
             </dl>
             <button type="button" onClick={() => setDrawer(true)} className="group mt-4 flex w-full items-center justify-between rounded-lg border border-royal/20 bg-royal/5 px-4 py-3 text-left text-sm transition-colors hover:border-royal/40 hover:bg-royal/10" aria-haspopup="dialog">
-              <span><span className="text-xs text-muted-foreground">Assigned by</span><span className="block font-medium text-navy">{assignedBy} (BD){assignedAt ? ` · ${formatDateTime(assignedAt)}` : ""}</span></span>
+              <span><span className="text-xs text-muted-foreground">Assigned by</span><span className="block font-medium text-navy">{assignedBy}{assignedRole ? ` (${assignedRole})` : ""}{assignedAt ? ` · ${formatDateTime(assignedAt)}` : ""}</span></span>
               <span className="flex items-center gap-1 text-xs font-medium text-royal">Handover details <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden /></span>
             </button>
           </div>

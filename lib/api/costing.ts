@@ -145,7 +145,7 @@ export const useSavePlan = (pid: string) => usePlanMutation(pid, (b: { legs: Leg
 export const useRouteLeg = (pid: string) => usePlanMutation(pid, (legKey: string) => post<CostView & { route: RouteInfo }>(`/projects/${pid}/cost/legs/${encodeURIComponent(legKey)}/route`));
 export const useSubmitPlan = (pid: string) => usePlanMutation(pid, (b: { justification?: string }) => post(`/projects/${pid}/cost/submit`, b));
 export const useDecidePlan = (pid: string) => usePlanMutation(pid, (b: { approve: boolean; remark?: string }) => post(`/projects/${pid}/cost/decide`, b));
-export const useAssignPlan = (pid: string) => usePlanMutation(pid, () => post<CostView & { assigned: number; skipped: string[] }>(`/projects/${pid}/cost/assign`));
+export const useAssignPlan = (pid: string) => usePlanMutation(pid, () => post<CostView & { assigned: number; skipped: string[]; stage: string | null; vendorsWithoutLogin: { id: string; name: string; email: string | null; mobile: string | null }[] }>(`/projects/${pid}/cost/assign`));
 export const useClientDecision = (pid: string) => usePlanMutation(pid, (b: { decision: ClientDecision; remark?: string }) => post(`/projects/${pid}/cost/client-decision`, b));
 
 /** Company rates (admin fixes them; everyone who plans reads them). */
