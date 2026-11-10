@@ -11,7 +11,7 @@ const NO_DRAG = "input, textarea, select, button, a, label, [role='button']";
  * A row of cards in a flex strip. Drag empty space to move it, hover near either end to glide that way,
  * or use the arrows. Form controls inside a card stay usable (a drag never starts on them).
  */
-export function DragCarousel({ children, label, className = "" }: { children: ReactNode; label: string; className?: string }) {
+export function DragCarousel({ children, label, className = "", stretch = false }: { children: ReactNode; label: string; className?: string; /** Make every card as tall as the tallest one. */ stretch?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; left: number } | null>(null);
   const dir = useRef(0);
@@ -90,7 +90,7 @@ export function DragCarousel({ children, label, className = "" }: { children: Re
         onPointerCancel={onUp}
         onPointerLeave={() => glide(0)}
         onKeyDown={(e) => { if (e.key === "ArrowRight") page(1); else if (e.key === "ArrowLeft") page(-1); }}
-        className={`flex items-start gap-4 overflow-x-auto px-1 pb-3 [scrollbar-width:thin] ${dragging ? "cursor-grabbing select-none" : "cursor-grab snap-x snap-proximity"}`}
+        className={`flex ${stretch ? "items-stretch" : "items-start"} gap-4 overflow-x-auto px-1 pb-3 [scrollbar-width:thin] ${dragging ? "cursor-grabbing select-none" : "cursor-grab snap-x snap-proximity"}`}
       >
         {children}
       </div>

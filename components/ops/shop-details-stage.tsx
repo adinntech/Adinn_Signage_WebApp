@@ -11,16 +11,16 @@ import { RequirementPanel } from "./requirement-panel";
  * Open the file BD attached → extract its shops → edit them → verify each one → declare any extra shops found on the
  * ground → start the recce.
  */
-export function ShopDetailsStage({ project, canEdit, readOnly }: { project: Project; canEdit: boolean; readOnly: boolean }) {
+export function ShopDetailsStage({ project, canEdit, readOnly, hideAttachments }: { project: Project; canEdit: boolean; readOnly: boolean; hideAttachments?: boolean }) {
   return (
     <RequirementPanel
       n={2}
-      tone="pink"
+      tone="soft"
       title="Client Shop Details Only"
       tag="Known Shop List"
       description="Client provides the list of shops. Capture and verify shop details before the recce. No board measurements required."
     >
-      <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />
+      {!hideAttachments && <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />}
 
       <SitesTab project={project} readOnly={readOnly} allowImport={false} verification />
 

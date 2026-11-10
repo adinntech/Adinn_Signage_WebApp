@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LocateFixed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -11,7 +11,7 @@ import { useGeocode } from "@/lib/api/allocation";
  * Finds the map position of every shop that has none, from its address, area and pincode (OpenStreetMap). It works through
  * a dozen shops per call, so a long list shows progress and can be left to finish.
  */
-export function LocateShops({ projectId, missing }: { projectId: string; missing: number }) {
+export function LocateShops({ projectId, missing, onDone, auto }: { projectId: string; missing: number; onDone?: () => void; /** Start by itself as soon as the screen opens (once). */ auto?: boolean }) {
   const toast = useToast();
   const geo = useGeocode(projectId);
   const [busy, setBusy] = useState(false);
@@ -35,12 +35,19 @@ export function LocateShops({ projectId, missing }: { projectId: string; missing
       }
       setDone({ found, notFound });
       toast(`${found} shop(s) placed on the map`);
+      onDone?.();
     } catch (e) {
       toast(errorMessage(e), "error");
     } finally {
       setBusy(false);
     }
   }
+
+  const started = useRef(false);
+  useEffect(() => {
+    if (auto && missing > 0 && !started.current) { started.current = true; void run(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, missing]);
 
   return (
     <div className="rounded-xl border border-border bg-surface p-3 shadow-soft">

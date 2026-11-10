@@ -10,6 +10,8 @@ import { FileTypeIcon } from "@/components/upload/file-drop";
 import { FilePreviewDialog } from "@/components/upload/file-preview-dialog";
 import { isSheet } from "@/components/upload/sheet-preview";
 import { ImportWizard } from "@/components/sites/import-wizard";
+import { AttachmentChip } from "@/components/sales/order-comments";
+import { useProjectHandover } from "@/lib/api/recce";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, useProjectFiles, type StoredFile } from "@/lib/api/pipeline";
 import type { Project } from "@/lib/api/projects";
@@ -25,6 +27,12 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
   const files = useProjectFiles(project._id, "BD_CLIENT_DETAILS");
   const [preview, setPreview] = useState<StoredFile | null>(null);
   const [extract, setExtract] = useState<StoredFile | null>(null);
+  const handover = useProjectHandover(project._id).data;
+  const fromCs = [
+    ...(handover?.documents ?? []).map((d) => d.file),
+    ...(handover?.soDocuments ?? []),
+    ...(handover?.messages ?? []).flatMap((m) => m.attachments ?? []),
+  ].filter((f, i, a) => f?.fileId && a.findIndex((x) => x.fileId === f.fileId) === i);
   const list = files.data ?? [];
   const sheets = list.filter((f) => isSheet(f.originalName));
 
@@ -38,7 +46,7 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
         <RowsSkeleton rows={2} className="p-4" />
       ) : files.isError ? (
         <ErrorState error={files.error} onRetry={() => files.refetch()} />
-      ) : list.length === 0 ? (
+      ) : list.length === 0 && fromCs.length === 0 ? (
         <EmptyState title="BD has not attached any files" description="When BD attaches the client's shop list it appears here." />
       ) : (
         <ul className="divide-y divide-border">
@@ -59,6 +67,19 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
             </li>
           ))}
         </ul>
+      )}
+      {fromCs.length > 0 && (
+        <div className="border-t border-border">
+          <h4 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Documents shared with the handover (Client Servicing / BD) · {fromCs.length}</h4>
+          <ul className="divide-y divide-border">
+            {fromCs.map((f) => (
+              <li key={f.fileId} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+                <span className="min-w-0 flex-1"><AttachmentChip file={f} source={{ projectId: project._id }} /></span>
+                {canEdit && !readOnly && isSheet(f.name ?? "") && <Button size="sm" className="bg-finance hover:bg-finance/90" onClick={() => setExtract({ id: f.fileId, originalName: f.name ?? "shop-list.xlsx" } as StoredFile)}><Wand2 className="size-4" aria-hidden /> Extract shops</Button>}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {sheets.length === 0 && list.length > 0 && <p className="flex items-center gap-2 border-t border-border px-4 py-2 text-xs text-muted-foreground"><FileSpreadsheet className="size-4" aria-hidden /> No Excel or CSV among these files, so add the shops by hand below.</p>}
       <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />

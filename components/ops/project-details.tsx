@@ -2,90 +2,85 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import {
-  ArrowLeft, ArrowRight, BarChart3, Ban, CalendarClock, CalendarDays, CheckCircle2, ClipboardList, FileText, Files, Handshake, History, Mail, MapPin, MessageSquareText, Paperclip,
-  Phone, PlusCircle, Route, Store, UsersRound, type LucideIcon,
-} from "lucide-react";
+import { useParams, useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowRight, Ban, ChevronRight, FileText, History, MapPin, MessageSquareText, Store, Users, ClipboardList, CalendarRange, Megaphone, UserCheck, type LucideIcon } from "lucide-react";
 import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { KpiCard, type KpiColor } from "@/components/ui/kpi-card";
+import { Modal } from "@/components/ui/modal";
 import { ErrorState } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { SitesTab } from "@/components/sites/sites-tab";
 import { Stepper } from "@/components/workflow/stepper";
 import { errorMessage } from "@/lib/api";
-import { useAdvanceStage, useApprovalSummary, useProjectFiles, useSurveyAreas } from "@/lib/api/pipeline";
+import { useCost, useReadiness } from "@/lib/api/costing";
+import { useAdvanceStage, useSurveyAreas } from "@/lib/api/pipeline";
 import { useProject } from "@/lib/api/projects";
 import { useProjectHandover } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
-import { OPS_NEXT, OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel, totalExpected } from "@/lib/pipeline";
+import { formatDate, formatDateTime } from "@/lib/format";
+import { OPS_NEXT, OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, reqLabel } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 import { AsoSurvey } from "./aso-survey";
+import { BdAttachments } from "./bd-attachments";
 import { BdHandover } from "./bd-handover";
 import { BoardOptions } from "./board-options";
 import { MeasurementStage } from "./measurement-stage";
+import { PlanReview } from "./plan/plan-review";
+import { PreSetup } from "./plan/pre-setup";
 import { ActivityTimeline, ProjectNotes } from "./project-activity";
 import { ProjectDocumentsPanel } from "./project-documents-panel";
 import { RequirementPanel } from "./requirement-panel";
 import { ShopDetailsStage } from "./shop-details-stage";
 
-const STAGES = [
-  { status: "RECCE_ASSIGNED", label: "Assigned" },
-  { status: "PLANNING", label: "Planning" },
-  { status: "IN_PROGRESS", label: "Recce" },
-  { status: "CLIENT_APPROVAL", label: "Client Approval" },
-  { status: "COMPLETED", label: "Completed" },
+/** How "Handover details" opens. true: a panel sliding in from the right. false: a centred popup with tabs. Change this one value to switch. */
+const HANDOVER_IN_DRAWER = true;
+
+const STEPS = [
+  { title: "Extract shops", hint: "Open the Excel BD attached, check the column mapping and import the shops." },
+  { title: "Validate shops", hint: "Check each shop (address, area, size) and verify it. Only verified shops are planned." },
+  { title: "Pre-setup", hint: "Vendors (cost, district, skills) and the in-house team are compared; the suggestion can be edited." },
+  { title: "Allocate shops", hint: "Confirm the plan and give each area to its team or vendor." },
 ];
 
-const WORKSPACE_TITLE = { ASO: "ASO Area Survey", SHOP_DETAILS: "Client Shop Details Only", SHOP_MEASUREMENT: "Shop Details with Measurements" } as const;
-
-function QuickAction({ icon: Icon, label, hint, color, onClick }: { icon: LucideIcon; label: string; hint: string; color: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left transition-shadow hover:border-royal/40 hover:shadow-card">
-      <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", color)}><Icon className="size-5" aria-hidden /></span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-navy">{label}</span>
-        <span className="block truncate text-xs text-muted-foreground">{hint}</span>
-      </span>
-    </button>
-  );
-}
-
-function Section({ id, icon: Icon, title, hint, children, className }: { id?: string; icon: LucideIcon; title: string; hint?: string; children: React.ReactNode; className?: string }) {
-  return (
-    <section id={id} className={cn("scroll-mt-4 rounded-xl border border-border bg-surface p-4 shadow-soft", className)}>
-      <div className="mb-3 flex items-center gap-2">
-        <Icon className="size-4 text-royal" aria-hidden />
-        <h2 className="text-sm font-semibold text-navy">{title}</h2>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-      </div>
-      {children}
-    </section>
-  );
-}
+const Row = ({ icon: Icon, k, v }: { icon: LucideIcon; k: string; v?: React.ReactNode }) => (
+  <div className="flex min-w-0 items-center gap-3 rounded-lg bg-muted/40 px-3 py-2.5">
+    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-royal/10 text-royal"><Icon className="size-4" aria-hidden /></span>
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{k}</dt>
+      <dd className="truncate text-sm font-medium text-navy">{v || "-"}</dd>
+    </div>
+  </div>
+);
 
 /**
- * One workspace per project (no tabs to hunt through): summary and stage, key numbers, the requirement's own work area,
- * then documents, contacts, quick actions and recent activity.
+ * One workspace per project. Top: project and client details on the left, the client's contact (POC) on the right, and
+ * "Assigned by" opening the BD handover in a side drawer. Start Planning then shows two steps: import and verify the
+ * shops from the BD Excel, and the pre-setup (smart suggestion of vendors / in-house, with editing and history).
  */
 export function ProjectDetails() {
   const { id } = useParams<{ id: string }>();
   const toast = useToast();
   const { can } = useAuth();
-  const router = useRouter();
   const project = useProject(id);
   const advance = useAdvanceStage();
   const loaded = project.data?.assignedTo ? project.data : undefined;
   const aso = loaded?.requirementType === "ASO";
   const areas = useSurveyAreas(id, aso);
-  const approvals = useApprovalSummary(id, !!loaded && !aso);
-  const bdFiles = useProjectFiles(id, "BD_CLIENT_DETAILS");
-  // Projects assigned from Lead Management > Assign to Recce Team carry the BD handover (null for the others).
+  // Projects assigned from Lead Management carry the BD handover (null for the others).
   const handover = useProjectHandover(id);
-  const proofFiles = useProjectFiles(id, "OPS_SURVEY_PROOF");
   const [asoPart, setAsoPart] = useState<"areas" | "shops" | "boards">("areas");
+  // The planning step is remembered per project, so a refresh does not send the user back to step 1.
+  const stepKey = `ops.plan.step.${id}`;
+  const [step, setStepState] = useState(() => {
+    try { const v = Number(window.localStorage.getItem(stepKey)); return Number.isInteger(v) && v >= 0 && v <= 3 ? v : 0; } catch { return 0; } // storage unavailable: start at step 1
+  });
+  const setStep = (n: number) => {
+    setStepState(n);
+    try { localStorage.setItem(stepKey, String(n)); } catch { /* ignore */ }
+  };
+  const ready = useReadiness(id).data;
+  const cost = useCost(id);
+  const [drawer, setDrawer] = useState(false);
   // Notification links such as ?tab=documents jump to that section.
   const wanted = useSearchParams().get("tab");
   const [lowerTab, setLowerTab] = useState<"documents" | "history" | "notes">(wanted === "history" || wanted === "notes" ? wanted : "documents");
@@ -102,157 +97,91 @@ export function ProjectDetails() {
 
   const measure = p.requirementType === "SHOP_MEASUREMENT";
   const next = OPS_NEXT[p.status];
-  const overdue = isOverdue(p);
   const lost = p.status === "LOSS";
-  const cancelled = p.status === "CANCELLED" || lost; // both close the project: read-only
+  const cancelled = p.status === "CANCELLED" || lost;
   const canWork = can("sites:write") && !cancelled;
-  const expected = totalExpected(p);
-  const pct = expected ? Math.min(100, Math.round((p.siteCount / expected) * 100)) : 0;
-  const stageIndex = Math.max(0, STAGES.findIndex((x) => x.status === p.status));
-  const daysLeft = p.targetDate ? Math.ceil((new Date(p.targetDate.slice(0, 10)).getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime()) / 86_400_000) : null;
-  const contact = p.contacts?.[0];
+  const planning = p.status !== "RECCE_ASSIGNED"; // the work area opens once planning has started
+  const h = handover.data;
+  const hasPoc = !!p.contacts?.length || !!p.instructions;
+  const assignedBy = h?.assignedBy ?? p.owner?.name ?? p.createdBy?.name ?? "BD";
+  const assignedAt = h?.assignedAt ?? p.assignedAt;
 
-  const kpis: { label: string; value: string | number; icon: LucideIcon; color: KpiColor }[] = aso
-    ? [
-        { label: "Shops discovered (unknown at start)", value: p.siteCount, icon: Store, color: "blue" },
-        { label: "Areas surveyed", value: areas.data?.length ?? "–", icon: MapPin, color: "green" },
-        { label: "Proof files uploaded", value: proofFiles.data?.length ?? "–", icon: Paperclip, color: "orange" },
-        { label: daysLeft === null ? "Expected completion" : daysLeft < 0 ? `Overdue by ${-daysLeft} day${daysLeft === -1 ? "" : "s"}` : `Due in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`, value: formatDate(p.targetDate), icon: CalendarClock, color: overdue ? "red" : "rose" },
-      ]
-    : [
-        { label: `Shops imported / ${expected || "-"} expected`, value: p.siteCount, icon: Store, color: "blue" },
-        { label: "Pending verification", value: approvals.data ? approvals.data.ops.pending : "–", icon: ClipboardList, color: "orange" },
-        { label: "Additional shops found", value: p.additionalShops ?? 0, icon: PlusCircle, color: "purple" },
-        { label: "Files from BD", value: bdFiles.data?.length ?? "–", icon: Files, color: "teal" },
-      ];
+  const canNext = step === 0 ? p.siteCount > 0 : step === 1 ? (ready?.verified ?? 0) > 0 : step === 2 ? (cost.data?.plan.legs.length ?? 0) > 0 : false;
+  const blocked = ["Extract at least one shop to go on.", "Verify at least one shop to go on.", "Press Use this plan to go on.", ""];
 
   function advanceStage() {
     if (!next) return;
     advance.mutate(
       { id: p._id, stage: next.to },
-      {
-        onSuccess: () => toast(`${p.code}: ${OPS_STAGE_LABEL[next.to] ?? next.to}`),
-        onError: (e) => toast(errorMessage(e), "error"), // e.g. "Import or add shops before starting the recce"
-      },
+      { onSuccess: () => toast(`${p.code}: ${OPS_STAGE_LABEL[next.to] ?? next.to}`), onError: (e) => toast(errorMessage(e), "error") },
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-5">
-      <header className="overflow-hidden rounded-xl bg-gradient-to-r from-[#1d4ed8] via-[#2563eb] to-[#0ea5e9] text-white shadow-soft">
-        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/20 text-lg font-bold ring-1 ring-white/40">{p.client?.name?.[0] ?? "P"}</span>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-bold">Project Workspace – {p.requirementType ? WORKSPACE_TITLE[p.requirementType] : "Project"}</h1>
-            <p className="truncate text-sm text-white/85">{p.client?.name} · {p.campaign} · Code {p.code} · {reqLabel(p.requirementType)}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-            <span className={cn("rounded-full px-3 py-1", PRIORITY_CLASS[p.priority])}>{PRIORITY_LABEL[p.priority]} priority</span>
-            <span className="rounded-full bg-white/20 px-3 py-1 ring-1 ring-white/40">{OPS_STAGE_LABEL[p.status] ?? STATUS_META[p.status]?.label ?? p.status}</span>
-            <span className={cn("flex items-center gap-1 rounded-full px-3 py-1 ring-1 ring-white/40", overdue ? "bg-loss" : "bg-white/20")}>
-              <CalendarDays className="size-3.5" aria-hidden /> Due {formatDate(p.targetDate)}
-            </span>
-          </div>
-          {next && canWork && (
-            <Button className="bg-approval text-white ring-2 ring-white/70 hover:bg-approval/90" loading={advance.isPending} onClick={advanceStage}>
-              {next.label} <ArrowRight className="size-4" aria-hidden />
-            </Button>
-          )}
-          <Button asChild variant="ghost" size="sm" className="text-white hover:bg-white/15 hover:text-white">
-            <Link href="/operations/projects"><ArrowLeft className="size-4" aria-hidden /> Projects</Link>
-          </Button>
+    <div className="mx-auto max-w-[1400px] space-y-4">
+      <header className="sticky top-0 z-40 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface/95 px-5 py-1 shadow-soft backdrop-blur">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-lg font-semibold text-navy">{p.client?.name} · {p.code}</h1>
         </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className={cn("rounded px-2.5 py-1 font-medium", PRIORITY_CLASS[p.priority])}>{PRIORITY_LABEL[p.priority]} priority</span>
+        </div>
+        {next && canWork && (
+          <Button className="bg-navy hover:bg-navy/90" loading={advance.isPending} onClick={advanceStage}>{next.label} <ArrowRight className="size-4" aria-hidden /></Button>
+        )}
+        <Button asChild variant="ghost" size="sm"><Link href="/operations/projects"><ArrowLeft className="size-4" aria-hidden /> Projects</Link></Button>
       </header>
 
-      <section aria-label="Project summary" className="grid gap-4 rounded-xl border border-border bg-surface p-4 shadow-soft lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-          {[
-            ["Client", p.client?.name],
-            ["Campaign", p.campaign || "-"],
-            ["District", p.district || "-"],
-            ["Requirement", reqLabel(p.requirementType)],
-            ["Assigned to", p.assignedTo.name],
-            ["Assigned by", `${p.owner?.name ?? p.createdBy?.name ?? "BD"} (BD)`],
-          ].map(([k, v]) => (
-            <div key={k} className="min-w-0">
-              <dt className="text-xs text-muted-foreground">{k}</dt>
-              <dd className="truncate font-semibold text-navy" title={String(v)}>{v}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="space-y-3 text-sm lg:border-l lg:border-border lg:pl-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Start → End</p>
-            <p className={cn("font-semibold", overdue ? "text-loss" : "text-navy")}>{formatDate(p.startDate)} → {formatDate(p.targetDate)}{overdue && " · Overdue"}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Client / SO contact</p>
-            {contact ? <p className="font-semibold text-navy">{contact.name}<span className="block text-xs font-normal text-muted-foreground">{contact.phone} · {contact.email}</span></p> : <p className="text-muted-foreground">Not shared</p>}
+      <section aria-label="Project details" className={cn("grid gap-4", hasPoc && "lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]")}>
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <div className="h-1 bg-gradient-to-r from-navy via-royal to-recce" aria-hidden />
+          <div className="p-5">
+            <h2 className="mb-4 text-sm font-semibold text-navy">Project Details</h2>
+            <dl className={cn("grid gap-3 sm:grid-cols-2", !hasPoc && "2xl:grid-cols-4")}>
+              <Row icon={ClipboardList} k="Requirement" v={reqLabel(p.requirementType)} />
+              <Row icon={Megaphone} k="Order / campaign" v={p.campaign} />
+              <Row icon={CalendarRange} k="Start → End" v={`${formatDate(p.startDate)} → ${formatDate(p.targetDate)}`} />
+              <Row icon={UserCheck} k="Assigned to" v={p.assignedTo.name} />
+            </dl>
+            <button type="button" onClick={() => setDrawer(true)} className="group mt-4 flex w-full items-center justify-between rounded-lg border border-royal/20 bg-royal/5 px-4 py-3 text-left text-sm transition-colors hover:border-royal/40 hover:bg-royal/10" aria-haspopup="dialog">
+              <span><span className="text-xs text-muted-foreground">Assigned by</span><span className="block font-medium text-navy">{assignedBy} (BD){assignedAt ? ` · ${formatDateTime(assignedAt)}` : ""}</span></span>
+              <span className="flex items-center gap-1 text-xs font-medium text-royal">Handover details <ChevronRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden /></span>
+            </button>
           </div>
         </div>
-        <div className="lg:border-l lg:border-border lg:pl-4">
-          <p className="text-xs text-muted-foreground">{aso ? "Shops entered (count unknown)" : "Project progress"}</p>
-          <p className="mt-0.5 text-2xl font-bold tabular-nums text-navy">{aso ? p.siteCount : `${pct}%`}<span className="text-sm font-normal text-muted-foreground">{aso ? "" : ` · ${p.siteCount} / ${expected || "-"} shops`}</span></p>
-          {!aso && !!p.additionalShops && <p className="text-xs text-[#be185d]">{p.expectedShops} client + {p.additionalShops} additional</p>}
-          {!aso && (
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Shops imported" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
-              <div className="h-full rounded-full bg-finance transition-[width]" style={{ width: `${pct}%` }} />
-            </div>
-          )}
-        </div>
-        {!cancelled && (
-          <div className="overflow-x-auto border-t border-border pt-3 lg:col-span-3">
-            <Stepper steps={STAGES.map((x) => x.label)} current={stageIndex} />
+        {hasPoc && (
+          <div className="rounded-xl border border-border bg-surface p-5">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy"><Users className="size-4" aria-hidden /> POC Details</h2>
+            {!!p.contacts?.length && (
+              <ul className="space-y-2">
+                {p.contacts.map((c) => (
+                  <li key={c._id ?? c.phone} className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-navy text-xs font-semibold text-white">{(c.name || "?").slice(0, 1).toUpperCase()}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-navy">{c.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ") || "-"}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {p.instructions && <p className={cn("text-sm text-muted-foreground", !!p.contacts?.length && "mt-3 border-t border-border pt-3")}><span className="font-medium text-navy">Additional: </span>{p.instructions}</p>}
           </div>
         )}
       </section>
 
-      <section aria-label="Client contacts and quick actions" className="grid gap-4 rounded-xl border-2 border-royal/30 bg-[#eef4ff] p-4 shadow-soft lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <div className="min-w-0">
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><UsersRound className="size-4 text-royal" aria-hidden /> Client / SO Contacts</h2>
-          {!p.contacts?.length ? (
-            <p className="text-sm text-muted-foreground">No contacts shared.</p>
-          ) : (
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {p.contacts.map((c) => (
-                <li key={c._id ?? c.phone} className="rounded-lg border border-border bg-surface p-3 text-sm">
-                  <p className="font-semibold text-navy">{c.name}</p>
-                  <p className="mt-1 flex items-center gap-2 text-muted-foreground"><Mail className="size-3.5" aria-hidden />{c.email}</p>
-                  <p className="flex items-center gap-2 text-muted-foreground"><Phone className="size-3.5" aria-hidden />{c.phone}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-          {p.instructions && <p className="mt-2 rounded-lg bg-surface p-3 text-sm text-navy"><strong>Instructions:</strong> {p.instructions}</p>}
-        </div>
-        <div className="min-w-0">
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><CheckCircle2 className="size-4 text-royal" aria-hidden /> Quick Actions</h2>
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-            <QuickAction icon={BarChart3} label="Cost Comparison" hint="Vendor vs in-house, bills" color="bg-[#fff0e0] text-approval" onClick={() => router.push(`/operations/cost/${p._id}`)} />
-            <QuickAction icon={MapPin} label="Shop Allocation" hint="Vendors, in-house, map" color="bg-[#e8f0ff] text-royal" onClick={() => router.push(`/operations/allocation/${p._id}`)} />
-            <QuickAction icon={Route} label="Movement" hint="Day-wise road routes" color="bg-[#ffe9ee] text-[#e11d48]" onClick={() => router.push(`/operations/movement/${p._id}`)} />
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {kpis.map((k, i) => <KpiCard key={k.label} label={k.label} value={k.value} icon={k.icon} color={k.color} delay={i * 0.04} />)}
-      </div>
-
       {cancelled && (
-        <div role="alert" className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
+        <div role="alert" className="flex items-start gap-3 rounded-lg border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
           <Ban className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p><strong>{lost ? "Marked as LOSS." : "Cancelled by BD."}</strong> {p.statusReason ?? "No reason recorded."} This project is read-only.</p>
         </div>
       )}
 
-      {handover.data && (
-        <Section id="handover" icon={Handshake} title="BD Handover" hint={`From Lead Management · order ${handover.data.orderNo}: codes, Client ID, client, contacts, communication and the shop list`}>
-          <BdHandover projectId={p._id} h={handover.data} />
-        </Section>
+      {!planning && !cancelled && (
+        <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">Press <strong className="text-navy">Start Planning</strong> to import the shops and set up vendors and the in-house team.</p>
       )}
 
-      {aso ? (
+      {(planning || cancelled) && (aso ? (
         <RequirementPanel n={1} tone="blue" title="ASO Area Survey" tag="Area Based Survey" description="Visit each area, note the shops found and the conversation, then enter shop details and board options. Shop count is unknown at the start.">
           <Tabs
             label="ASO sections"
@@ -266,13 +195,38 @@ export function ProjectDetails() {
           />
           {asoPart === "areas" ? <AsoSurvey projectId={p._id} canEdit={canWork} /> : asoPart === "shops" ? <SitesTab project={p} readOnly={cancelled} /> : <BoardOptions projectId={p._id} canEdit={canWork} />}
         </RequirementPanel>
-      ) : measure ? (
-        <MeasurementStage project={p} canEdit={canWork} readOnly={cancelled} />
       ) : (
-        <ShopDetailsStage project={p} canEdit={canWork} readOnly={cancelled} />
-      )}
+        <section aria-label="Planning" className="rounded-lg border border-border bg-surface">
+          <div className="overflow-x-auto border-b border-border bg-muted/30 px-5 py-4"><Stepper fill steps={STEPS.map((x) => x.title)} current={step} onStep={(i) => setStep(i)} /></div>
+          <div className="p-4">
+            <h2 className="text-base font-semibold text-navy">{step + 1}. {STEPS[step]!.title}</h2>
+            <p className="mb-4 text-sm text-muted-foreground">{STEPS[step]!.hint}</p>
+            {step === 0 && (
+              <div className="space-y-3">
+                <BdAttachments project={p} canEdit={canWork} readOnly={cancelled} />
+                <p className="text-sm text-muted-foreground"><strong className="text-navy">{p.siteCount}</strong> shop(s) extracted so far.</p>
+              </div>
+            )}
+            {step === 1 && ready && (
+              <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {([["Shops", ready.total], ["Verified", ready.verified], ["Needs verification", ready.unverified], ["No address", ready.noAddress]] as const).map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-border bg-surface p-3"><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{k}</p><p className="text-xl font-semibold tabular-nums text-navy">{v}</p></div>
+                ))}
+              </div>
+            )}
+            {step === 1 && (measure ? <MeasurementStage project={p} canEdit={canWork} readOnly={cancelled} hideAttachments /> : <ShopDetailsStage project={p} canEdit={canWork} readOnly={cancelled} hideAttachments />)}
+            {step === 2 && <PreSetup projectId={p._id} canEdit={canWork} />}
+            {step === 3 && (cost.data ? <PlanReview projectId={p._id} view={cost.data} dirty={false} closed={cancelled} /> : <p className="text-sm text-muted-foreground">Loading the plan…</p>)}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/30 px-4 py-3">
+            <Button variant="outline" disabled={step === 0} onClick={() => setStep(step - 1)}><ArrowLeft className="size-4" aria-hidden /> Back</Button>
+            <span className="text-xs text-muted-foreground">{step < 3 && !canNext ? blocked[step] : ""}</span>
+            {step < 3 ? <Button className="bg-navy hover:bg-navy/90" disabled={!canNext} onClick={() => setStep(step + 1)}>Next: {STEPS[step + 1]!.title} <ArrowRight className="size-4" aria-hidden /></Button> : <span />}
+          </div>
+        </section>
+      ))}
 
-      <section id="project-tabs" className="scroll-mt-4 overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
+      <section id="project-tabs" className="scroll-mt-4 overflow-hidden rounded-lg border border-border bg-surface">
         <Tabs
           label="Project sections"
           className="border-b border-border bg-muted/30 px-4 pt-2"
@@ -290,6 +244,10 @@ export function ProjectDetails() {
           {lowerTab === "notes" && <ProjectNotes projectId={p._id} canWrite={can("communications:write") && !cancelled} />}
         </TabPanel>
       </section>
+
+      <Modal open={drawer} onOpenChange={setDrawer} variant={HANDOVER_IN_DRAWER ? "drawer" : "dialog"} title="BD handover" description={h ? `From Lead Management · order ${h.orderNo}` : "Details shared by BD"} className={HANDOVER_IN_DRAWER ? "max-w-3xl" : "h-[88dvh] max-w-5xl rounded-xl border border-border"}>
+        {h ? <BdHandover projectId={p._id} h={h} tabbed={!HANDOVER_IN_DRAWER} /> : <p className="text-sm text-muted-foreground">This project was not assigned from Lead Management, so there are no handover details beyond the ones shown on the page.</p>}
+      </Modal>
     </div>
   );
 }

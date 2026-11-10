@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 const STEPS = [
   { key: "business", title: "Business details", icon: Building2, fields: ["typeName", "name", "contactPerson", "mobile", "mobileAlt", "email", "address", "district"] },
   { key: "kyc", title: "KYC & documents", icon: FileUp, fields: ["pan", "gstin", "bank.accountName", "bank.accountNo", "bank.ifsc", "documents"] },
-  { key: "rates", title: "Service area & rates", icon: IndianRupee, fields: ["serviceAreas", "ratePerShop", "farRatePerShop", "notes"] },
+  { key: "rates", title: "Service area & rates", icon: IndianRupee, fields: ["serviceAreas", "skills", "ratePerShop", "farRatePerShop", "shopsPerDay", "notes"] },
   // New vendor only: after the vendor is saved, the registration request mail is written and sent in the same form.
   { key: "mail", title: "Registration mail", icon: Mail, fields: [] },
 ] as const;
@@ -30,11 +30,11 @@ const BUILT_IN: Record<VendorType, string> = { ORGANIZATION: "Organization", ONE
 const NEW_TYPE = "__new__";
 type StepKey = (typeof STEPS)[number]["key"];
 
-type Form = { typeName: string; typed: Record<"pan" | "gst" | "bank" | "aadhaar", boolean>; /** null until the person answers "Does the vendor have GST?"; then an organization defaults to yes. */ hasGst: boolean | null; name: string; contactPerson: string; designation: string; mobile: string; mobileAlt: string; email: string; address: string; pincode: string; state: string; district: string; aadhaar: string; pan: string; gstin: string; accountName: string; accountNo: string; ifsc: string; serviceAreas: string; ratePerShop: string; farRatePerShop: string; notes: string };
+type Form = { typeName: string; typed: Record<"pan" | "gst" | "bank" | "aadhaar", boolean>; /** null until the person answers "Does the vendor have GST?"; then an organization defaults to yes. */ hasGst: boolean | null; name: string; contactPerson: string; designation: string; mobile: string; mobileAlt: string; email: string; address: string; pincode: string; state: string; district: string; aadhaar: string; pan: string; gstin: string; accountName: string; accountNo: string; ifsc: string; serviceAreas: string; ratePerShop: string; farRatePerShop: string; skills: string; shopsPerDay: string; availability: string; notes: string };
 const fromVendor = (v?: Vendor): Form => ({
   typeName: v?.typeName ?? BUILT_IN[v?.type ?? "ONE_MAN"], typed: { pan: !!v?.pan, gst: !!v?.gstin, bank: !!v?.bank?.accountNo, aadhaar: !!v?.aadhaar }, hasGst: v ? (v.hasGst ?? !!v.gstin) : null, name: v?.name ?? "", contactPerson: v?.contactPerson ?? "", designation: v?.designation ?? "", mobile: v?.mobile ?? "", mobileAlt: v?.mobileAlt ?? "", email: v?.email ?? "", address: v?.address ?? "", pincode: v?.pincode ?? "", state: v?.state ?? "", district: v?.district ?? "", aadhaar: v?.aadhaar ?? "",
   pan: v?.pan ?? "", gstin: v?.gstin ?? "", accountName: v?.bank?.accountName ?? "", accountNo: v?.bank?.accountNo ?? "", ifsc: v?.bank?.ifsc ?? "",
-  serviceAreas: (v?.serviceAreas ?? []).join(", "), ratePerShop: v?.ratePerShop != null ? String(v.ratePerShop) : "", farRatePerShop: v?.farRatePerShop != null ? String(v.farRatePerShop) : "", notes: v?.notes ?? "",
+  serviceAreas: (v?.serviceAreas ?? []).join(", "), ratePerShop: v?.ratePerShop != null ? String(v.ratePerShop) : "", farRatePerShop: v?.farRatePerShop != null ? String(v.farRatePerShop) : "", skills: (v?.skills ?? []).join(", "), shopsPerDay: v?.shopsPerDay != null ? String(v.shopsPerDay) : "", availability: v?.availability ?? "AVAILABLE", notes: v?.notes ?? "",
 });
 
 /**
@@ -153,7 +153,8 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
       ...(!quick && t(f.address) ? { address: t(f.address) as string } : {}), ...(!quick && t(f.pincode) ? { pincode: t(f.pincode) as string } : {}), ...(!quick && t(f.state) ? { state: t(f.state) as string } : {}), ...(!quick && t(f.district) ? { district: t(f.district) as string } : {}),
       ...(typedOpen.pan && t(f.pan) ? { pan: t(f.pan) as string } : {}), ...(typedOpen.gst && t(f.gstin) ? { gstin: t(f.gstin) as string } : {}), ...(typedOpen.aadhaar && t(f.aadhaar) ? { aadhaar: t(f.aadhaar) as string } : {}),
       ...(typedOpen.bank && (f.accountName.trim() || f.accountNo.trim() || f.ifsc.trim()) ? { bank: { ...(t(f.accountName) ? { accountName: t(f.accountName) as string } : {}), ...(t(f.accountNo) ? { accountNo: t(f.accountNo) as string } : {}), ...(t(f.ifsc) ? { ifsc: t(f.ifsc) as string } : {}) } } : {}),
-      ...(quick ? {} : { serviceAreas: f.serviceAreas.split(/[,;]/).map((x) => x.trim()).filter(Boolean) }),
+      ...(quick ? {} : { serviceAreas: f.serviceAreas.split(/[,;]/).map((x) => x.trim()).filter(Boolean), skills: f.skills.split(/[,;]/).map((x) => x.trim()).filter(Boolean), availability: f.availability === "BUSY" ? ("BUSY" as const) : ("AVAILABLE" as const) }),
+      ...(!quick && t(f.shopsPerDay) ? { shopsPerDay: Number(f.shopsPerDay) } : {}),
       ...(!quick && t(f.ratePerShop) ? { ratePerShop: Number(f.ratePerShop) } : {}), ...(!quick && t(f.farRatePerShop) ? { farRatePerShop: Number(f.farRatePerShop) } : {}), ...(!quick && t(f.notes) ? { notes: t(f.notes) as string } : {}),
     };
     save.mutate(
@@ -376,8 +377,11 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
       {key === "rates" && (
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Service areas" htmlFor="v-areas" error={err("serviceAreas")} hint="Districts / areas, comma separated" className="sm:col-span-2"><Input id="v-areas" value={f.serviceAreas} onChange={set("serviceAreas")} placeholder="Madurai, Theni, Dindigul" /></Field>
+          <Field label="Skills" htmlFor="v-skills" error={err("skills")} hint="What the vendor can do, comma separated. The smart planner matches these" className="sm:col-span-2"><Input id="v-skills" value={f.skills} onChange={set("skills")} placeholder="Measurement, Photos, Night work" /></Field>
           <Field label="Rate per shop (₹)" htmlFor="v-rate" error={err("ratePerShop")} hint="Blank = company rate"><Input id="v-rate" format="decimal" value={f.ratePerShop} onChange={set("ratePerShop")} /></Field>
           <Field label="Travelling cost per shop (₹)" htmlFor="v-far" error={err("farRatePerShop")} hint="Blank = company travelling cost"><Input id="v-far" format="decimal" value={f.farRatePerShop} onChange={set("farRatePerShop")} /></Field>
+          <Field label="Shops per day" htmlFor="v-spd" error={err("shopsPerDay")} hint="How many shops the vendor can recce in a day. Used to estimate days"><Input id="v-spd" format="digits" maxLength={3} value={f.shopsPerDay} onChange={set("shopsPerDay")} /></Field>
+          <Field label="Availability" htmlFor="v-avail" hint="Busy vendors are left out of the smart plan"><Select id="v-avail" value={f.availability} onChange={set("availability")}><option value="AVAILABLE">Available</option><option value="BUSY">Busy</option></Select></Field>
           <Field label="Notes" htmlFor="v-notes" className="sm:col-span-2"><Textarea id="v-notes" rows={2} value={f.notes} onChange={set("notes")} /></Field>
         </div>
       )}

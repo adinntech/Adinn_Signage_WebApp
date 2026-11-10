@@ -13,7 +13,7 @@ export interface MapViewProps {
   routes?: MapRoute[];
   /** When set, a click on the map reports its position (used to place the start point or a shop). */
   onPick?: ((lat: number, lng: number) => void) | undefined;
-  height?: number;
+  height?: number | string;
 }
 
 function Fit({ pins, origin }: { pins: MapPin[]; origin?: MapViewProps["origin"] }) {

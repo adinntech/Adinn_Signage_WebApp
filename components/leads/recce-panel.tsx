@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Send, SkipForward, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, MailCheck, Paperclip, Save, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { HandoverTab, saveOrderContactsBeforeLeaving } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
@@ -31,7 +31,8 @@ import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
 import { formatDateTimeIST } from "@/lib/format";
-import { clearStepDraft, useStepDraft } from "@/lib/step-drafts";
+import { clearStepDraft, readStepDraft, useStepDraft, writeStepDraft } from "@/lib/step-drafts";
+import { formatDateTime } from "@/lib/format";
 import { flagHandoverGaps, RouteNotice, StepFooter } from "./assign-panels";
 import { branchSteps, canOpen, csRecceAssign } from "./assign-steps";
 import { ASSIGN_META } from "./stage-meta";
@@ -343,16 +344,30 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const fromZoho = !!r.zohoClientId?.fromZoho;
   const [clientId, setClientId] = useStepDraft(`${key}:client`, r.codes?.clientId ?? (fromZoho ? "" : (r.zohoClientId?.value ?? "")));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Each reply read to the request mail fills the codes in once (a person checks, edits if needed and saves). A newer reply (a corrected
+  // one) overwrites what the earlier reply filled in, and anything typed before it; what is typed after it is kept.
+  const reply = r.codeReply;
+  // Only the 6 digits after EST- are used; the first such estimate fills the box, the others can be picked below it.
+  const sixDigits = (reply?.estimates ?? []).map((x) => /^EST-?(\d{6})$/i.exec(x)?.[1]).filter((x): x is string => !!x);
+  const estFromReply = sixDigits[0] ?? "";
+  const replyKey = reply?.messageId ?? "";
+  useEffect(() => {
+    if (!replyKey || r.codes || readStepDraft<string>(`${key}:applied`) === replyKey) return;
+    writeStepDraft(`${key}:applied`, replyKey);
+    if (reply?.detectedCode) setProject(reply.detectedCode);
+    if (estFromReply) setEst(estFromReply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a new reply is read
+  }, [replyKey]);
   if (locked && r.codes) return <CodesView r={r} />;
   const submit = async () => {
     const e: Record<string, string> = {};
     if (!/^\d{8}$/.test(project)) e.projectCode = "Project code must be exactly 8 digits";
-    if (!/^\d{6}$/.test(est)) e.estimationCode = "Enter the 6 digits after EST-";
+    if (est && !/^\d{6}$/.test(est)) e.estimationCode = "Enter the 6 digits after EST-, or leave it empty";
     if (!fromZoho && !/^[A-Za-z0-9-]{2,20}$/.test(clientId.trim())) e.clientId = "Enter the Client ID created in Zoho (2-20 letters, digits or -)";
     setErrors(e);
     if (Object.keys(e).length) return;
     try {
-      await save.mutateAsync({ projectCode: project, estimationCode: `EST-${est}`, clientId: fromZoho ? undefined : clientId.trim() });
+      await save.mutateAsync({ projectCode: project, ...(est ? { estimationCode: `EST-${est}` } : {}), clientId: fromZoho ? undefined : clientId.trim() });
       toast("Project and estimation codes saved");
       clearStepDraft(key);
       onSaved();
@@ -362,9 +377,22 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       toast(errorMessage(err), "error");
     }
   };
-  const changed = project !== (r.codes?.projectCode ?? "") || `EST-${est}` !== (r.codes?.estimationCode ?? "EST-") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? ""));
+  const changed = project !== (r.codes?.projectCode ?? "") || (est ? `EST-${est}` : "") !== (r.codes?.estimationCode ?? "") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? ""));
+  const replies = [...(r.codeReplyHistory ?? [])].reverse();
   return (
     <div className="space-y-4">
+      {reply && !r.codes && (
+        <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
+          <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
+          <p className="mt-1">{reply.detectedCode ? <>Project code <span className="font-mono font-bold">{reply.detectedCode}</span> is filled in below.</> : "No single project code could be read from the reply. Type it from the mail."}{!!reply.estimates?.length && <> Estimates in the reply: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span>{estFromReply ? "" : " (not 6 digits, type the one to save)"}.</>} Check and edit if needed, then save.</p>
+          {sixDigits.length > 1 && <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">Use another estimate: {sixDigits.map((d) => <button key={d} type="button" onClick={() => setEst(d)} className={`rounded-full border px-2 py-0.5 font-mono font-semibold ${est === d ? "border-royal bg-royal text-white" : "border-border bg-white hover:border-royal"}`}>EST-{d}</button>)}</p>}
+          {replies.length > 1 && (
+            <details className="mt-1 text-xs"><summary className="cursor-pointer font-semibold">Replies read ({replies.length})</summary>
+              <ul className="mt-1 space-y-1">{replies.map((h, i) => <li key={i}><span className="font-mono font-semibold">{h.detectedCode ?? "No code found"}</span>{!!h.estimates?.length && <span className="font-mono text-muted-foreground"> · {h.estimates.join(", ")}</span>}<span className="text-muted-foreground"> · {h.from} · {formatDateTime(h.receivedAt ?? h.at)}{i === 0 ? " · latest" : ""}</span></li>)}</ul>
+            </details>
+          )}
+        </div>
+      )}
       <div className={fromZoho ? "grid gap-4 sm:grid-cols-2" : "grid gap-4 sm:grid-cols-3"}>
         <Field label="Project Code" htmlFor="recce-project-code" required error={errors.projectCode} hint="8 digits, e.g. 22070277">
           <Input
@@ -377,7 +405,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
             onChange={(e) => setProject(e.target.value.replace(/\D/g, "").slice(0, 8))}
           />
         </Field>
-        <Field label="Estimation Code" htmlFor="recce-est-code" required error={errors.estimationCode} hint="EST- and 6 digits, e.g. EST-323343">
+        <Field label="Estimation Code (optional)" htmlFor="recce-est-code" error={errors.estimationCode} hint="EST- and 6 digits, e.g. EST-323343. Can be added later">
           <div className="flex">
             <span className="inline-flex items-center rounded-l-lg border border-r-0 border-border bg-muted px-3 font-mono text-sm font-semibold text-muted-foreground">EST-</span>
             <Input
@@ -439,7 +467,7 @@ export function CodesView({ r }: { r: RecceState }) {
           <span className="font-mono text-base">{r.codes.projectCode}</span>
         </DetailItem>
         <DetailItem label="Estimation Code">
-          <span className="font-mono text-base">{r.codes.estimationCode}</span>
+          <span className="font-mono text-base">{r.codes.estimationCode || "Not added"}</span>
         </DetailItem>
         <DetailItem label={fromZoho ? "Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
         <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTimeIST(r.codes.savedAt)}` : formatDateTimeIST(r.codes.savedAt)}</DetailItem>
@@ -566,7 +594,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
         }}
       >
         <p className="text-sm text-muted-foreground">
-          Project <b className="font-mono text-foreground">{r.codes?.projectCode}</b> ({r.codes?.estimationCode}) is created in Operations with the handover, and {person?.label} gets a
+          Project <b className="font-mono text-foreground">{r.codes?.projectCode}</b>{r.codes?.estimationCode ? ` (${r.codes.estimationCode})` : ""} is created in Operations with the handover, and {person?.label} gets a
           notification. The lead is completed; the codes and handover can no longer be changed.
         </p>
       </ConfirmDialog>
@@ -586,7 +614,7 @@ export function AssignedBanner({ r, projectLink = false }: { r: RecceState; proj
           {r.assignedBy ? ` by ${r.assignedBy}` : ""}.
         </p>
         <p className="text-muted-foreground">
-          Project <span className="font-mono font-semibold text-foreground">{r.project?.code ?? r.codes?.projectCode}</span> · {r.codes?.estimationCode}
+          Project <span className="font-mono font-semibold text-foreground">{r.project?.code ?? r.codes?.projectCode}</span>{r.codes?.estimationCode ? ` · ${r.codes.estimationCode}` : ""}
           {r.note ? ` · “${r.note}”` : ""}
         </p>
       </div>

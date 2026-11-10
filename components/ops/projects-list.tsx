@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowRight, BarChart3, FileWarning, FolderKanban, MapPin, Route, Search, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, FolderKanban, MapPin, Route, Search, X, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useClientOptions } from "@/lib/api/clients";
 import { REQUIREMENT_TYPES, useProjects, useProjectSummary, type Project } from "@/lib/api/projects";
-import { formatDate } from "@/lib/format";
-import { OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel, totalExpected } from "@/lib/pipeline";
+import { formatDate, formatDateTime } from "@/lib/format";
+import { OPS_STAGE_LABEL, PRIORITY_CLASS, PRIORITY_LABEL, STATUS_META, isOverdue, reqLabel } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 15;
@@ -41,7 +41,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "CANCELLED", label: "Cancelled" },
   { key: "LOSS", label: "Loss" },
 ];
-type SortKey = "code" | "name" | "district" | "expectedShops" | "assignedAt" | "targetDate" | "priority";
+type SortKey = "code" | "name" | "assignedAt" | "targetDate" | "priority";
 
 export function OpsProjects({ target = "projects" }: { target?: ProjectsTarget }) {
   const t = TARGETS[target];
@@ -112,9 +112,8 @@ export function OpsProjects({ target = "projects" }: { target?: ProjectsTarget }
                 <tr>
                   <SortHeader col="code" label="Project" sort={sort} onSort={onSort} />
                   <SortHeader col="name" label="Client" sort={sort} onSort={onSort} />
-                  <SortHeader col="district" label="District" sort={sort} onSort={onSort} />
-                  <SortHeader col="expectedShops" label="Shops" sort={sort} onSort={onSort} />
-                  <SortHeader col="assignedAt" label="Assigned" sort={sort} onSort={onSort} />
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">Requirement</th>
+                  <SortHeader col="assignedAt" label="Handover" sort={sort} onSort={onSort} />
                   <SortHeader col="targetDate" label="Due" sort={sort} onSort={onSort} />
                   <SortHeader col="priority" label="Priority" sort={sort} onSort={onSort} />
                   <th scope="col" className="px-4 py-3 text-left font-semibold">Status</th>
@@ -123,11 +122,7 @@ export function OpsProjects({ target = "projects" }: { target?: ProjectsTarget }
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.map((p) => {
-                  const aso = p.requirementType === "ASO";
-                  const total = totalExpected(p);
-                  const pct = !aso && total ? Math.min(100, Math.round((p.siteCount / total) * 100)) : 0;
                   const overdue = isOverdue(p);
-                  const importPending = !aso && p.siteCount === 0 && !["COMPLETED", "CANCELLED", "LOSS"].includes(p.status);
                   return (
                     <tr key={p._id} onClick={() => open(p)} className="cursor-pointer hover:bg-[#f4f8ff]">
                       <td className="px-4 py-3">
@@ -136,21 +131,10 @@ export function OpsProjects({ target = "projects" }: { target?: ProjectsTarget }
                       </td>
                       <td className="px-4 py-3 font-medium">
                         {p.client?.name}
-                        <span className="mt-0.5 block"><span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[11px] font-medium text-royal">{reqLabel(p.requirementType)}</span></span>
+                        
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{p.district || "-"}</td>
-                      <td className="w-44 px-4 py-3">
-                        {aso ? (
-                          <span className="text-xs text-muted-foreground">Unknown (survey)</span>
-                        ) : (
-                          <>
-                            <div className="flex items-baseline justify-between text-xs"><span className="font-semibold tabular-nums text-navy">{p.siteCount}<span className="font-normal text-muted-foreground"> / {total || "-"}</span></span><span className="text-muted-foreground">{pct}%</span></div>
-                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Shops entered" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="h-full rounded-full bg-finance" style={{ width: `${pct}%` }} /></div>
-                          </>
-                        )}
-                        {importPending && <span className="mt-1 flex items-center gap-1 text-[11px] text-approval"><FileWarning className="size-3" aria-hidden /> Shops pending</span>}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDate(p.assignedAt)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{reqLabel(p.requirementType)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground"><span className="block font-medium text-navy">{p.owner?.name ?? "BD"}</span>{formatDateTime(p.assignedAt)}</td>
                       <td className={cn("whitespace-nowrap px-4 py-3", overdue ? "font-semibold text-loss" : "text-muted-foreground")}>{overdue && <AlertTriangle className="mr-1 inline size-3.5" aria-hidden />}{formatDate(p.targetDate)}</td>
                       <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", PRIORITY_CLASS[p.priority])}>{PRIORITY_LABEL[p.priority]}</span></td>
                       <td className="px-4 py-3"><Badge tone={STATUS_META[p.status]?.tone ?? "neutral"}>{OPS_STAGE_LABEL[p.status] ?? STATUS_META[p.status]?.label ?? p.status}</Badge></td>

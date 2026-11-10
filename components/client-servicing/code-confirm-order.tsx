@@ -147,7 +147,7 @@ export function CodeConfirmOrder() {
         );
       })}
 
-      <ConfirmCodeDialog key={confirm ?? "c"} orderId={orderId} kind={confirm} reply={confirm ? rowOf(confirm)?.reply : null} onClose={() => setConfirm(null)} />
+      <ConfirmCodeDialog key={confirm ?? "c"} orderId={orderId} kind={confirm} reply={confirm ? rowOf(confirm)?.reply : null} history={confirm ? rowOf(confirm)?.replyHistory : undefined} onClose={() => setConfirm(null)} />
       <RejectCodeDialog orderId={orderId} kind={reject} onClose={() => setReject(null)} />
       <ViewMailModal
         mail={mailRow?.mail ?? (bd ? { ...bd, status: bd.status as "SENT" } : null)}

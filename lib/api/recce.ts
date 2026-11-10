@@ -15,12 +15,25 @@ interface UserRef {
 }
 
 /** Project Assign > Assign to Recce Team for one order (from the server). */
+/** One reply read to the project code request mail: who, when, and the project code and estimate numbers found in it. */
+export interface RecceCodeReply {
+  messageId?: string;
+  from: string;
+  receivedAt?: string;
+  at?: string;
+  snippet?: string;
+  detectedCode?: string;
+  estimates?: string[];
+}
 export interface RecceState {
   orderId: string;
   orderNo: string;
   /** The lead is open at Project Assign and Client Servicing has not been assigned. */
   unlocked: boolean;
   codes: { projectCode: string; estimationCode: string; clientId?: string | null; savedAt: string | null; savedBy: string | null } | null;
+  /** The reply read to the project code request mail (the latest), and every reply read. A person still checks and saves the codes. */
+  codeReply?: RecceCodeReply | null;
+  codeReplyHistory?: RecceCodeReply[];
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
   /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
@@ -116,7 +129,7 @@ export const useSkipRecceRateCard = (id: string) =>
   useRecceMutation(id, () => api<RecceState>(`/sales/orders/${id}/recce/rate-card/skip`, { method: "POST" }), (qc) => qc.invalidateQueries({ queryKey: ["leads"] }));
 
 export const useSaveRecceCodes = (id: string) =>
-  useRecceMutation(id, (body: { projectCode: string; estimationCode: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
+  useRecceMutation(id, (body: { projectCode: string; estimationCode?: string; clientId?: string }) => api<RecceState>(`/sales/orders/${id}/recce/codes`, { method: "PUT", body: JSON.stringify(body) }));
 
 /** Creates the operations project, assigns it and completes the lead. */
 export const useAssignRecce = (id: string) =>

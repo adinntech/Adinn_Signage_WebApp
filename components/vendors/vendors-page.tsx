@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, KeyRound, Mail, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { Eye, KeyRound, Loader2, Mail, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -79,6 +79,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
   const zoho = zohoStatus.data;
   const zc = zoho?.zoho;
   const zsub = zc?.error ? "Zoho could not be counted" : zc && !zc.ready ? `Counting in Zoho… ${zc.counted}` : signageOnly ? `Contact Code: ${zoho?.contactCode ?? "Signage"}` : "Every vendor in Zoho";
+  const counting = !registration && !zc?.error && (zohoStatus.isPending || (!!zc && !zc.ready));
   const scopeName = signageOnly ? "Signage creditors" : "All Zoho vendors";
   const rows = list.data?.data ?? [];
   /** Upload vendor list and New vendor: registration page only, at the right corner. */
@@ -99,19 +100,19 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
         />
         {/* Vendor master: the counts follow the switch (Signage creditors or every Zoho vendor), counted in Zoho. Registration: the vendors registered here. */}
         <div className={cn("grid grid-cols-1 gap-3 p-4 sm:grid-cols-2", registration ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
-          {(registration ? [
-            ["Registered here", s?.NEW, "Vendors registered in this CRM", "bg-[#e2f8ea] text-finance"],
-            ["Active", s?.NEW_ACTIVE, "Registered and active", "bg-[#e8f0ff] text-royal"],
-            ["Pending KYC", s?.NEW_PENDING_KYC, "Need documents and activation", "bg-[#fff0e0] text-approval"],
-          ] : [
-            [`Total · ${scopeName}`, zc?.total, zsub, "bg-[#f1e6ff] text-vendor"],
-            ["Active", zc?.active, scopeName, "bg-[#e2f8ea] text-finance"],
-            ["Inactive", zc?.inactive, scopeName, "bg-[#fdecec] text-destructive"],
-            ["Vendors with cost", zoho?.costed, "Saved here with a cost", "bg-[#e8f0ff] text-royal"],
-          ] as [string, number | null | undefined, string, string][]).map(([l, v, sub, c]) => (
+          {((registration ? [
+            ["Registered here", s?.NEW, "Vendors registered in this CRM", "bg-[#e2f8ea] text-finance", !s],
+            ["Active", s?.NEW_ACTIVE, "Registered and active", "bg-[#e8f0ff] text-royal", !s],
+            ["Pending KYC", s?.NEW_PENDING_KYC, "Need documents and activation", "bg-[#fff0e0] text-approval", !s],
+          ] as [string, number | null | undefined, string, string, boolean][] : [
+            [`Total · ${scopeName}`, zc?.total, zsub, "bg-[#f1e6ff] text-vendor", counting],
+            ["Active", zc?.active, scopeName, "bg-[#e2f8ea] text-finance", counting],
+            ["Inactive", zc?.inactive, scopeName, "bg-[#fdecec] text-destructive", counting],
+            ["Vendors with cost", zoho?.costed, "Saved here with a cost", "bg-[#e8f0ff] text-royal", zohoStatus.isPending],
+          ] as [string, number | null | undefined, string, string, boolean][]) as [string, number | null | undefined, string, string, boolean][]).map(([l, v, sub, c, busy]) => (
             <button key={l} type="button" onClick={() => { if (l === "Pending KYC") { setTab("PENDING_KYC"); setPage(1); } }} className={cn("rounded-xl p-3 text-left transition-shadow hover:shadow-soft focus-visible:outline-2 focus-visible:outline-ring", c)}>
               <span className="block text-xs font-medium opacity-80">{l}</span>
-              <span className="block text-2xl font-bold tabular-nums">{v ?? "–"}</span>
+              {busy ? <span className="my-1 flex h-8 items-center gap-2" role="status" aria-label={`Loading ${l}`}><Loader2 className="size-5 animate-spin" aria-hidden /><span className="h-5 w-12 animate-pulse rounded bg-current opacity-15" aria-hidden /></span> : <span className="block text-2xl font-bold tabular-nums">{v ?? "–"}</span>}
               <span className="block truncate text-[11px] opacity-80">{sub}</span>
             </button>
           ))}
@@ -190,7 +191,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
                     <td className="px-4 py-3 text-right tabular-nums">{v.ratePerShop != null ? `₹${v.ratePerShop}` : <span className="text-xs text-muted-foreground">Company</span>}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{v.allocatedShops ?? 0}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      {v.zohoVendorNo ? <span className="text-xs">Vendor ID <span className="font-mono font-semibold text-navy">{v.zohoVendorNo}</span></span>
+                      {v.zohoVendorNo ? <><span className="text-xs">Vendor ID <span className="font-mono font-semibold text-navy">{v.zohoVendorNo}</span></span>{v.registration?.reply?.detectedVendorNo && v.registration.reply.detectedVendorNo !== v.zohoVendorNo && !!v.registration.reply.receivedAt && !!v.registration.vendorIdAt && new Date(v.registration.reply.receivedAt) > new Date(v.registration.vendorIdAt) && <span className="block text-xs font-semibold text-approval">Newer reply says <span className="font-mono">{v.registration.reply.detectedVendorNo}</span></span>}{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> Edit ID</button>}</>
                         : v.registration?.mailSentAt ? <>{v.registration.reply ? <span className="block text-xs font-semibold text-finance">Reply received{v.registration.reply.detectedVendorNo ? <> · ID <span className="font-mono">{v.registration.reply.detectedVendorNo}</span></> : " · no ID found"}</span> : <span className="block text-xs text-approval">Mail sent · waiting for ID</span>}{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> {v.registration.reply?.detectedVendorNo ? "Check and save ID" : "Enter vendor ID"}</button>}</>
                         : v.source === "ZOHO" ? <span className="text-xs text-muted-foreground">From Zoho</span>
                         : <><span className="block text-xs text-muted-foreground">{v.registration?.draft?.savedAt ? "Mail draft saved" : "Mail not sent"}</span>{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setMailing(v)}><Mail className="size-3" aria-hidden /> {v.registration?.draft?.savedAt ? "Continue mail" : "Send mail"}</button>}</>}

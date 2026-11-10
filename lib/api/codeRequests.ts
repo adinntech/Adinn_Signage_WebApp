@@ -37,11 +37,31 @@ export interface CodeReply {
   estimates?: string[];
   autoConfirmError?: string;
 }
+/** One reply read for a request (the latest overwrites the one shown, every one is kept). */
+export interface CodeReplyEntry {
+  from: string;
+  receivedAt?: string;
+  at?: string;
+  snippet?: string;
+  detectedCode?: string;
+  estimates?: string[];
+}
+/** What a person changed from what the reply gave: who, when, which field. */
+export interface CodeEdit {
+  at: string;
+  byName?: string;
+  field: "code" | "estimates";
+  from: string;
+  to: string;
+}
 export interface CodeRequestRow {
   _id: string;
   /** ADN-Signage-prj-06122601: in the mail subject; the reply is matched by it. */
   requestId?: string;
   reply?: CodeReply | null;
+  replyHistory?: CodeReplyEntry[];
+  estimates?: string[];
+  editHistory?: CodeEdit[];
   kind: CodeKind;
   status: CodeStatus;
   active: boolean;
@@ -160,7 +180,7 @@ export function useRetryCodes(orderId: string) {
 export function useConfirmCode(orderId: string) {
   const done = useRefresh(orderId);
   return useMutation({
-    mutationFn: ({ files, ...v }: { kind: CodeKind; code: string; evidenceNote?: string; files?: File[] }) => {
+    mutationFn: ({ files, ...v }: { kind: CodeKind; code: string; evidenceNote?: string; estimates?: string[]; files?: File[] }) => {
       const fd = new FormData();
       fd.append("payload", JSON.stringify(v));
       for (const f of files ?? []) fd.append("files", f);

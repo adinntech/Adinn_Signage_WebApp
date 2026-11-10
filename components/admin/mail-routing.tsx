@@ -57,13 +57,13 @@ export function RoutingCard({ r, canEdit }: { r: MailRouting; canEdit: boolean }
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+    <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
       <div className={`flex items-center gap-2 bg-gradient-to-r px-4 py-3 text-white ${bar}`}>
         <Icon className="size-5" aria-hidden />
         <h2 className="text-sm font-bold">{r.label}</h2>
         {r.isDefault && <Badge tone="warning" className="ml-auto">Default, not saved yet</Badge>}
       </div>
-      <div className="space-y-4 p-4">
+      <div className="flex flex-1 flex-col gap-4 p-4">
         <Field label="To" htmlFor={`${r.key}-to`} required error={errors.to}>
           <EmailTagInput id={`${r.key}-to`} value={v.to} onChange={(to) => setV({ ...v, to })} placeholder="Type an email and press Enter" max={20} disabled={!canEdit} invalid={!!errors.to} />
         </Field>
@@ -83,7 +83,7 @@ export function RoutingCard({ r, canEdit }: { r: MailRouting; canEdit: boolean }
           </label>
         )}
         {canEdit && (
-          <div className="flex items-center justify-end gap-2">
+          <div className="mt-auto flex items-center justify-end gap-2 pt-2">
             {dirty && <Button variant="outline" onClick={() => { setV(saved); setErrors({}); }}>Discard</Button>}
             <Button className="bg-royal hover:bg-royal/90" disabled={!dirty && !r.isDefault} loading={save.isPending} onClick={submit}><Save className="size-4" aria-hidden /> Save</Button>
           </div>
@@ -123,7 +123,7 @@ export function MailRoutingSection({ canEdit }: { canEdit: boolean }) {
       {q.isPending ? <RowsSkeleton rows={5} className="p-4" />
         : q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not load the recipients" />
         : (
-          <DragCarousel label="Request email recipients">
+          <DragCarousel label="Request email recipients" stretch>
             {q.data.map((r) => (
               <div key={`${r.key}-${r.to.join()}-${r.cc.join()}-${r.bcc.join()}-${r.replyTo}-${r.autoConfirm}-${r.isDefault}`} className="w-[min(88vw,26rem)] shrink-0 snap-start">
                 <RoutingCard r={r} canEdit={canEdit} />

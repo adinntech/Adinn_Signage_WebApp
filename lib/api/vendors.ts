@@ -65,7 +65,12 @@ export interface Vendor {
   bank?: { accountName?: string; accountNo?: string; ifsc?: string };
   ratePerShop?: number;
   farRatePerShop?: number;
-  registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string }; reply?: { from: string; detectedVendorNo?: string } };
+  skills?: string[];
+  shopsPerDay?: number;
+  availability?: "AVAILABLE" | "BUSY";
+  /** Set when the vendor was registered from Zoho: only then is it listed in Vendor master with its cost. */
+  zohoContactId?: string;
+  registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string }; reply?: { from: string; receivedAt?: string; detectedVendorNo?: string }; idHistory?: { at?: string; byName?: string; from?: string; to?: string }[]; replyHistory?: { from: string; receivedAt?: string; at?: string; snippet?: string; detectedVendorNo?: string; note?: string }[] };
   createdBy?: { name?: string } | string | null;
   updatedBy?: { name?: string } | string | null;
   updatedAt?: string;
@@ -102,6 +107,9 @@ export interface VendorInput {
   bank?: { accountName?: string; accountNo?: string; ifsc?: string };
   ratePerShop?: number;
   farRatePerShop?: number;
+  skills?: string[];
+  shopsPerDay?: number;
+  availability?: "AVAILABLE" | "BUSY";
   notes?: string;
   zohoContactId?: string;
   zohoVendorNo?: string;
@@ -296,7 +304,29 @@ export const useSetVendorId = () => useVendorMutation(({ id, vendorNo }: { id: s
 /** Vendor price management: price per shop of a Zoho vendor (typed in the list). */
 /** `pending`: a typed cost above the company rate, waiting for the approver's reply (the old cost stays until then). */
 export interface PendingRate { requestId: string; ratePerShop: number | null; farRatePerShop: number | null; limitRate: number | null; limitFar: number | null }
-export interface ZohoPrice { ratePerShop: number | null; farRatePerShop: number | null; skills: string[]; source: "VENDOR" | "ZOHO" | null; pending?: PendingRate }
+/** The latest amount request of a vendor: waiting, approved or not approved, with every reply read and every change. */
+export interface RateApproval {
+  requestId: string;
+  status: "PENDING" | "APPROVED" | "NOT_APPROVED";
+  ratePerShop: number | null;
+  farRatePerShop: number | null;
+  limitRate: number | null;
+  limitFar: number | null;
+  appliedRate: number | null;
+  appliedFar: number | null;
+  decidedAt?: string;
+  decidedBy?: string;
+  history: { at?: string; receivedAt?: string; from?: string; snippet?: string; outcome?: string }[];
+}
+export interface ZohoPrice { ratePerShop: number | null; farRatePerShop: number | null; skills: string[]; source: "VENDOR" | "ZOHO" | null; createdAt?: string; updatedAt?: string; pending?: PendingRate; approval?: RateApproval }
+/** Operations changes the status of an amount request by hand. */
+export function useChangeRateStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, decision }: { requestId: string; decision: "APPROVED" | "NOT_APPROVED" }) => api(`/vendors/rate-approvals/${requestId}/decision`, { method: "PUT", body: JSON.stringify({ decision }) }),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ["zoho"] }), qc.invalidateQueries({ queryKey: key })]),
+  });
+}
 /** The company rates (Admin > Cost Rates): a vendor cost above them is sent for approval. */
 export const useCompanyRates = () => useQuery({ queryKey: [...key, "company-rates"], queryFn: () => api<{ ratePerShop: number; farRatePerShop: number }>("/vendors/company-rates"), staleTime: 60_000 });
 export interface VendorSkill { _id: string; name: string }

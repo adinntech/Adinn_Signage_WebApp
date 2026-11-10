@@ -183,7 +183,7 @@ export function CodeConfirmation() {
         {!list.isError && rows.length > 0 && <Pagination meta={list.data?.meta} onPage={setPage} />}
       </Card>
 
-      <ConfirmCodeDialog key={confirm ? `${confirm.orderId}${confirm.kind}` : "c"} orderId={confirm?.orderId ?? ""} kind={confirm?.kind ?? null} reply={confirm ? rows.find((x) => x.order?._id === confirm.orderId && x.kind === confirm.kind && x.active)?.reply : null} onClose={() => setConfirm(null)} />
+      <ConfirmCodeDialog key={confirm ? `${confirm.orderId}${confirm.kind}` : "c"} orderId={confirm?.orderId ?? ""} kind={confirm?.kind ?? null} reply={confirm ? rows.find((x) => x.order?._id === confirm.orderId && x.kind === confirm.kind && x.active)?.reply : null} history={confirm ? rows.find((x) => x.order?._id === confirm.orderId && x.kind === confirm.kind && x.active)?.replyHistory : undefined} onClose={() => setConfirm(null)} />
       <RejectCodeDialog key={reject ? `${reject.orderId}${reject.kind}` : "r"} orderId={reject?.orderId ?? ""} kind={reject?.kind ?? null} onClose={() => setReject(null)} />
     </div>
   );

@@ -119,6 +119,7 @@ export function LegCard({
             <Row label={`Food: ${c.inHouse.meals} meals × ${inr(rates.foodPerDay / 3)}`} hint={c.inHouse.datesAssumed ? "Trip dates not set: one day assumed" : `${c.inHouse.days} day(s) from start to end`} value={inr(c.inHouse.food)} />
             <Row label={`Stay: ${c.inHouse.nights} night(s) × ${inr(rates.stayPerNight)}`} value={inr(c.inHouse.stay)} />
             <Row label={`Fuel: ${c.inHouse.routeKm} km × ₹${rates.fuelRatePerKm}`} value={inr(c.inHouse.fuel)} />
+            {c.inHouse.local > 0 && <Row label={`Local: ${c.inHouse.days} day(s) × ${inr(rates.localPerDay)}`} value={inr(c.inHouse.local)} />}
             {c.inHouse.other > 0 && <Row label="Other" value={inr(c.inHouse.other)} />}
             {(draft.clientsShared ?? 1) > 1 && <Row label={`Shared by ${draft.clientsShared} clients`} value={`÷ ${draft.clientsShared}`} />}
             <Row label="In-house total" value={inr(c.inHouse.total)} strong />

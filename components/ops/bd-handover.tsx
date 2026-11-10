@@ -1,6 +1,8 @@
 "use client";
 
-import { Building2, ClipboardList, Hash, Star } from "lucide-react";
+import { useState } from "react";
+import { Building2, ClipboardList, Hash, MessageSquareText, Star, Store } from "lucide-react";
+import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { HandoverChat } from "@/components/handover/handover-chat";
 import { ShopTable } from "@/components/handover/shop-table";
 import { AttachmentChip } from "@/components/sales/order-comments";
@@ -13,19 +15,41 @@ import { formatDate } from "@/lib/format";
 import { clientIdOf } from "@/lib/api/clients";
 
 /** Operations project > BD Handover: what the BD handed over in Lead Management (read-only). */
-export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHandover }) {
+export function BdHandover({ projectId, h, tabbed = true }: { projectId: string; h: ProjectHandover; /** true: sections as tabs (popup). false: every section one below the other in a single scroll (side panel). */ tabbed?: boolean }) {
   const source = { projectId };
   const c = h.client;
+  const shops = h.type === "SHOP_DETAILS" || h.type === "SHOP_MEASUREMENT";
+  const [tab, setTab] = useState("overview");
+  const on = (k: string) => !tabbed || tab === k;
+  const chats = h.messages?.length ?? 0;
   return (
-    <div className="space-y-5">
-      <Card className="p-5">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-gradient-to-r from-navy to-royal px-4 py-3 text-xs text-white">
+        <span className="rounded-full bg-white/15 px-3 py-1 font-mono text-sm">{h.projectCode}</span>
+        {h.type && <span className="rounded-full bg-white/15 px-3 py-1 font-medium">{HANDOVER_TYPES[h.type].label}</span>}
+        <span className="ml-auto text-white/80">{h.assignedAt ? `Assigned ${formatDate(h.assignedAt)}${h.assignedBy ? ` by ${h.assignedBy}` : ""}` : ""}</span>
+      </div>
+      {tabbed && <Tabs
+        label="Handover sections"
+        value={tab}
+        onChange={setTab}
+        className="border-b border-border"
+        tabs={[
+          { key: "overview", label: "Overview", icon: Hash },
+          ...(c ? [{ key: "client", label: "Client & contacts", icon: Building2 }] : []),
+          { key: "chat", label: "Messages", icon: MessageSquareText, count: chats },
+          ...(shops || (!h.shopList && h.type === "ASO") ? [{ key: "shops", label: shops ? "Shops" : "SO handover", icon: Store }] : []),
+        ]}
+      />}
+      <TabPanel k={tabbed ? tab : "all"} className="space-y-5">
+      {on("overview") && (<Card className="p-5">
         <SectionTitle icon={Hash} title="Codes & Assignment" description={`From BD order ${h.orderNo}`} />
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <DetailItem label="Project Code">
             <span className="font-mono text-base">{h.projectCode}</span>
           </DetailItem>
           <DetailItem label="Estimation Code">
-            <span className="font-mono text-base">{h.estimationCode}</span>
+            <span className="font-mono text-base">{h.estimationCode || "Not added"}</span>
           </DetailItem>
           <DetailItem label="Client ID (Zoho)">{h.clientId ? <span className="font-mono text-base">{h.clientId}</span> : null}</DetailItem>
           <DetailItem label="Assigned">{h.assignedAt ? `${formatDate(h.assignedAt)}${h.assignedBy ? ` by ${h.assignedBy}` : ""}` : null}</DetailItem>
@@ -36,9 +60,9 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
             </DetailItem>
           )}
         </dl>
-      </Card>
+      </Card>)}
 
-      {c && (
+      {on("client") && c && (
         <Card className="p-5">
           <SectionTitle icon={Building2} title="Client & Contact Persons" />
           <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -104,12 +128,15 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
         </Card>
       )}
 
-      <HandoverChat messages={h.messages ?? []} source={source} canPost={false} />
+      {!tabbed && <h3 className="pt-2 text-sm font-semibold text-navy">Messages</h3>}
+      {on("chat") && <HandoverChat messages={h.messages ?? []} source={source} canPost={false} />}
 
-      {(h.type === "SHOP_DETAILS" || h.type === "SHOP_MEASUREMENT") && (
+      {!tabbed && shops && <h3 className="pt-2 text-sm font-semibold text-navy">Shops</h3>}
+      {on("shops") && shops && h.type && (
         <ShopTable orderId="" projectId={projectId} type={h.type} summary={h.shopList} editable={false} canAddImages={false} />
       )}
-      {!h.shopList && h.type === "ASO" && <EmptyState icon={ClipboardList} title="SO handover" description="No shop list: the shops are collected from the client and SO contacts during the survey." />}
+      {on("shops") && !h.shopList && h.type === "ASO" && <EmptyState icon={ClipboardList} title="SO handover" description="No shop list: the shops are collected from the client and SO contacts during the survey." />}
+      </TabPanel>
     </div>
   );
 }

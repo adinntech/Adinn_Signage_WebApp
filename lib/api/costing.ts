@@ -15,6 +15,7 @@ export interface CostRates {
   foodPerDay: number;
   stayPerNight: number;
   fuelRatePerKm: number;
+  localPerDay: number;
   thresholdPerShop: number;
   worstCasePerShop: number;
   overVendorPercent: number;
@@ -22,7 +23,7 @@ export interface CostRates {
 
 export interface LegCalc {
   vendor: { perShopRate: number; far: boolean; negotiated: boolean; shopCost: number; other: number; total: number; perShop: number };
-  inHouse: { meals: number; days: number; nights: number; datesAssumed: boolean; routeKm: number; food: number; stay: number; fuel: number; other: number; subtotal: number; total: number; perShop: number };
+  inHouse: { meals: number; days: number; nights: number; datesAssumed: boolean; routeKm: number; food: number; stay: number; fuel: number; local: number; other: number; subtotal: number; total: number; perShop: number };
   comparison: { difference: number; inHouseSavingPercent: number; inHouseOverVendorPercent: number; cheaper: Channel };
   flags: { inHouseOverThreshold: boolean; inHouseWorstCase: boolean; inHouseOverVendor: boolean; vendorOverThreshold: boolean };
   needsApproval: Record<Channel, boolean>;
@@ -34,6 +35,8 @@ export interface PlanLeg {
   key: string;
   /** Chosen by the smart plan and not changed since. */
   autoSelected?: boolean;
+  /** A group of nearby shops made by the smart plan (its shops can be added or removed). */
+  clustered?: boolean;
   name: string;
   district?: string;
   shops: number;
@@ -209,10 +212,10 @@ export const useDeleteExpense = (pid: string) => useExpenseMutation(pid, (id: st
 
 /* ------------------------------ smart suggestion ------------------------------ */
 
-export interface SuggestVendor { vendorId: string; name: string; local: boolean; skillMatch: boolean; skills: string[]; perShopRate: number; total: number; perShop: number; needsApproval: boolean }
+export interface SuggestVendor { vendorId: string; name: string; local: boolean; skillMatch: boolean; skills: string[]; perShopRate: number; total: number; perShop: number; needsApproval: boolean; shopsPerDay?: number | null; days?: number | null; nearKm?: number | null; covers?: boolean; rateSource?: "VENDOR" | "COMPANY"; pendingRate?: number | null; tags?: string[]; registered?: boolean; place?: string | null }
 export interface SuggestProposal {
-  key: string; name: string; district: string; towns: string[]; shops: number; located: number; distanceKm: number; routeKm: number;
-  inHouse: { total: number; perShop: number; needsApproval: boolean; days: number; nights: number; travel: number; food: number; stay: number };
+  key: string; name: string; district: string; towns: string[]; siteIds: string[]; shops: number; located: number; distanceKm: number; routeKm: number;
+  inHouse: { total: number; perShop: number; needsApproval: boolean; days: number; nights: number; travel: number; local: number; food: number; stay: number };
   vendors: SuggestVendor[];
   zohoNearby?: ZohoNearby[];
   recommended: { channel: Channel; vendorId: string | null; vendorName: string | null; total: number; perShop: number };
@@ -221,6 +224,20 @@ export interface SuggestProposal {
 export interface Verification { total: number; verified: number; unverified: number; noAddress: number; allVerified: boolean }
 export interface ZohoNearby { zohoContactId: string; vendorNo?: string | null; name: string; city: string; mobile?: string | null; ratePerShop: number | null; match: "AREA" | "DISTRICT" }
 export const useReadiness = (pid: string) => useQuery({ queryKey: [...key(pid), "readiness"], queryFn: () => api<Verification>(`/projects/${pid}/cost/readiness`), enabled: !!pid, refetchInterval: 30_000 });
-export interface SuggestResult { applied: boolean; verification?: Verification; groupBy: "area" | "district"; proposals: SuggestProposal[]; totals: { shops: number; areas: number; suggested: number; allInHouse: number; allVendor: number; inHouseShops: number; vendorShops: number } }
+export interface SuggestResult { unlocated?: number; base?: { name: string; lat: number; lng: number; isDefault: boolean }; applied: boolean; verification?: Verification; groupBy: "area" | "district"; proposals: SuggestProposal[]; totals: { shops: number; areas: number; suggested: number; allInHouse: number; allVendor: number; inHouseShops: number; vendorShops: number } }
+export type PlannerMode = "BOTH" | "VENDOR" | "IN_HOUSE";
+export interface PlanShop { id: string; name: string; location: string; district: string; planArea: string | null; lat: number | null; lng: number | null }
+export interface PlanHistoryRow { _id: string; action: string; reason?: string; at: string; user?: { name?: string; role?: string } | null; changes: { field: string; oldValue: unknown; newValue: unknown }[] }
+export const usePlanShops = (pid: string, enabled = true) => useQuery({ queryKey: [...key(pid), "shops"], queryFn: () => api<PlanShop[]>(`/projects/${pid}/cost/shops`), enabled: enabled && !!pid });
+export const usePlanHistory = (pid: string, enabled = true) => useQuery({ queryKey: [...key(pid), "history"], queryFn: () => api<PlanHistoryRow[]>(`/projects/${pid}/cost/history`), enabled: enabled && !!pid });
+export interface BasePlace { _id: string; name: string; lat: number; lng: number }
+export const useBases = () => useQuery({ queryKey: ["cost-bases"], queryFn: () => api<BasePlace[]>("/base-locations"), staleTime: 60_000 });
+export const findPlace = (address: string) => api<{ lat: number; lng: number; exact: boolean; quality: string }>("/base-locations/find", { method: "POST", body: JSON.stringify({ address }) });
+export function useAddBase() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (b: { name: string; lat: number; lng: number }) => api<BasePlace>("/base-locations", { method: "POST", body: JSON.stringify(b) }), onSuccess: () => qc.invalidateQueries({ queryKey: ["cost-bases"] }) });
+}
+export const useChoosePlan = (pid: string) => usePlanMutation(pid, (b: { areaKey: string; channel: Channel; vendorId?: string }) => post(`/projects/${pid}/cost/choose`, b));
+export const useEditPlanShops = (pid: string) => usePlanMutation(pid, (b: { areaKey: string; add: string[]; remove: string[]; reason: string }) => post(`/projects/${pid}/cost/edit-shops`, b));
 export const useSuggestPlan = (pid: string) =>
-  usePlanMutation(pid, (b: { skills: string[]; requireSkills: boolean; apply: boolean; groupBy: "area" | "district" }) => post<SuggestResult>(`/projects/${pid}/cost/suggest`, b));
+  usePlanMutation(pid, (b: { skills: string[]; requireSkills: boolean; apply: boolean; groupBy: "area" | "district"; mode?: PlannerMode }) => post<SuggestResult>(`/projects/${pid}/cost/suggest`, b));

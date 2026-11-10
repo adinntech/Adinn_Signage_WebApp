@@ -84,6 +84,20 @@
 
 html {
   height: 100%;
+  /* Every size in the app is in rem, so scaling the root scales all pages (login included): smaller on laptops, larger on big monitors. */
+  font-size: 17.5px;
+}
+@media (max-width: 639px) {
+  html { font-size: 18px; } /* phones: keep touch-friendly text */
+}
+@media (min-width: 1536px) {
+  html { font-size: 18.5px; }
+}
+@media (min-width: 1920px) {
+  html { font-size: 18px; }
+}
+@media (min-width: 2560px) {
+  html { font-size: 22px; }
 }
 
 body {

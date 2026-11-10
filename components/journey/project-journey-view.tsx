@@ -1,5 +1,6 @@
 "use client";
 
+import { PlanHistory } from "@/components/ops/plan/pre-setup";
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -77,6 +78,11 @@ export function ProjectJourneyView() {
       </Card>
 
       <JourneySummary journey={j} onOpen={setPicked} />
+
+      <Card className="overflow-hidden">
+        <h2 className="border-b border-border px-4 py-3 text-sm font-semibold text-navy">Recce planning history <span className="font-normal text-muted-foreground">· suggestions, shop edits and who does each area</span></h2>
+        <PlanHistory projectId={j.project._id} />
+      </Card>
 
       <Tabs
         idPrefix="journey-view"

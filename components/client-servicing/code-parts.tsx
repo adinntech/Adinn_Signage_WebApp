@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MailCheck, Paperclip } from "lucide-react";
+import { History, MailCheck, Paperclip } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,7 +11,8 @@ import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { evidenceLink, useConfirmCode, useRejectCode, CODE_LABEL, STATUS_LABEL, type CodeKind, type CodeReply, type CodeStatus, type KindState } from "@/lib/api/codeRequests";
+import { formatDateTime } from "@/lib/format";
+import { evidenceLink, useConfirmCode, useRejectCode, CODE_LABEL, STATUS_LABEL, type CodeKind, type CodeReply, type CodeReplyEntry, type CodeStatus, type KindState } from "@/lib/api/codeRequests";
 
 const STATUS_TONE: Record<CodeStatus, Tone> = { DRAFT: "neutral", PENDING_CONFIRMATION: "warning", CONFIRMED: "success", REJECTED: "danger", FAILED: "danger" };
 export const CodeStatusBadge = ({ status }: { status: CodeStatus }) => <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>;
@@ -44,21 +45,72 @@ export function ReplyNotice({ reply }: { reply: CodeReply }) {
   );
 }
 
-/** Enter the real code that came back. Never generated here. */
-export function ConfirmCodeDialog({ orderId, kind, reply, onClose }: { orderId: string; kind: CodeKind | null; /** The reply mail read for this request: its code is filled in for the person to check. */ reply?: CodeReply | null; onClose: () => void }) {
+/** Estimate numbers typed as "EST-020456, est 020457" become EST-020456, EST-020457 (each once). null: something is not an estimate number. */
+export function parseEstimates(text: string): string[] | null {
+  const parts = text.split(/[\s,;]+/).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    const m = /^(?:EST)?-?(\d{3,10})$/i.exec(p);
+    if (!m) return null;
+    const e = `EST-${m[1]}`;
+    if (!out.includes(e)) out.push(e);
+  }
+  return out;
+}
+
+/** Left side of the confirm box: every reply read (newest first) and what the person has changed from what was read. */
+function HistoryPanel({ history, changes }: { history: CodeReplyEntry[]; changes: { field: string; from: string; to: string }[] }) {
+  const list = [...history].reverse();
+  return (
+    <aside className="space-y-3 rounded-xl border border-border bg-[#f7f9fd] p-3 text-xs md:max-h-[26rem] md:overflow-y-auto" aria-label="Edit history">
+      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-navy"><History className="size-3.5" aria-hidden /> History</p>
+      <section>
+        <p className="mb-1 font-semibold text-navy">Your changes (not saved yet)</p>
+        {changes.length ? (
+          <ul className="space-y-1.5">{changes.map((c) => <li key={c.field} className="rounded-md bg-white px-2 py-1.5"><span className="font-semibold capitalize">{c.field}</span><span className="block text-muted-foreground line-through">{c.from || "empty"}</span><span className="block font-medium text-navy">{c.to || "empty"}</span></li>)}</ul>
+        ) : <p className="text-muted-foreground">Nothing changed from what was read.</p>}
+      </section>
+      <section>
+        <p className="mb-1 font-semibold text-navy">Replies read ({list.length})</p>
+        {list.length ? (
+          <ul className="space-y-1.5">
+            {list.map((h, i) => (
+              <li key={i} className="rounded-md bg-white px-2 py-1.5">
+                <span className="font-mono font-semibold text-navy">{h.detectedCode ?? "No code found"}</span>
+                {!!h.estimates?.length && <span className="block font-mono text-muted-foreground">{h.estimates.join(", ")}</span>}
+                <span className="block text-muted-foreground">{h.from} · {formatDateTime(h.receivedAt ?? h.at)}{i === 0 && list.length > 1 ? " · latest, shown" : ""}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-muted-foreground">No reply read yet.</p>}
+      </section>
+    </aside>
+  );
+}
+
+/** Enter the real code that came back. Never generated here. Everything read from the reply is filled in and can be edited; the changes are kept. */
+export function ConfirmCodeDialog({ orderId, kind, reply, history, onClose }: { orderId: string; kind: CodeKind | null; /** The reply mail read for this request: its code is filled in for the person to check. */ reply?: CodeReply | null; /** Every reply read for it, shown on the left. */ history?: CodeReplyEntry[]; onClose: () => void }) {
   const toast = useToast();
   const confirm = useConfirmCode(orderId);
   const [code, setCode] = useState(reply?.detectedCode ?? "");
-  const [note, setNote] = useState(reply ? `From the reply of ${reply.from}${reply.estimates?.length ? `. Estimates: ${reply.estimates.join(", ")}` : ""}` : "");
+  const [est, setEst] = useState((reply?.estimates ?? []).join(", "));
+  const [note, setNote] = useState(reply ? `From the reply of ${reply.from}` : "");
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
+  const [estError, setEstError] = useState("");
   if (!kind) return null;
+  const fetchedEst = (reply?.estimates ?? []).join(", ");
+  const nowEst = kind === "PROJECT_CODE" ? (parseEstimates(est) ?? []).join(", ") : "";
+  const changes = reply ? [...(code !== (reply.detectedCode ?? "") ? [{ field: "code", from: reply.detectedCode ?? "", to: code }] : []), ...(kind === "PROJECT_CODE" && nowEst !== fetchedEst ? [{ field: "estimates", from: fetchedEst, to: nowEst }] : [])] : [];
   const submit = async () => {
     const e = codeError(kind, code);
     setError(e);
+    const estimates = kind === "PROJECT_CODE" ? parseEstimates(est) : [];
+    if (estimates === null) return setEstError("Estimate numbers look like EST-020456, separated by commas");
+    setEstError("");
     if (e) return;
     try {
-      await confirm.mutateAsync({ kind, code, evidenceNote: note.trim() || undefined, files });
+      await confirm.mutateAsync({ kind, code, evidenceNote: note.trim() || undefined, ...(kind === "PROJECT_CODE" ? { estimates: estimates ?? [] } : {}), files });
       toast(`${CODE_LABEL[kind]} confirmed`);
       onClose();
     } catch (err) {
@@ -71,6 +123,7 @@ export function ConfirmCodeDialog({ orderId, kind, reply, onClose }: { orderId: 
       onOpenChange={(o) => !o && onClose()}
       title={`Confirm ${CODE_LABEL[kind]}`}
       description="Enter the code exactly as the authorised team sent it back."
+      className={reply || history?.length ? "max-w-3xl" : undefined}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -82,17 +135,25 @@ export function ConfirmCodeDialog({ orderId, kind, reply, onClose }: { orderId: 
         </>
       }
     >
-      <div className="space-y-4">
+      <div className={history?.length || reply ? "grid gap-4 md:grid-cols-[15rem_1fr]" : ""}>
+      {(history?.length || reply) && <HistoryPanel history={history ?? []} changes={changes} />}
+      <div className="min-w-0 space-y-4">
         {reply && <ReplyNotice reply={reply} />}
         <Field label={CODE_LABEL[kind]} htmlFor="confirm-code" required error={error}>
           <Input id="confirm-code" autoFocus inputMode={kind === "PROJECT_CODE" ? "numeric" : "text"} value={code} aria-invalid={!!error} placeholder={kind === "PROJECT_CODE" ? "8 digits" : "e.g. CLI-1234"} onChange={(e) => setCode(cleanCode(kind, e.target.value))} />
         </Field>
+        {kind === "PROJECT_CODE" && (
+          <Field label="Estimate numbers (optional)" htmlFor="confirm-est" error={estError} hint="From the reply. Edit if needed: EST-020456, EST-020457">
+            <Input id="confirm-est" value={est} maxLength={400} aria-invalid={!!estError} placeholder="EST-020456, EST-020457" onChange={(e) => { setEst(e.target.value); setEstError(""); }} />
+          </Field>
+        )}
         <Field label="Evidence (optional)" htmlFor="confirm-note" hint="Where it came from: reply mail, reference number, who confirmed.">
           <Textarea id="confirm-note" className="min-h-16" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         <Field label="Evidence files (optional)" htmlFor="confirm-files" hint="Reply mail, screenshot or PDF. Up to 5 files, 10 MB each.">
           <FileUploader id="confirm-files" compact multiple maxSizeMb={10} accept=".pdf,.jpg,.jpeg,.png,.webp" files={files} onChange={(l) => setFiles(l.slice(0, 5))} />
         </Field>
+      </div>
       </div>
     </Modal>
   );

@@ -2,14 +2,14 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Horizontal numbered step indicator. Completed steps are clickable via `onStep`. */
-export function Stepper({ steps, current, onStep }: { steps: string[]; current: number; onStep?: (i: number) => void }) {
+export function Stepper({ steps, current, onStep, fill }: { steps: string[]; current: number; onStep?: (i: number) => void; /** Every step takes the same share of the width, so the row looks even. */ fill?: boolean }) {
   return (
-    <ol className="flex items-center gap-1 overflow-x-auto pb-1" aria-label="Progress">
+    <ol className={cn("flex items-center gap-1 overflow-x-auto pb-1", fill && "w-full")} aria-label="Progress">
       {steps.map((s, i) => {
         const done = i < current;
         const active = i === current;
         return (
-          <li key={s} className="flex items-center gap-1" aria-current={active ? "step" : undefined}>
+          <li key={s} className={cn("flex items-center gap-1", fill && (i < steps.length - 1 ? "min-w-fit flex-1" : "shrink-0"))} aria-current={active ? "step" : undefined}>
             <button
               type="button"
               disabled={!done || !onStep}
@@ -29,7 +29,7 @@ export function Stepper({ steps, current, onStep }: { steps: string[]; current: 
               <span className={cn("whitespace-nowrap text-xs font-medium", active ? "text-navy" : "text-muted-foreground")}>{s}</span>
             </button>
             {i < steps.length - 1 && (
-              <span aria-hidden className={cn("mx-1 h-0.5 w-6 shrink-0 rounded", done ? "bg-finance" : "bg-border")} />
+              <span aria-hidden className={cn("mx-1 h-0.5 shrink-0 rounded", fill ? "w-auto min-w-6 flex-1" : "w-6", done ? "bg-finance" : "bg-border")} />
             )}
           </li>
         );

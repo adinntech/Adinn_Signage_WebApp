@@ -5,7 +5,7 @@ import { animate, useReducedMotion, motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
+import { Loader2, type LucideIcon } from "lucide-react";
 
 function CountUp({ value }: { value: number }) {
   const ref = React.useRef<HTMLSpanElement>(null);
@@ -84,7 +84,7 @@ export function KpiCard({
         <Icon className="size-5" aria-hidden />
       </span>
       <span className="min-w-0 text-left">
-        <span className={cn("block text-3xl font-bold leading-none tabular-nums", c.value)}>{value ?? "-"}</span>
+        {loading ? <span className="my-0.5 flex h-8 items-center gap-2" role="status" aria-label={`Loading ${label}`}><Loader2 className={cn("size-5 animate-spin", c.value)} aria-hidden /><Skeleton className="h-6 w-10" /></span> : <span className={cn("block text-3xl font-bold leading-none tabular-nums", c.value)}>{value ?? "-"}</span>}
         <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">{label}</span>
       </span>
     </>
