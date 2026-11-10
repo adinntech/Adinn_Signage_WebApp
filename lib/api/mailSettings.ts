@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
-export type RoutingKey = "PROJECT_CODE" | "CLIENT_CODE" | "VENDOR_REGISTRATION";
+export type RoutingKey = "PROJECT_CODE" | "CLIENT_CODE" | "VENDOR_REGISTRATION" | "VENDOR_RATE_APPROVAL";
 /** Who one kind of request email goes to (Admin panel > Mail settings). */
 export interface MailRouting {
   key: RoutingKey;

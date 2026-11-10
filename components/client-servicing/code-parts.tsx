@@ -37,6 +37,7 @@ export function ReplyNotice({ reply }: { reply: CodeReply }) {
     <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
       <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
       {reply.detectedCode ? <p className="mt-1">Code found: <span className="font-mono font-bold">{reply.detectedCode}</span>. Check it against the reply, then confirm.</p> : <p className="mt-1 text-muted-foreground">No single code could be read from the reply. Type the code from the mail.</p>}
+      {!!reply.estimates?.length && <p className="mt-1">Estimates: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span></p>}
       {reply.snippet && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">&ldquo;{reply.snippet}&rdquo;</p>}
       {reply.autoConfirmError && <p className="mt-1 text-xs text-danger">Not confirmed automatically: {reply.autoConfirmError}</p>}
     </div>
@@ -48,7 +49,7 @@ export function ConfirmCodeDialog({ orderId, kind, reply, onClose }: { orderId: 
   const toast = useToast();
   const confirm = useConfirmCode(orderId);
   const [code, setCode] = useState(reply?.detectedCode ?? "");
-  const [note, setNote] = useState(reply ? `From the reply of ${reply.from}` : "");
+  const [note, setNote] = useState(reply ? `From the reply of ${reply.from}${reply.estimates?.length ? `. Estimates: ${reply.estimates.join(", ")}` : ""}` : "");
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   if (!kind) return null;

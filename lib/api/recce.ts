@@ -57,7 +57,14 @@ export interface RecceState {
   project: { _id: string; code: string; status: string } | null;
   missing: string[];
   mail: { enabled: boolean; from: string | null };
-  draft: { to: string[]; cc: string[]; subject: string; body: string };
+  draft: { to: string[]; cc: string[]; subject: string; body: string; facts?: RecceMailFacts };
+}
+
+/** What the request email prints on its own (client, project, contacts); the editor only holds the note. */
+export interface RecceMailFacts {
+  existing: boolean;
+  clientId: string;
+  sections: { title: string; rows: { label: string; value: string }[]; table: { columns: string[]; rows: string[][] } | null }[];
 }
 
 export const PRIORITIES = { LOW: "Low", MEDIUM: "Medium", HIGH: "High", URGENT: "Urgent" } as const;

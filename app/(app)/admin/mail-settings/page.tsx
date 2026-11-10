@@ -1,5 +1,6 @@
-import { MailSettingsPage } from "@/components/admin/mail-settings-page";
+import { redirect } from "next/navigation";
 
+/** Mail settings now live inside Mail contacts; keep old links working. */
 export default function Page() {
-  return <MailSettingsPage />;
+  redirect("/admin/mail-contacts");
 }

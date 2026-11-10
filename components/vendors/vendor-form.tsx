@@ -377,7 +377,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Service areas" htmlFor="v-areas" error={err("serviceAreas")} hint="Districts / areas, comma separated" className="sm:col-span-2"><Input id="v-areas" value={f.serviceAreas} onChange={set("serviceAreas")} placeholder="Madurai, Theni, Dindigul" /></Field>
           <Field label="Rate per shop (₹)" htmlFor="v-rate" error={err("ratePerShop")} hint="Blank = company rate"><Input id="v-rate" format="decimal" value={f.ratePerShop} onChange={set("ratePerShop")} /></Field>
-          <Field label="Far-distance rate per shop (₹)" htmlFor="v-far" error={err("farRatePerShop")} hint="Blank = company far rate"><Input id="v-far" format="decimal" value={f.farRatePerShop} onChange={set("farRatePerShop")} /></Field>
+          <Field label="Travelling cost per shop (₹)" htmlFor="v-far" error={err("farRatePerShop")} hint="Blank = company travelling cost"><Input id="v-far" format="decimal" value={f.farRatePerShop} onChange={set("farRatePerShop")} /></Field>
           <Field label="Notes" htmlFor="v-notes" className="sm:col-span-2"><Textarea id="v-notes" rows={2} value={f.notes} onChange={set("notes")} /></Field>
         </div>
       )}

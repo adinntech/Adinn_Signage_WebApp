@@ -1,23 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Mail, MailCheck, RefreshCw, Save, Store, UserRound, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, Mail, MailCheck, RefreshCw, Save, Store, UserRound, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DragCarousel } from "@/components/ui/drag-carousel";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { EmailTagInput } from "@/components/mail/email-tag-input";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { useCheckReplies, useMailRouting, useReplyStatus, useSaveMailRouting, type MailRouting, type RoutingKey } from "@/lib/api/mailSettings";
 
 const TONE: Record<RoutingKey, { icon: LucideIcon; bar: string }> = {
   PROJECT_CODE: { icon: Building2, bar: "from-[#1d4ed8] to-[#2563eb]" },
   CLIENT_CODE: { icon: UserRound, bar: "from-[#0f766e] to-[#0d9488]" },
   VENDOR_REGISTRATION: { icon: Store, bar: "from-[#6d28d9] to-[#9333ea]" },
+  VENDOR_RATE_APPROVAL: { icon: BadgeCheck, bar: "from-[#ea580c] to-[#f97316]" },
 };
+/** A kind of mail the server adds later still renders, in the default navy tone. */
+const FALLBACK_TONE = { icon: Mail, bar: "from-[#102449] to-[#1e3a6e]" };
+/** Only the project and client code mails read a code from the reply. */
+const READS_CODE = new Set<RoutingKey>(["PROJECT_CODE", "CLIENT_CODE"]);
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** One card per kind of request email: who it goes to, who is copied, and the mailbox the replies are read from. */
@@ -28,7 +33,7 @@ export function RoutingCard({ r, canEdit }: { r: MailRouting; canEdit: boolean }
   const [v, setV] = useState(saved);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const dirty = JSON.stringify(v) !== JSON.stringify(saved);
-  const { icon: Icon, bar } = TONE[r.key];
+  const { icon: Icon, bar } = TONE[r.key] ?? FALLBACK_TONE;
 
   function submit() {
     const e: Record<string, string> = {};
@@ -68,10 +73,10 @@ export function RoutingCard({ r, canEdit }: { r: MailRouting; canEdit: boolean }
         <Field label="Bcc" htmlFor={`${r.key}-bcc`} error={errors.bcc}>
           <EmailTagInput id={`${r.key}-bcc`} value={v.bcc} onChange={(bcc) => setV({ ...v, bcc })} placeholder="Optional, hidden from the others" max={20} disabled={!canEdit} invalid={!!errors.bcc} />
         </Field>
-        <Field label="Reply mailbox" htmlFor={`${r.key}-reply`} hint="Replies go here. The code in the reply is read from this mailbox." error={errors.replyTo}>
+        <Field label="Reply mailbox" htmlFor={`${r.key}-reply`} hint={r.key === "VENDOR_RATE_APPROVAL" ? "Replies go here. APPROVED or NOT APPROVED in the reply is read from this mailbox: approved applies the amount, not approved applies the company rate." : "Replies go here. The code in the reply is read from this mailbox."} error={errors.replyTo}>
           <Input id={`${r.key}-reply`} type="email" maxLength={200} disabled={!canEdit} value={v.replyTo} onChange={(e) => setV({ ...v, replyTo: e.target.value.trim().toLowerCase() })} aria-invalid={!!errors.replyTo} placeholder="e.g. signage-codes@adinn.co.in" />
         </Field>
-        {r.key !== "VENDOR_REGISTRATION" && (
+        {READS_CODE.has(r.key) && (
           <label className="flex items-start gap-2 text-sm text-navy">
             <input type="checkbox" className="mt-0.5 size-4 accent-royal" disabled={!canEdit} checked={v.autoConfirm} onChange={(e) => setV({ ...v, autoConfirm: e.target.checked })} />
             <span>Confirm the code on its own<span className="block text-xs text-muted-foreground">Only when the reply comes from one of the recipients and holds exactly one valid code. Otherwise a person verifies it.</span></span>
@@ -85,21 +90,6 @@ export function RoutingCard({ r, canEdit }: { r: MailRouting; canEdit: boolean }
         )}
       </div>
     </section>
-  );
-}
-
-/** Admin panel: the To / Cc / Bcc each request email opens with. Changing them does not touch emails already sent. */
-export function MailSettingsPage() {
-  const { can } = useAuth();
-  const q = useMailRouting();
-  const canEdit = can("mail:manage");
-  if (q.isPending) return <RowsSkeleton rows={6} className="p-4" />;
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not load the mail settings" />;
-  return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <RepliesPanel canEdit={canEdit} />
-      <MailSettingsCards routing={q.data} canEdit={canEdit} />
-    </div>
   );
 }
 
@@ -123,19 +113,25 @@ function RepliesPanel({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-function MailSettingsCards({ routing, canEdit }: { routing: MailRouting[]; canEdit: boolean }) {
+/** Who each request email goes to (shown inside Mail contacts). Changing it does not touch emails already sent. */
+export function MailRoutingSection({ canEdit }: { canEdit: boolean }) {
+  const q = useMailRouting();
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <header>
-        <h1 className="flex items-center gap-2 text-xl font-bold text-navy"><Mail className="size-5 text-royal" aria-hidden /> Mail settings</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">Who each request email goes to. These fill the To, Cc and Bcc boxes when a person opens the mail; they can still change them for one mail.</p>
-      </header>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {routing.map((r) => (
-          <RoutingCard key={`${r.key}-${r.to.join()}-${r.cc.join()}-${r.bcc.join()}-${r.replyTo}-${r.autoConfirm}-${r.isDefault}`} r={r} canEdit={canEdit} />
-        ))}
-      </div>
+    <section className="space-y-3">
+      <p className="text-sm text-muted-foreground">Who each request email goes to. These fill the To, Cc and Bcc boxes when a person opens the mail; they can still change them for one mail.</p>
+      <RepliesPanel canEdit={canEdit} />
+      {q.isPending ? <RowsSkeleton rows={5} className="p-4" />
+        : q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not load the recipients" />
+        : (
+          <DragCarousel label="Request email recipients">
+            {q.data.map((r) => (
+              <div key={`${r.key}-${r.to.join()}-${r.cc.join()}-${r.bcc.join()}-${r.replyTo}-${r.autoConfirm}-${r.isDefault}`} className="w-[min(88vw,26rem)] shrink-0 snap-start">
+                <RoutingCard r={r} canEdit={canEdit} />
+              </div>
+            ))}
+          </DragCarousel>
+        )}
       {!canEdit && <p className="rounded-lg bg-[#eef4ff] p-3 text-sm text-navy">Only an administrator can change these.</p>}
-    </div>
+    </section>
   );
 }

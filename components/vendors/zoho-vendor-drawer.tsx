@@ -55,7 +55,7 @@ export function ZohoVendorDrawer({ vendor: v, canWrite, onCost, onClose }: { ven
               <>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-lg bg-[#f6f0ff] p-3"><p className="text-xs text-muted-foreground">Price per shop</p><p className="font-bold text-vendor">₹{v.price.ratePerShop}</p></div>
-                  <div className="rounded-lg bg-[#f6f0ff] p-3"><p className="text-xs text-muted-foreground">Far distance price</p><p className="font-bold text-vendor">{v.price.farRatePerShop != null ? `₹${v.price.farRatePerShop}` : "Company rate"}</p></div>
+                  <div className="rounded-lg bg-[#f6f0ff] p-3"><p className="text-xs text-muted-foreground">Travelling cost</p><p className="font-bold text-vendor">{v.price.farRatePerShop != null ? `₹${v.price.farRatePerShop}` : "Company rate"}</p></div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">{(v.price.skills ?? []).length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2.5 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">No skills added</span>}</div>
               </>

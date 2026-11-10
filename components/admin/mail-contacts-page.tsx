@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { BookUser, Building2, CheckCircle2, Download, FolderInput, Pencil, Plus, Search, Store, Trash2, Upload, UserRound, XCircle } from "lucide-react";
+import { TabPanel, Tabs } from "@/components/ui/tabs";
+import { BookUser, CheckCircle2, Download, FolderInput, Mail, Pencil, Plus, Search, Trash2, Upload, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -12,56 +13,37 @@ import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { SortHeader, nextSort, type SortState } from "@/components/ui/sort-header";
 import { ErrorState, RowsSkeleton } from "@/components/ui/states";
-import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { MailRoutingSection } from "./mail-routing";
 import {
   downloadContactSample, useAddContact, useBulkContacts, useContactGroups, useDeleteContact, useEditContact, useImportContacts, useMailContacts,
   type BulkInput, type ContactSortKey, type ImportResult, type MailContact,
 } from "@/lib/api/mailContacts";
-import { useMailRouting, type RoutingKey } from "@/lib/api/mailSettings";
-import { RoutingCard } from "./mail-settings-page";
 
-type Section = "BOOK" | RoutingKey;
+type Section = "BOOK" | "RECIPIENTS";
 const SECTIONS = [
   { key: "BOOK", label: "Address book", icon: BookUser },
-  { key: "PROJECT_CODE", label: "Project code mail", icon: Building2 },
-  { key: "CLIENT_CODE", label: "Client code mail", icon: UserRound },
-  { key: "VENDOR_REGISTRATION", label: "Vendor registration mail", icon: Store },
+  { key: "RECIPIENTS", label: "Request email recipients", icon: Mail },
 ];
 
-/** Admin panel: the address book behind the To / Cc / Bcc suggestions, and who each request email goes to (To and Cc kept separately). */
+/** Admin panel: the address book behind the To / Cc / Bcc suggestions, and who each request email goes to. */
 export function MailContactsPage() {
   const { can } = useAuth();
-  const canEdit = can("mail:manage");
   const [section, setSection] = useState<Section>("BOOK");
+  const canEdit = can("mail:manage");
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-5">
       <header>
         <h1 className="flex items-center gap-2 text-xl font-bold text-navy"><BookUser className="size-5 text-royal" aria-hidden /> Mail contacts</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">The address book behind the suggestions, and the To and Cc of the project code, client code and vendor registration emails. Nothing is fixed in the code.</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">Who each request email goes to, and the address book behind the To, Cc and Bcc suggestions. Nothing is fixed in the code.</p>
       </header>
       <Tabs label="Mail contacts sections" value={section} onChange={(k) => setSection(k as Section)} tabs={SECTIONS} />
       <TabPanel k={section}>
-        {section === "BOOK" ? <AddressBook canEdit={canEdit} /> : <RoutingSection routingKey={section} canEdit={canEdit} />}
+        {section === "BOOK" ? <AddressBook canEdit={canEdit} /> : <MailRoutingSection canEdit={canEdit} />}
       </TabPanel>
-    </div>
-  );
-}
-
-/** The To / Cc / Bcc of one kind of request email; the boxes suggest addresses from the address book. */
-function RoutingSection({ routingKey, canEdit }: { routingKey: RoutingKey; canEdit: boolean }) {
-  const q = useMailRouting();
-  if (q.isPending) return <RowsSkeleton rows={5} className="p-4" />;
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not load the recipients" />;
-  const r = q.data.find((x) => x.key === routingKey);
-  if (!r) return null;
-  return (
-    <div className="max-w-2xl space-y-3">
-      <RoutingCard key={`${r.key}-${r.to.join()}-${r.cc.join()}-${r.bcc.join()}-${r.replyTo}-${r.autoConfirm}-${r.isDefault}`} r={r} canEdit={canEdit} />
-      {!canEdit && <p className="rounded-lg bg-[#eef4ff] p-3 text-sm text-navy">Only an administrator can change these.</p>}
     </div>
   );
 }

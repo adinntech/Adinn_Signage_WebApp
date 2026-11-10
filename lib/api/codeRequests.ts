@@ -33,6 +33,8 @@ export interface CodeReply {
   receivedAt: string;
   snippet?: string;
   detectedCode?: string;
+  /** Estimate numbers (EST-20234) sent with a project code. */
+  estimates?: string[];
   autoConfirmError?: string;
 }
 export interface CodeRequestRow {

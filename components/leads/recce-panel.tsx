@@ -266,12 +266,39 @@ function CodeRequestComposer({
   /** An email already went (successfully): the button reads Resend Email. */
   resend: boolean;
 }) {
+  const facts = r.mail.enabled ? r.draft.facts : undefined;
   return (
     <div className="space-y-4">
+      {facts && facts.sections.length > 0 && (
+        <section className="rounded-xl border border-border bg-[#f8fafd] p-4" aria-label="Details the email prints">
+          <h3 className="text-sm font-bold text-navy">Printed in the email automatically</h3>
+          <p className="mb-3 text-xs text-muted-foreground">{facts.existing ? `Existing client, Client ID ${facts.clientId || "-"}.` : "New client: the Client ID is requested with the codes."} These details are not typed. Write only extra instructions in the Email Body below.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {facts.sections.map((s) => (
+              <div key={s.title} className="min-w-0 rounded-lg border border-border bg-surface p-3">
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-royal">{s.title}</p>
+                {s.rows.length > 0 && (
+                  <dl className="space-y-1 text-xs">
+                    {s.rows.map((x) => <div key={x.label} className="flex gap-2"><dt className="w-32 shrink-0 text-muted-foreground">{x.label}</dt><dd className="min-w-0 break-words font-semibold text-navy">{x.value}</dd></div>)}
+                  </dl>
+                )}
+                {s.table && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead><tr>{s.table.columns.map((c) => <th key={c} className="pr-3 pb-1 font-semibold text-muted-foreground">{c}</th>)}</tr></thead>
+                      <tbody>{s.table.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j} className="pr-3 py-0.5 font-semibold text-navy">{cell}</td>)}</tr>)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <EmailComposer
         idPrefix="recce-mail"
         compact
-        persistKey={`${r.orderId}:email`}
+        persistKey={`${r.orderId}:email-note`}
         sendLabel={resend ? "Resend Email" : "Send Email"}
         notConfigured={'The signage email API is not configured on the server (SIGNAGE_MAIL_API_URL / SIGNAGE_MAIL_API_KEY). Sending will be recorded as "Not sent" until it is set up.'}
         orderId={r.orderId}

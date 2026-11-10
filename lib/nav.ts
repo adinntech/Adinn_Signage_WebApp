@@ -20,7 +20,6 @@ import {
   MessagesSquare,
   FileCheck2,
   BadgeCheck,
-  Mail,
   BookUser,
   type LucideIcon,
 } from "lucide-react";
@@ -118,7 +117,6 @@ export const NAV: NavItem[] = [
   { label: "Master Data", icon: Database, href: "/master-data", permission: "users:manage" },
   { label: "Import from Zoho", icon: CloudDownload, href: "/admin/zoho-import", permission: "zoho:sync" },
   { label: "Cost Rates", icon: ReceiptIndianRupee, href: "/admin/cost-rates", permission: "finance:manage" },
-  { label: "Mail Settings", icon: Mail, href: "/admin/mail-settings", permission: "mail:manage" },
   { label: "Mail Contacts", icon: BookUser, href: "/admin/mail-contacts", permission: "mail:manage" },
   { label: "Recce Price Management", icon: ReceiptIndianRupee, href: "/recce-cost" },
   { label: "Settings", icon: Settings, href: "/settings" },

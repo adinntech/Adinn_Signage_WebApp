@@ -65,7 +65,7 @@ export interface Vendor {
   bank?: { accountName?: string; accountNo?: string; ifsc?: string };
   ratePerShop?: number;
   farRatePerShop?: number;
-  registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string } };
+  registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string }; reply?: { from: string; detectedVendorNo?: string } };
   createdBy?: { name?: string } | string | null;
   updatedBy?: { name?: string } | string | null;
   updatedAt?: string;
@@ -294,7 +294,11 @@ export function useDiscardRegistrationDraft(vendorId: string) {
 export const useSetVendorId = () => useVendorMutation(({ id, vendorNo }: { id: string; vendorNo: string }) => api<Vendor>(`/vendors/${id}/vendor-id`, { method: "POST", body: JSON.stringify({ vendorNo }) }));
 
 /** Vendor price management: price per shop of a Zoho vendor (typed in the list). */
-export interface ZohoPrice { ratePerShop: number | null; farRatePerShop: number | null; skills: string[]; source: "VENDOR" | "ZOHO" | null }
+/** `pending`: a typed cost above the company rate, waiting for the approver's reply (the old cost stays until then). */
+export interface PendingRate { requestId: string; ratePerShop: number | null; farRatePerShop: number | null; limitRate: number | null; limitFar: number | null }
+export interface ZohoPrice { ratePerShop: number | null; farRatePerShop: number | null; skills: string[]; source: "VENDOR" | "ZOHO" | null; pending?: PendingRate }
+/** The company rates (Admin > Cost Rates): a vendor cost above them is sent for approval. */
+export const useCompanyRates = () => useQuery({ queryKey: [...key, "company-rates"], queryFn: () => api<{ ratePerShop: number; farRatePerShop: number }>("/vendors/company-rates"), staleTime: 60_000 });
 export interface VendorSkill { _id: string; name: string }
 export const useVendorSkills = () => useQuery({ queryKey: [...key, "skills"], queryFn: () => api<VendorSkill[]>("/vendors/skills"), staleTime: 60_000 });
 export function useAddVendorSkill() {

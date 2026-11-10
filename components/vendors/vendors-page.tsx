@@ -17,7 +17,8 @@ import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
 import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoDirectory, useZohoDirectoryStatus, type Vendor, type VendorStatus, type VendorType, type ZohoVendorRow } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { SortHeader, nextSort, type SortState } from "@/components/ui/sort-header";
 import { cn } from "@/lib/utils";
 
 /** " · Name" for a populated user reference, or nothing. */
@@ -52,7 +53,10 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
   const [type, setType] = useState<VendorType | "">("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  const list = useVendors({ page, limit, q: dq || undefined, status: tab === "ALL" ? "" : tab, type, sort: "name" });
+  /** Newest created first by default; the Vendor, Created and Updated headers sort up or down. */
+  const [sort, setSort] = useState<SortState<"name" | "createdAt" | "updatedAt">>({ key: "createdAt", dir: "desc" });
+  const onSort = (k: "name" | "createdAt" | "updatedAt") => { setSort(nextSort(sort, k)); setPage(1); };
+  const list = useVendors({ page, limit, q: dq || undefined, status: tab === "ALL" ? "" : tab, type, sort: `${sort.dir === "desc" ? "-" : ""}${sort.key}` });
   /** Off: only the vendors registered here. On: the full Zoho list, fetched only now (never while the toggle is off). */
   const [zohoOn, setZohoOn] = useState(false);
   const [zview, setZview] = useState<ZohoVendorRow | null>(null);
@@ -71,10 +75,10 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
   /** The "Zoho vendors" toggle: off, Zoho is not called at all (no list, no count); on, the list is read and the vendors are counted. */
   const [browse, setBrowse] = useState(false);
   const signageOnly = signagePick ?? false;
-  const zohoStatus = useZohoDirectoryStatus(registration ? undefined : signageOnly, !registration && browse);
+  const zohoStatus = useZohoDirectoryStatus(registration ? undefined : signageOnly, !registration);
   const zoho = zohoStatus.data;
   const zc = zoho?.zoho;
-  const zsub = !browse ? "Switch on Zoho vendors to count" : zc?.error ? "Zoho could not be counted" : zc && !zc.ready ? `Counting in Zoho… ${zc.counted}` : signageOnly ? `Contact Code: ${zoho?.contactCode ?? "Signage"}` : "Every vendor in Zoho";
+  const zsub = zc?.error ? "Zoho could not be counted" : zc && !zc.ready ? `Counting in Zoho… ${zc.counted}` : signageOnly ? `Contact Code: ${zoho?.contactCode ?? "Signage"}` : "Every vendor in Zoho";
   const scopeName = signageOnly ? "Signage creditors" : "All Zoho vendors";
   const rows = list.data?.data ?? [];
   /** Upload vendor list and New vendor: registration page only, at the right corner. */
@@ -114,7 +118,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
         </div>
       </div>
 
-      {!registration && <VendorMaster canWrite={canWrite} signageOnly={signageOnly} onSignageOnly={(v) => { setSignagePick(v); setBrowse(true); }} browse={browse} onBrowse={setBrowse} costed={zoho?.costed ?? 0} contactCode={zoho?.contactCode} />}
+      {!registration && <VendorMaster canWrite={canWrite} signageOnly={signageOnly} onSignageOnly={(v) => setSignagePick(v)} browse={browse} onBrowse={setBrowse} costed={zoho?.costed ?? 0} contactCode={zoho?.contactCode} />}
 
       {registration && (
       <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
@@ -174,7 +178,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
           ) : (
             <table className="w-full min-w-[1100px] text-sm">
               <thead className="bg-[#eef4ff] text-left text-xs uppercase tracking-wide text-navy">
-                <tr><th className="px-4 py-3">Vendor</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Service area</th><th className="px-4 py-3 text-right">Rate / shop</th><th className="px-4 py-3 text-right">Shops</th><th className="px-4 py-3">Registration</th><th className="px-4 py-3">Created / updated</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                <tr><SortHeader col="name" label="Vendor" sort={sort} onSort={onSort} /><th className="px-4 py-3">Type</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Service area</th><th className="px-4 py-3 text-right">Rate / shop</th><th className="px-4 py-3 text-right">Shops</th><th className="px-4 py-3">Registration</th><SortHeader col="createdAt" label="Created" sort={sort} onSort={onSort} /><SortHeader col="updatedAt" label="Last updated" sort={sort} onSort={onSort} /><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.map((v) => (
@@ -187,13 +191,17 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
                     <td className="px-4 py-3 text-right tabular-nums">{v.allocatedShops ?? 0}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       {v.zohoVendorNo ? <span className="text-xs">Vendor ID <span className="font-mono font-semibold text-navy">{v.zohoVendorNo}</span></span>
-                        : v.registration?.mailSentAt ? <><span className="block text-xs text-approval">Mail sent · waiting for ID</span>{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> Enter vendor ID</button>}</>
+                        : v.registration?.mailSentAt ? <>{v.registration.reply ? <span className="block text-xs font-semibold text-finance">Reply received{v.registration.reply.detectedVendorNo ? <> · ID <span className="font-mono">{v.registration.reply.detectedVendorNo}</span></> : " · no ID found"}</span> : <span className="block text-xs text-approval">Mail sent · waiting for ID</span>}{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> {v.registration.reply?.detectedVendorNo ? "Check and save ID" : "Enter vendor ID"}</button>}</>
                         : v.source === "ZOHO" ? <span className="text-xs text-muted-foreground">From Zoho</span>
                         : <><span className="block text-xs text-muted-foreground">{v.registration?.draft?.savedAt ? "Mail draft saved" : "Mail not sent"}</span>{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setMailing(v)}><Mail className="size-3" aria-hidden /> {v.registration?.draft?.savedAt ? "Continue mail" : "Send mail"}</button>}</>}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-xs">
-                      <span className="block">Created {formatDate(v.createdAt)}{who(v.createdBy)}</span>
-                      <span className="block text-muted-foreground">Updated {formatDate(v.updatedAt ?? v.createdAt)}{who(v.updatedBy)}</span>
+                      <span className="block">{formatDateTime(v.createdAt)}</span>
+                      <span className="block text-muted-foreground">{who(v.createdBy).replace(/^ · /, "")}</span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs">
+                      <span className="block">{formatDateTime(v.updatedAt ?? v.createdAt)}</span>
+                      <span className="block text-muted-foreground">{who(v.updatedBy ?? v.createdBy).replace(/^ · /, "")}</span>
                     </td>
                     <td className="px-4 py-3"><Badge tone={STATUS_TONE[v.status]}>{VENDOR_STATUS_LABEL[v.status]}</Badge></td>
                     <td className="px-4 py-3">

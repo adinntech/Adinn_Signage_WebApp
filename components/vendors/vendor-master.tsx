@@ -13,7 +13,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { downloadZohoVendors, useAddVendorSkill, useSetZohoPrice, useVendorSkills, useZohoDirectory, type ZohoVendorRow } from "@/lib/api/vendors";
+import { downloadZohoVendors, useAddVendorSkill, useCompanyRates, useSetZohoPrice, useVendorSkills, useZohoDirectory, type ZohoVendorRow } from "@/lib/api/vendors";
 import { cn } from "@/lib/utils";
 import { ExportMenu } from "./export-menu";
 import { ZohoToggle } from "./zoho-toggle";
@@ -23,7 +23,7 @@ const money = (n: number | null) => (n == null ? "–" : `₹${n}`);
 
 /**
  * Vendor master. Search the vendors in Zoho (read live from Zoho Books, nothing of Zoho's list is stored: by vendor name, phone or e-mail), add
- * the cost of the vendor you found (price per shop, far-distance price, skills), and only vendors with a cost are listed
+ * the cost of the vendor you found (price per shop, travelling cost, skills), and only vendors with a cost are listed
  * below. Only those vendors are stored. A registered vendor keeps its cost on the vendor (used by allocation and costing); a Zoho
  * vendor not registered yet keeps it here and it carries over when it is registered.
  */
@@ -119,7 +119,7 @@ function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { 
                     <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
                     <td className="px-4 py-3 text-xs">{v.gstin ?? "–"}<span className="block text-muted-foreground">{v.pan ?? ""}</span></td>
                     <td className="max-w-36 truncate px-4 py-3">{v.city || "–"}</td>
-                    <td className="px-4 py-3">{v.price.ratePerShop != null ? <Badge tone="success"><Check className="mr-1 size-3" aria-hidden />{money(v.price.ratePerShop)}</Badge> : <span className="text-xs text-muted-foreground">Not added</span>}</td>
+                    <td className="px-4 py-3">{v.price.ratePerShop != null ? <Badge tone="success"><Check className="mr-1 size-3" aria-hidden />{money(v.price.ratePerShop)}</Badge> : <span className="text-xs text-muted-foreground">Not added</span>}{v.price.pending && <span className="mt-1 block text-xs font-semibold text-approval" title={`Company rate ${money(v.price.pending.limitRate)} / travelling cost ${money(v.price.pending.limitFar)}. Waiting for the approver's reply (${v.price.pending.requestId}).`}>Waiting for approval: {money(v.price.pending.ratePerShop)}{v.price.pending.farRatePerShop != null ? ` / travelling ${money(v.price.pending.farRatePerShop)}` : ""}</span>}</td>
                     <td className="px-4 py-3 text-right">{canWrite && <Button size="sm" {...(v.price.ratePerShop != null ? { variant: "outline" as const } : { className: "bg-vendor hover:bg-vendor/90" })} onClick={(e) => { e.stopPropagation(); onCost(v); }}><BadgeIndianRupee className="size-4" aria-hidden /> {v.price.ratePerShop != null ? "Edit cost" : "Add cost"}</Button>}</td>
                   </tr>
                 ))}
@@ -133,7 +133,12 @@ function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { 
   );
 }
 
-/** Only vendors whose cost was added. */
+/** Cost above the company rate, waiting for the approver's reply (old cost, if any, stays until then). */
+function PendingTag({ p }: { p: NonNullable<ZohoVendorRow["price"]["pending"]> }) {
+  return <span className="mt-1 block text-xs font-semibold text-approval" title={`Company rate ${money(p.limitRate)} / travelling cost ${money(p.limitFar)}. Request ${p.requestId}`}>Pending approval: {money(p.ratePerShop)}{p.farRatePerShop != null ? ` / ${money(p.farRatePerShop)}` : ""}</span>;
+}
+
+/** Only vendors whose cost was added, or is waiting for approval. */
 function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; onView: (v: ZohoVendorRow) => void; onEdit: (v: ZohoVendorRow) => void; onRemove: (v: ZohoVendorRow) => void }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim());
@@ -147,7 +152,7 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
         <span className="flex size-10 items-center justify-center rounded-xl bg-[#f1e6ff] text-vendor"><BadgeIndianRupee className="size-5" aria-hidden /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-bold text-navy">Vendors with cost <span className="font-normal text-muted-foreground">({list.data?.meta.total ?? 0})</span></h2>
-          <p className="text-xs text-muted-foreground">Price per shop, far-distance price and skills of the vendors you added.</p>
+          <p className="text-xs text-muted-foreground">Price per shop, travelling cost and skills of the vendors you added.</p>
         </div>
         <div className="relative min-w-52">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -161,11 +166,11 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
         ) : list.isError ? (
           <ErrorState error={list.error} onRetry={() => list.refetch()} />
         ) : rows.length === 0 ? (
-          <EmptyState title="No vendor has a cost yet" description="Search a vendor above and press “Add cost”. It will be listed here." />
+          <EmptyState title="No vendor has a cost yet" description="Search a vendor above and press “Add cost”. It will be listed here, also while its cost waits for approval." />
         ) : (
           <table className="w-full min-w-[1000px] text-sm">
             <thead className="bg-[#f6f0ff] text-left text-xs uppercase tracking-wide text-navy">
-              <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#f6f0ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#f6f0ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">City</th><th className="px-4 py-3 text-right">Price / shop</th><th className="px-4 py-3 text-right">Far price</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#f6f0ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#f6f0ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">City</th><th className="px-4 py-3 text-right">Price / shop</th><th className="px-4 py-3 text-right">Travelling cost</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((v) => (
@@ -174,7 +179,7 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
                   <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#faf6ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
                   <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
                   <td className="max-w-40 px-4 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(v.price.ratePerShop)}</td>
+                  <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(v.price.ratePerShop)}{v.price.pending && <PendingTag p={v.price.pending} />}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(v.price.farRatePerShop)}</td>
                   <td className="px-4 py-3"><div className="flex max-w-60 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>
                   <td className="px-4 py-3">
@@ -196,14 +201,19 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
   );
 }
 
-/** Add or change the cost of one vendor: price per shop, far-distance price, skills (pick from the list or add a new one). */
+/** Add or change the cost of one vendor: price per shop, travelling cost, skills (pick from the list or add a new one). */
 function VendorCostDialog({ vendor, onClose }: { vendor: ZohoVendorRow; onClose: () => void }) {
   const toast = useToast();
   const save = useSetZohoPrice();
   const skills = useVendorSkills();
   const addSkill = useAddVendorSkill();
-  const [rate, setRate] = useState(vendor.price.ratePerShop != null ? String(vendor.price.ratePerShop) : "");
-  const [far, setFar] = useState(vendor.price.farRatePerShop != null ? String(vendor.price.farRatePerShop) : "");
+  const company = useCompanyRates().data;
+  // Untouched boxes show the vendor's own cost, else the company rate set by the Super Admin.
+  const [typedRate, setRate] = useState<string | null>(vendor.price.ratePerShop != null ? String(vendor.price.ratePerShop) : null);
+  const [typedFar, setFar] = useState<string | null>(vendor.price.farRatePerShop != null ? String(vendor.price.farRatePerShop) : null);
+  const rate = typedRate ?? (company ? String(company.ratePerShop) : "");
+  const far = typedFar ?? (company && vendor.price.ratePerShop == null ? String(company.farRatePerShop) : "");
+  const over = !!company && ((rate.trim() !== "" && Number(rate) > company.ratePerShop) || (far.trim() !== "" && Number(far) > company.farRatePerShop));
   const [picked, setPicked] = useState<string[]>(vendor.price.skills ?? []);
   const [newSkill, setNewSkill] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -215,10 +225,10 @@ function VendorCostDialog({ vendor, onClose }: { vendor: ZohoVendorRow; onClose:
     if (r == null) e.rate = "Enter the price per shop";
     else if (!(r >= 0)) e.rate = "Enter an amount";
     if (f != null && !(f >= 0)) e.far = "Enter an amount";
-    else if (r != null && f != null && f < r) e.far = "Far price cannot be lower than the normal price";
+    else if (r != null && f != null && f < r) e.far = "Travelling cost cannot be lower than the price per shop";
     setErrors(e);
     if (Object.keys(e).length) return;
-    save.mutate({ contactId: vendor.zohoContactId, ratePerShop: r, farRatePerShop: f, skills: picked }, { onSuccess: () => { toast(`${vendor.name}: cost saved`); onClose(); }, onError: (err) => toast(errorMessage(err), "error") });
+    save.mutate({ contactId: vendor.zohoContactId, ratePerShop: r, farRatePerShop: f, skills: picked }, { onSuccess: (p) => { toast(p.pending ? `${vendor.name}: ${money(p.pending.ratePerShop)} is above the company rate ${money(p.pending.limitRate)}. Sent for approval; the current cost stays until the reply.` : `${vendor.name}: cost saved`); onClose(); }, onError: (err) => toast(errorMessage(err), "error") });
   }
   function createSkill() {
     const name = newSkill.trim();
@@ -239,13 +249,18 @@ function VendorCostDialog({ vendor, onClose }: { vendor: ZohoVendorRow; onClose:
       title={vendor.price.ratePerShop != null ? "Edit cost" : "Add cost"}
       description={`${vendor.vendorNo ? `${vendor.vendorNo} · ` : ""}${vendor.name}`}
       className="max-w-xl"
-      footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button className="bg-vendor hover:bg-vendor/90" loading={save.isPending} onClick={submit}>Save cost</Button></div>}
+      footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button className="bg-vendor hover:bg-vendor/90" loading={save.isPending} onClick={submit}>{over ? "Send for approval" : "Save cost"}</Button></div>}
     >
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); submit(); }}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Price per shop (₹)" htmlFor="c-rate" required error={errors.rate}><Input id="c-rate" format="decimal" maxLength={7} value={rate} onChange={(e) => { setRate(e.target.value); setErrors((x) => ({ ...x, rate: "" })); }} aria-invalid={!!errors.rate} autoFocus /></Field>
-          <Field label="Far distance price (₹)" htmlFor="c-far" error={errors.far} hint="Optional. Not lower than the price per shop"><Input id="c-far" format="decimal" maxLength={7} value={far} onChange={(e) => { setFar(e.target.value); setErrors((x) => ({ ...x, far: "" })); }} aria-invalid={!!errors.far} /></Field>
+          <Field label="Price per shop (₹)" htmlFor="c-rate" required error={errors.rate} hint={company ? `Company rate ₹${company.ratePerShop}` : undefined}><Input id="c-rate" format="decimal" maxLength={7} value={rate} onChange={(e) => { setRate(e.target.value); setErrors((x) => ({ ...x, rate: "" })); }} aria-invalid={!!errors.rate} autoFocus /></Field>
+          <Field label="Travelling cost (₹)" htmlFor="c-far" error={errors.far} hint={company ? `Company rate ₹${company.farRatePerShop}. Optional, not lower than the price per shop` : "Optional. Not lower than the price per shop"}><Input id="c-far" format="decimal" maxLength={7} value={far} onChange={(e) => { setFar(e.target.value); setErrors((x) => ({ ...x, far: "" })); }} aria-invalid={!!errors.far} /></Field>
         </div>
+        {over && company && (
+          <p role="status" className="rounded-lg border border-[#fbd9b5] bg-[#fff4e6] px-3 py-2 text-sm text-[#9a3412]">
+            This is above the company rate (₹{company.ratePerShop} / travelling cost ₹{company.farRatePerShop}). Saving sends an approval email. The current cost stays until the approver replies: APPROVED applies this amount, NOT APPROVED applies the company rate.
+          </p>
+        )}
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium text-navy">Skills</legend>
           {all.length === 0 ? (
