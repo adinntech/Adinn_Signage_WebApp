@@ -178,7 +178,7 @@ export function ProjectDrawer({
             )}
 
             <section>
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client / SO contacts</h3>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client / POC contacts</h3>
               {!p.contacts?.length ? (
                 <p className="text-sm text-muted-foreground">No contacts added.</p>
               ) : (

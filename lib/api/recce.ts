@@ -32,6 +32,8 @@ export interface RecceState {
   rateCard?: (RateCardStep & { items: number; includedLabel?: string | null }) | null;
   /** Gaps of the full handover (step 1). */
   handoverMissing?: string[];
+  /** Operational point of contact (primary POC contact, else the primary client contact). */
+  primaryContact?: import("./sales").PrimaryContact | null;
   handoverType?: "ASO" | "SHOP_DETAILS" | "SHOP_MEASUREMENT" | null;
   handoverUpdatedAt?: string | null;
   /**
@@ -181,8 +183,8 @@ export interface ProjectHandover {
   type: HandoverType | null;
   /** SO (stored as ASO): the Additional Documents. */
   soDocuments?: FileRef[];
-  /** ASO: the client's SO contacts as handed over. */
-  soContacts?: { name: string; phone: string; email?: string | null; isPrimary?: boolean }[];
+  /** POC contacts as handed over. */
+  soContacts?: { name: string; designation?: string | null; phone: string; email?: string | null; isPrimary?: boolean }[];
   /** Communication & attachments (chat) from the BD. */
   messages: HandoverMessage[];
   documents: HandoverDoc[];

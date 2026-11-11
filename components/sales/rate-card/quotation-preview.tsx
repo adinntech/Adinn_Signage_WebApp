@@ -68,6 +68,12 @@ const cellTexts = (it: Item, i: number) => [String(i + 1), it.particulars || "-"
 const rowHeight = (it: Item, i: number) => Math.max(32, Math.max(...cellTexts(it, i).map((c, j) => lines(c, CELLS[j]!.cap) * lh(CELLS[j]!.size, 2))) + 22);
 // Terms rows as in the PDF: 9pt above / below the text, 13.9pt lines (8pt text + 3pt gap), at least 32pt.
 const termHeight = (t: string) => Math.max(32, lines(t, 116) * lh(8, 3) + 18);
+/** "Kind Attn" line as on the PDF: the contact person, then their phone number when given. */
+function kindAttn(c: { name?: string; phone?: string }) {
+  const p = (c.phone ?? "").trim();
+  const phone = /^\d{10}$/.test(p) ? `+91 ${p.slice(0, 5)} ${p.slice(5)}` : p;
+  return `Kind Attn : ${c.name ?? ""}${phone ? ` · ${phone}` : ""}`;
+}
 /** Bill To / Quote & Contact card height as the PDF sizes it (a long name or address makes it taller). */
 function billCardHeight(clientName: string, address?: string, attn?: string) {
   const textLines = (s: string, cap: number) => s.split(/\n/).reduce((n, l) => n + lines(l, cap), 0);
@@ -168,7 +174,7 @@ function Page({ v, spec, n, total, clientName, company, terms, cardH }: { v: Quo
               )}
               {v.contact?.name && (
                 <p className="mt-[3px] text-[9px] font-semibold" style={{ color: TEXT, lineHeight: `${lh(9, 1.5)}px` }}>
-                  Kind Attn : {v.contact.name}
+                  {kindAttn(v.contact)}
                 </p>
               )}
             </div>
@@ -323,7 +329,7 @@ export function QuotationPreview({
   const scale = fitWidth && areaW ? Math.max(0.3, areaW / W) : zoom;
   const terms = useMemo(() => termsList(values.terms), [values.terms]);
   // Bill To / Quote & Contact card height as in the PDF (taller for a long name or address).
-  const cardH = billCardHeight(clientName, values.clientAddress, values.contact?.name ? `Kind Attn : ${values.contact.name}` : undefined);
+  const cardH = billCardHeight(clientName, values.clientAddress, values.contact?.name ? kindAttn(values.contact) : undefined);
   const pages = useMemo(() => paginate(values.items ?? [], terms, cardH), [values.items, terms, cardH]);
   const current = Math.min(page, pages.length - 1);
   const label = dirty || !latest ? `${latest ? latest.label + " + unsaved" : "Draft"}` : latest.label;

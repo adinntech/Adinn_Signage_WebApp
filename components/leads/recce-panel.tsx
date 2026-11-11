@@ -5,7 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Search, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
-import { HandoverTab, saveOrderContactsBeforeLeaving } from "@/components/orders/handover-tab";
+import { CONTACT_PERSON_GAP, HandoverTab, hasUnsavedContacts, saveOrderContactsBeforeLeaving, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
 import { DeliveryBadge, EmailHistory, emailTypes } from "@/components/sales/email-history";
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
@@ -461,8 +461,8 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
             </option>
             {list.map((e) => (
               <option key={e.estimateId} value={e.estimateId} disabled={!usable(e)}>
-                {e.estimationCode} · {formatDate(e.date)} · {formatCurrency(e.total)}
-                {e.status ? ` · ${e.status}` : ""}
+                {/* The code only; date, amount and status show in the From Zoho strip below. */}
+                {e.estimationCode}
                 {e.usedBy ? ` (used by ${e.usedBy})` : !e.valid ? " (invalid)" : ""}
               </option>
             ))}
@@ -487,7 +487,9 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
           <span>
             Project <b className="font-mono text-foreground">{estimate.projectCode}</b> · <b className="font-mono text-foreground">{estimate.estimationCode}</b>
           </span>
-          {estimate.status && <span>{estimate.status}</span>}
+          {estimate.date && <span>{formatDate(estimate.date)}</span>}
+          {estimate.total !== null && <span className="tabular-nums">{formatCurrency(estimate.total)}</span>}
+          {estimate.status && <span className="capitalize">{estimate.status}</span>}
           {estimate.salesperson && <span>{estimate.salesperson}</span>}
           {estimate.location && <span>{estimate.location}</span>}
         </div>
@@ -753,9 +755,11 @@ export function RecceBranchPanel({
    * otherwise it saves step 1 as done (server-checked) and the caller moves on.
    */
   const leaveHandover = async () => {
-    // Unsaved contact persons (Zoho client without any) are saved first, so the Rate Card prefills them.
+    // Unsaved contact persons and POC contacts are saved first (so the Rate Card prefills the point of contact), then
+    // the gaps are read again from the server.
+    const unsaved = hasUnsavedContacts();
     if (!(await saveOrderContactsBeforeLeaving())) return false;
-    const gaps = r.handoverMissing ?? [];
+    const gaps = (unsaved ? (await q.refetch()).data?.handoverMissing : r.handoverMissing) ?? [];
     if (gaps.length) {
       flagHandoverGaps(gaps);
       return false;
@@ -831,6 +835,8 @@ export function RecceBranchPanel({
               // The Recce route always takes the full handover of the selected type: its gaps come from the server
               // (handoverGaps with the full handover), never from the Client Servicing toggle.
               missing={r.handoverMissing ?? []}
+              // Contact gaps keep Continue / Skip enabled: they save unsaved contacts, then check again.
+              softGaps={[CONTACT_PERSON_GAP, SO_CONTACT_GAP]}
               // Saves step 1 as done (server-checked), then opens the next step (Rate Card, or the email on older orders).
               onContinue={async () => {
                 if (await leaveHandover()) onDone();

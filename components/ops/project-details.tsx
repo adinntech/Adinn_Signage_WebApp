@@ -173,7 +173,7 @@ export function ProjectDetails() {
             <p className={cn("font-semibold", overdue ? "text-loss" : "text-navy")}>{formatDate(p.startDate)} → {formatDate(p.targetDate)}{overdue && " · Overdue"}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Client / SO contact</p>
+            <p className="text-xs text-muted-foreground">Client / POC contact</p>
             {contact ? <p className="font-semibold text-navy">{contact.name}<span className="block text-xs font-normal text-muted-foreground">{contact.phone} · {contact.email}</span></p> : <p className="text-muted-foreground">Not shared</p>}
           </div>
         </div>
@@ -196,7 +196,7 @@ export function ProjectDetails() {
 
       <section aria-label="Client contacts and quick actions" className="grid gap-4 rounded-xl border-2 border-royal/30 bg-[#eef4ff] p-4 shadow-soft lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <div className="min-w-0">
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><UsersRound className="size-4 text-royal" aria-hidden /> Client / SO Contacts</h2>
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy"><UsersRound className="size-4 text-royal" aria-hidden /> Client / POC Contacts</h2>
           {!p.contacts?.length ? (
             <p className="text-sm text-muted-foreground">No contacts shared.</p>
           ) : (

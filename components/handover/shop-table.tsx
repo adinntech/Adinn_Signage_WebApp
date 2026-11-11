@@ -610,8 +610,8 @@ export function ShopTable({
   const keyOf = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
 
   /**
-   * Upload (optionally with the mapping step's choices); an ambiguous workbook opens
-   * the mapping step instead. Runs as soon as an Excel file is picked or dropped.
+   * Upload (optionally with the mapping step's choices). Runs as soon as an Excel file is picked or dropped and shows
+   * the rows in the table straight away: the server picks the sheet and header row itself.
    */
   const doUpload = async (opts: { sheet?: string; headerRow?: number; mapping?: Record<string, string> } = {}, picked: File[] = file) => {
     const f = picked[0];
@@ -631,6 +631,12 @@ export function ShopTable({
       toast(`Shop list uploaded: ${r.imported?.added ?? 0} added, ${r.imported?.updated ?? 0} updated${flagged ? `, ${flagged} to check` : ""}. Total Shops: ${r.shopList?.total ?? 0}.`, flagged ? "warning" : "success");
     } catch (e) {
       const preview = previewOf(e);
+      // The server asked for the sheet / header: import at once with its own suggestion (no chooser); the chooser
+      // opens only if that suggestion is refused too.
+      if (preview && !opts.sheet && preview.headerRow) {
+        busy.current = null;
+        return doUpload({ sheet: preview.sheet, headerRow: preview.headerRow, mapping: preview.mapping }, picked);
+      }
       if (preview) setMappingStep(preview);
       else if (e instanceof ApiError && e.code === "SHOP_LIST_ALREADY_IMPORTED") {
         // A retry of a file that did go in: nothing new, nothing failed.

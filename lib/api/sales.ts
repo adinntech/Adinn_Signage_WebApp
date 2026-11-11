@@ -56,7 +56,7 @@ export interface ShopListSummary {
 }
 /** Assign types (display labels; the stored values stay ASO / SHOP_DETAILS / SHOP_MEASUREMENT). */
 export const HANDOVER_TYPES = {
-  ASO: { label: "SO", hint: "Client, contact persons and the client's SO contacts (with optional documents). The shop details are collected through the SO contacts." },
+  ASO: { label: "SO", hint: "Client, contact persons and the client's POC contacts (with optional documents). The shop details are collected through the POC contacts." },
   SHOP_DETAILS: { label: "Only Shop Details", hint: "The client's shop list without sizes: upload the Excel or add shops, then edit them in the table." },
   SHOP_MEASUREMENT: { label: "Shop + Measurement", hint: "Shop list with sizes (W × H) and up to 10 images per shop." },
 } as const;
@@ -432,8 +432,10 @@ export interface HandoverState {
   documents: HandoverDoc[];
   /** Communication & attachments, oldest first. */
   messages: HandoverMessage[];
-  /** ASO: the client's SO contacts (kept apart from the contact persons; shown for ASO only). */
+  /** POC contacts (SO, Only Shop Details, Shop + Measurement; kept apart from the contact persons and when the type changes). */
   soContacts: SoContact[];
+  /** Operational point of contact (primary POC contact, else the primary client contact). */
+  primaryContact?: PrimaryContact | null;
   /** Contact persons saved for this order only (Zoho client without contact persons). */
   orderContacts?: OrderContact[];
   /** SO (ASO): Additional Documents, kept apart from the chat files (empty for the other types; kept on the order). */
@@ -445,12 +447,23 @@ export interface HandoverState {
   /** Still needed before the order can be handed over (from the server). */
   missing: string[];
 }
+/** POC contact (stored as soContacts): `ref` = the client contact it was picked from (none when added here). */
 export interface SoContact {
   _id?: string;
   name: string;
+  designation?: string;
   phone: string;
   email?: string;
   isPrimary: boolean;
+  ref?: string | null;
+}
+/** The order's operational point of contact: the primary POC contact, else the primary client contact. */
+export interface PrimaryContact {
+  name: string;
+  designation: string;
+  phone: string;
+  email: string;
+  source: "POC" | "CLIENT";
 }
 /** A contact person kept on the order only (not in Zoho or the client record). */
 export interface OrderContact {
@@ -579,7 +592,7 @@ export const useUploadShopList = (id: string) =>
 export const useRemoveShopList = (id: string) => useHandoverMutation(id, () => api<HandoverState>(`/sales/orders/${id}/handover/shops`, { method: "DELETE" }));
 export const useSetHandoverType = (id: string) =>
   useHandoverMutation(id, (type: HandoverType) => api<HandoverState>(`/sales/orders/${id}/handover/type`, { method: "PATCH", body: JSON.stringify({ type }) }));
-/** ASO: saves the whole SO contact list (blank rows are dropped; one primary). */
+/** POC contacts: saves the whole list (blank rows are dropped; one primary). */
 export const useSetSoContacts = (id: string) =>
   useHandoverMutation(id, (contacts: SoContact[]) => api<HandoverState>(`/sales/orders/${id}/handover/so-contacts`, { method: "PUT", body: JSON.stringify({ contacts }) }));
 /** Contact persons for this order only (Zoho client without any): saves the whole list (blank rows dropped; one primary). */

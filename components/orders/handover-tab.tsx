@@ -63,6 +63,7 @@ import {
   type HandoverType,
   type Order,
   type OrderContact,
+  type PrimaryContact,
   type SoContact,
 } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
@@ -171,24 +172,28 @@ function TypeSection({ orderId, data, editable, toggle }: { orderId: string; dat
 /**
  * Company and contact persons, straight from Client Management. Contact persons can be added and edited here (saved on
  * the client). GST certificate and custom fields: New (Client Management) clients only, not Existing (Zoho) ones.
+ * Recce route: the contact person is mandatory (Zoho's, or one row for this order when Zoho has none); no Add Contact Person.
  */
 function ClientSection({
   order,
   canAddContact,
   aso,
+  recce,
   orderContacts,
   manualEditable,
 }: {
   order: Order;
   canAddContact: boolean;
   aso: boolean;
+  /** Recce route: the contact person is mandatory. */
+  recce: boolean;
   /** Contact persons saved for this order only. */
   orderContacts: OrderContact[];
-  /** Client Servicing (Recce Team > Assign Type & Details): may add contact persons when the Zoho client has none. */
+  /** Recce Team > Assign Type & Details: the contact person for this order when the client has none. */
   manualEditable: boolean;
 }) {
   const c = order.client;
-  // Zoho client without contact persons: this order's own contact persons replace the empty table (decided by Zoho's
+  // Client without contact persons: this order's own contact persons replace the empty table (decided by the client's
   // contacts only, not by the ones added here).
   const manual = c.contacts.length === 0 && (manualEditable || orderContacts.length > 0);
   // null: closed; -1: add; >= 0: edit that contact.
@@ -203,12 +208,17 @@ function ClientSection({
   const certificates = crm ? (c.gstCertificates ?? []) : [];
   const custom = crm ? (c.customFields ?? []) : [];
   const address = [c.address, c.city, c.state].filter(Boolean).join(", ") + (c.pincode ? ` - ${c.pincode}` : "");
+  const description = recce
+    ? "Auto-filled from Zoho / Client Management. A contact person with name and mobile number is required."
+    : aso
+      ? "Auto-filled from Client Management. Contact persons are optional; add the client's POC contacts in the POC section below."
+      : "Auto-filled from Client Management. Contact persons are optional.";
   return (
-    <Card className="p-5 sm:p-6">
+    <Card id="ho-contacts" className="p-5 sm:p-6">
       <SectionTitle
         icon={Building2}
         title="Client & Contact Persons"
-        description={aso ? "Auto-filled from Client Management. Contact persons are optional; add the client's SO contacts in the SO section below." : "Auto-filled from Client Management. Contact persons are optional."}
+        description={description}
         action={
           canAddContact &&
           !manual && (
@@ -268,7 +278,7 @@ function ClientSection({
         </div>
       )}
       {manual ? (
-        <OrderContactsSection orderId={order._id} saved={orderContacts} editable={manualEditable} />
+        <OrderContactsSection orderId={order._id} saved={orderContacts} editable={manualEditable} prefill={contactPrefillOf(c)} />
       ) : (
       <div className="mt-5 max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
         <table className="w-full min-w-[720px] text-left text-sm">
@@ -326,26 +336,61 @@ function ClientSection({
   );
 }
 
-/** Save of unsaved order contact persons (registered while there are any), run by the step's forward actions. */
-let pendingOrderContacts: (() => Promise<boolean>) | null = null;
 /**
- * Before leaving Assign Type & Details: saves unsaved contact persons (true when saved or nothing to save; false
- * when a row needs fixing, shown inline).
+ * Saves of unsaved contact lists (the client contact person, the POC contacts), registered while there are any; run
+ * by the step's forward actions (top Next, Continue, Skip: Rate Card).
  */
-export const saveOrderContactsBeforeLeaving = async () => (pendingOrderContacts ? pendingOrderContacts() : true);
+const pendingContactSaves = new Map<string, () => Promise<boolean>>();
+/**
+ * Before leaving Assign Type & Details: saves unsaved contact persons and POC contacts (true when saved or nothing to
+ * save; false when a row needs fixing, shown inline).
+ */
+export const saveOrderContactsBeforeLeaving = async () => {
+  for (const run of [...pendingContactSaves.values()]) if (!(await run())) return false;
+  return true;
+};
+/** Any contact list with unsaved changes (the forward action then reads the gaps again after saving). */
+export const hasUnsavedContacts = () => pendingContactSaves.size > 0;
+/** Registers `submit` as the pending save of `key` while `active` (latest submit through a ref). */
+function usePendingSave(key: string, active: boolean, submit: () => Promise<boolean>) {
+  const ref = useRef(submit);
+  ref.current = submit;
+  useEffect(() => {
+    if (!active) return;
+    const run = () => ref.current();
+    pendingContactSaves.set(key, run);
+    return () => {
+      if (pendingContactSaves.get(key) === run) pendingContactSaves.delete(key);
+    };
+  }, [key, active]);
+}
 
 type ContactRow = { key: string; name: string; designation: string; phone: string; email: string; isPrimary: boolean };
 type ContactField = "name" | "designation" | "phone" | "email";
-const blankContact = (): ContactRow => ({ key: Math.random().toString(36).slice(2), name: "", designation: "", phone: "", email: "", isPrimary: false });
+const newKey = () => Math.random().toString(36).slice(2);
+const blankContact = (): ContactRow => ({ key: newKey(), name: "", designation: "", phone: "", email: "", isPrimary: false });
 const contactRowsOf = (list: OrderContact[]): ContactRow[] =>
   list.map((k, i) => ({ key: k._id ?? String(i), name: k.name, designation: k.designation ?? "", phone: k.phone, email: k.email ?? "", isPrimary: k.isPrimary }));
 const isBlankContact = (r: ContactRow) => !r.name.trim() && !r.designation.trim() && !r.phone.trim() && !r.email.trim();
-/** Inline checks, same as the server: contact person and 10-digit mobile for a row that is kept; the rest optional. */
+const MOBILE_RE = /^[6-9]\d{9}$/;
+/** Last 10 digits of a phone when they make an Indian mobile number, else "". */
+const mobileOf = (v?: string | null) => {
+  const d = (v ?? "").replace(/\D/g, "").slice(-10);
+  return MOBILE_RE.test(d) ? d : "";
+};
+/**
+ * The contact row for a client without contact persons: the Zoho client name (else the company name), the client's
+ * phone and email when known; designation blank. The user completes what is missing.
+ */
+function contactPrefillOf(c: Order["client"]): ContactRow {
+  const name = (c.clientName ?? "").trim() || (c.name ?? "").trim();
+  return { ...blankContact(), name, phone: mobileOf(c.phone), email: (c.email ?? "").trim(), isPrimary: true };
+}
+/** Inline checks, same as the server: contact person and 10-digit mobile are required; designation and email optional. */
 function contactRowErrors(r: ContactRow) {
-  if (isBlankContact(r)) return {};
   const e: Partial<Record<ContactField, string>> = {};
   if (!r.name.trim()) e.name = "Enter the contact person";
-  if (!/^[6-9]\d{9}$/.test(r.phone)) e.phone = "10-digit mobile number";
+  if (!MOBILE_RE.test(r.phone)) e.phone = "10-digit mobile number";
   if (r.email.trim() && !EMAIL_RE.test(r.email.trim())) e.email = "Enter a valid email";
   return e;
 }
@@ -353,107 +398,130 @@ const CONTACT_FIELDS: { f: ContactField; label: string; placeholder: string; max
   { f: "name", label: "Contact Person", placeholder: "Contact name", max: 120 },
   { f: "designation", label: "Designation", placeholder: "Optional", max: 120 },
   { f: "phone", label: "Mobile", placeholder: "10-digit mobile", max: 10 },
-  { f: "email", label: "Email", placeholder: "name@company.com", max: 200 },
+  { f: "email", label: "Email", placeholder: "Optional", max: 200 },
 ];
+/** Server field paths (`contacts.<i>.<field>`) index the rows that were sent; point them back at the rows on screen. */
+function rowErrorsOf(e: unknown, sent: { key: string }[], rows: { key: string }[]) {
+  const map: Record<string, string> = {};
+  for (const [path, msg] of Object.entries(fieldErrorsOf(e))) {
+    const m = /^contacts\.(\d+)\.(\w+)$/.exec(path);
+    const row = m ? rows.findIndex((r) => r.key === sent[Number(m[1])]?.key) : -1;
+    if (m && row >= 0) map[`${row}.${m[2]}`] = msg;
+  }
+  return map;
+}
 
 /**
- * Zoho client without contact persons: optional contact persons for this order only (SO Contacts style). Saved as one
- * list with "Save Contacts" on the order; Zoho and the client record are not changed. None are needed to continue.
+ * Client without contact persons (Recce route): the mandatory contact person for this order only. One editable row,
+ * prefilled from Zoho (client name, else company name; phone; email); name and mobile required. A complete prefill is
+ * saved on its own (no Save / Discard); otherwise the user fills the blanks and saves with "Save Contacts" (the forward
+ * actions save it too). Kept on the order only: Zoho and the client record are not changed.
  */
-function OrderContactsSection({ orderId, saved, editable }: { orderId: string; saved: OrderContact[]; editable: boolean }) {
+function OrderContactsSection({ orderId, saved, editable, prefill }: { orderId: string; saved: OrderContact[]; editable: boolean; prefill: ContactRow }) {
   const toast = useToast();
   const save = useSetOrderContacts(orderId);
   const savedKey = JSON.stringify(saved);
-  const [rows, setRows] = useState<ContactRow[]>(() => contactRowsOf(saved));
+  // Nothing saved yet: the prefilled row, unsaved (saved by Save Contacts or the forward actions).
+  const initial = () => (saved.length ? contactRowsOf(saved) : editable ? [{ ...prefill, key: newKey() }] : []);
+  const [rows, setRows] = useState<ContactRow[]>(initial);
   const [base, setBase] = useState(savedKey);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(editable && !saved.length);
   const [tried, setTried] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   // Saved list changed elsewhere (another tab, a reload) while nothing is being edited here: show it.
   if (savedKey !== base && !dirty) {
     setBase(savedKey);
-    setRows(contactRowsOf(saved));
+    setRows(initial());
+    setDirty(editable && !saved.length);
   }
+  // The user changed something here (Save / Discard are then shown).
+  const [touched, setTouched] = useState(false);
+  // The automatic save of a complete prefill failed: Save / Discard are shown to retry.
+  const [autoFailed, setAutoFailed] = useState(false);
   const edit = (next: ContactRow[]) => {
     setRows(next);
     setDirty(true);
+    setTouched(true);
     setServerErrors({});
   };
   const setField = (i: number, f: ContactField, v: string) => edit(rows.map((r, j) => (j === i ? { ...r, [f]: f === "phone" ? v.replace(/\D/g, "").slice(0, 10) : v } : r)));
   const makePrimary = (i: number) => edit(rows.map((r, j) => ({ ...r, isPrimary: j === i })));
   const remove = (i: number) => {
     const next = rows.filter((_, j) => j !== i);
-    // Deleting the primary hands it to the first remaining contact.
+    // Removing the primary hands it to the first remaining contact.
     if (rows[i]?.isPrimary && next.length && !next.some((r) => r.isPrimary)) next[0] = { ...next[0]!, isPrimary: true };
     edit(next);
   };
-  const kept = rows.filter((r) => !isBlankContact(r));
+  // Every row is a contact (no blank extras); at least one is required.
   const errors = rows.map(contactRowErrors);
-  const invalid = errors.some((e) => Object.keys(e).length);
+  const invalid = !rows.length || errors.some((e) => Object.keys(e).length);
+  const savedValid = saved.some((k) => k.name.trim() && k.phone.trim());
+  // Nothing saved yet and Zoho gave both the name and a valid mobile: saved automatically, no Save / Discard.
+  const prefillComplete = !saved.length && Object.keys(contactRowErrors(prefill)).length === 0;
+  const autoSaving = editable && prefillComplete && !touched && !autoFailed;
+  const showActions = editable && dirty && !autoSaving;
 
-  const submit = async () => {
-    setTried(true);
+  const submit = async (opts: { auto?: boolean } = {}) => {
+    if (!opts.auto) setTried(true);
     if (invalid) {
-      goToSection("ho-order-contacts");
+      if (!opts.auto) goToSection("ho-order-contacts");
       return false;
     }
-    const primary = Math.max(0, kept.findIndex((r) => r.isPrimary));
+    const primary = Math.max(0, rows.findIndex((r) => r.isPrimary));
     try {
-      await save.mutateAsync(
-        kept.map((r, i) => ({ name: r.name.trim(), designation: r.designation.trim() || undefined, phone: r.phone, email: r.email.trim() || undefined, isPrimary: i === primary })),
-      );
+      await save.mutateAsync(rows.map((r, i) => ({ name: r.name.trim(), designation: r.designation.trim() || undefined, phone: r.phone, email: r.email.trim() || undefined, isPrimary: i === primary })));
       setDirty(false);
       setTried(false);
+      setTouched(false);
       setBase("");
-      toast(kept.length ? `${kept.length} contact person${kept.length === 1 ? "" : "s"} saved for this order` : "Contact persons cleared");
+      if (!opts.auto) toast(`${rows.length} contact person${rows.length === 1 ? "" : "s"} saved for this order`);
       return true;
     } catch (e) {
-      // Server paths index the kept (non-blank) rows; point them back at the rows on screen.
-      const map: Record<string, string> = {};
-      for (const [path, msg] of Object.entries(fieldErrorsOf(e))) {
-        const m = /^contacts\.(\d+)\.(\w+)$/.exec(path);
-        const row = m ? rows.indexOf(kept[Number(m[1])]!) : -1;
-        if (m && row >= 0) map[`${row}.${m[2]}`] = msg;
+      setServerErrors(rowErrorsOf(e, rows, rows));
+      if (opts.auto) {
+        setAutoFailed(true);
+        setTried(true);
+      } else {
+        toast(errorMessage(e), "error");
+        goToSection("ho-order-contacts");
       }
-      setServerErrors(map);
-      toast(errorMessage(e), "error");
-      goToSection("ho-order-contacts");
       return false;
     }
   };
-  // Continue / Next / Skip save unsaved rows first (so the Rate Card gets them), through the latest submit.
-  const submitRef = useRef(submit);
-  submitRef.current = submit;
+  // Continue / Next / Skip save the unsaved row first (so the Rate Card gets it).
+  usePendingSave("order-contacts", editable && dirty, () => submit());
+  // A complete prefill is saved once on its own (the step's gap then clears without Save Contacts).
+  const autoStarted = useRef(false);
   useEffect(() => {
-    if (!editable || !dirty) return;
-    const run = () => submitRef.current();
-    pendingOrderContacts = run;
-    return () => {
-      if (pendingOrderContacts === run) pendingOrderContacts = null;
-    };
-  }, [editable, dirty]);
+    if (!autoSaving || !dirty || autoStarted.current) return;
+    autoStarted.current = true;
+    void submit({ auto: true });
+    // Runs once per mount for the prefilled row; submit reads the current rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaving, dirty]);
 
   return (
     <div id="ho-order-contacts" className="mt-5 border-t border-border pt-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
-            <Contact className="size-4" aria-hidden /> Contact Persons <span className="font-normal text-muted-foreground">(optional)</span>
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {editable ? "This Zoho client has no contact persons. Add them for this order only; Zoho and the client record are not changed." : "Contact persons added for this order (the Zoho client has none)."}
-          </p>
-        </div>
-        {editable && (
-          <Button variant="brand-outline" size="sm" onClick={() => edit([...rows, { ...blankContact(), isPrimary: !rows.some((r) => r.isPrimary) }])} disabled={rows.length >= 50}>
-            <UserPlus className="size-4" aria-hidden /> Add Contact Person
-          </Button>
-        )}
-      </div>
-      {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
-          No contact persons{editable ? " yet. Optional: add one with name and mobile number if needed." : "."}
+      <div className="mb-3">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+          <Contact className="size-4" aria-hidden /> Contact Person {editable && <span className="text-danger">*</span>}
         </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {editable ? "This client has no contact persons in Zoho. Enter the contact person for this order (name and mobile required); Zoho and the client record are not changed." : "Contact person entered for this order (the client has none in Zoho)."}
+        </p>
+      </div>
+      {editable && !savedValid && !autoSaving && (
+        <p role="alert" className="mb-3 flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden /> {CONTACT_PERSON_GAP}, then Save Contacts.
+        </p>
+      )}
+      {autoSaving && save.isPending && (
+        <p className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden /> Saving the contact person from Zoho…
+        </p>
+      )}
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No contact person.</p>
       ) : (
         <div className="max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
           <table className="w-full min-w-[880px] text-left text-sm">
@@ -466,7 +534,7 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
                   </th>
                 ))}
                 <th className="px-3 py-2.5">Primary</th>
-                {editable && (
+                {editable && rows.length > 1 && (
                   <th className="px-3 py-2.5 text-right">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -483,6 +551,7 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
                         <Input
                           aria-label={`Contact person ${i + 1} ${label.toLowerCase()}`}
                           aria-invalid={!!err(f)}
+                          aria-required={f === "name" || f === "phone"}
                           value={r[f]}
                           inputMode={f === "phone" ? "numeric" : f === "email" ? "email" : undefined}
                           placeholder={placeholder}
@@ -499,11 +568,13 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
                         Primary
                       </label>
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => remove(i)} aria-label={`Remove contact person ${r.name || i + 1}`} title="Remove">
-                        <Trash2 className="size-4 text-danger" aria-hidden />
-                      </Button>
-                    </td>
+                    {rows.length > 1 && (
+                      <td className="px-3 py-2 text-right">
+                        <Button variant="ghost" size="icon" onClick={() => remove(i)} aria-label={`Remove contact person ${r.name || i + 1}`} title="Remove">
+                          <Trash2 className="size-4 text-danger" aria-hidden />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ) : (
                   <tr key={r.key}>
@@ -527,15 +598,16 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
           </table>
         </div>
       )}
-      {editable && dirty && (
+      {showActions && (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
           <span className="mr-auto text-xs text-warning">Unsaved changes</span>
           <Button
             variant="outline"
             disabled={save.isPending}
             onClick={() => {
-              setRows(contactRowsOf(saved));
-              setDirty(false);
+              setRows(initial());
+              setDirty(!saved.length);
+              setTouched(false);
               setTried(false);
               setServerErrors({});
             }}
@@ -551,49 +623,100 @@ function OrderContactsSection({ orderId, saved, editable }: { orderId: string; s
   );
 }
 
-/** Shared with the step footers: the gap message of a missing SO contact, and a jump to the section. */
-export const SO_CONTACT_GAP = "Add at least one SO Contact with name and phone number";
+/** Shared with the step footers: the gap message of a missing POC contact (SO), and a jump to the section. */
+export const SO_CONTACT_GAP = "Add at least one POC Contact with name and phone number";
+/** Recce route: the gap message of the missing client contact person (same wording as the server). */
+export const CONTACT_PERSON_GAP = "Add the client contact person with name and mobile number";
 /** Same wording as the server's first gap (handoverGaps) when no assign type is chosen. */
 const HANDOVER_TYPE_GAP = "Choose the assign type: SO, Only Shop Details or Shop + Measurement";
 function goToSection(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
+  el.querySelector<HTMLElement>("input, select, button")?.focus({ preventScroll: true });
 }
 export function goToSoContacts() {
   goToSection("ho-so-contacts");
 }
-/** Scrolls to the section of a server gap (assign type, SO contacts, shop list); its inline error is shown there. */
+/** Scrolls to the section of a server gap (contact person, assign type, POC contacts, shop list); its inline error is shown there. */
 export function goToHandoverGap(gap: string) {
+  if (gap === CONTACT_PERSON_GAP) return goToSection(document.getElementById("ho-order-contacts") ? "ho-order-contacts" : "ho-contacts");
   goToSection(gap === SO_CONTACT_GAP ? "ho-so-contacts" : gap.startsWith("Choose the assign type") ? "ho-type" : "ho-shops");
 }
 
-type SoRow = { key: string; name: string; phone: string; email: string; isPrimary: boolean };
-const blankSo = (): SoRow => ({ key: Math.random().toString(36).slice(2), name: "", phone: "", email: "", isPrimary: false });
-const soRowsOf = (list: SoContact[]): SoRow[] => list.map((k, i) => ({ key: k._id ?? String(i), name: k.name, phone: k.phone, email: k.email ?? "", isPrimary: k.isPrimary }));
-const isBlankSo = (r: SoRow) => !r.name.trim() && !r.phone.trim() && !r.email.trim();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** Inline checks, same as the server: name and 10-digit mobile for a contact that is kept; email optional. */
-function soRowErrors(r: SoRow) {
-  if (isBlankSo(r)) return {};
-  const e: Partial<Record<"name" | "phone" | "email", string>> = {};
+
+/** A client contact that can be used as a POC contact; `ref` identifies it (name + mobile). */
+type PocChoice = { ref: string; name: string; designation: string; phone: string; email: string; isPrimary: boolean };
+/** The order's client contacts (Zoho / Client Management, or this order's own) as POC choices. */
+function pocChoicesOf(list: { name: string; designation?: string | null; phone?: string | null; email?: string | null; isPrimary?: boolean | null }[]): PocChoice[] {
+  return list
+    .filter((k) => k.name?.trim())
+    .map((k) => ({
+      ref: `${k.name.trim().toLowerCase()}|${(k.phone ?? "").replace(/\D/g, "")}`,
+      name: k.name.trim(),
+      designation: k.designation ?? "",
+      phone: mobileOf(k.phone),
+      email: k.email ?? "",
+      isPrimary: !!k.isPrimary,
+    }))
+    .filter((k, i, all) => all.findIndex((x) => x.ref === k.ref) === i);
+}
+type PocRow = ContactRow & { ref: string };
+const pocRowsOf = (list: SoContact[]): PocRow[] =>
+  list.map((k, i) => ({ key: k._id ?? String(i), name: k.name, designation: k.designation ?? "", phone: k.phone, email: k.email ?? "", isPrimary: k.isPrimary, ref: k.ref ?? "" }));
+/** Inline checks, same as the server: name and 10-digit phone for a contact that is kept; designation and email optional. */
+function pocRowErrors(r: PocRow) {
+  if (isBlankContact(r)) return {};
+  const e: Partial<Record<ContactField, string>> = {};
   if (!r.name.trim()) e.name = "Enter the name";
-  if (!/^[6-9]\d{9}$/.test(r.phone)) e.phone = "10-digit mobile number";
+  if (!MOBILE_RE.test(r.phone)) e.phone = "10-digit phone number";
   if (r.email.trim() && !EMAIL_RE.test(r.email.trim())) e.email = "Enter a valid email";
   return e;
 }
+const POC_FIELDS: { f: ContactField; label: string; placeholder: string; max: number }[] = [
+  { f: "name", label: "Name", placeholder: "POC name", max: 120 },
+  { f: "designation", label: "Designation", placeholder: "Optional", max: 120 },
+  { f: "phone", label: "Phone Number", placeholder: "10-digit mobile", max: 10 },
+  { f: "email", label: "Email", placeholder: "Optional", max: 200 },
+];
+/** Rows as the API takes them (blank rows dropped; exactly one primary). */
+const pocPayload = (list: PocRow[]) => {
+  const kept = list.filter((r) => !isBlankContact(r));
+  const p = Math.max(0, kept.findIndex((r) => r.isPrimary));
+  return { kept, body: kept.map((r, i) => ({ name: r.name.trim(), designation: r.designation.trim() || undefined, phone: r.phone, email: r.email.trim() || undefined, isPrimary: i === p, ref: r.ref || undefined })) };
+};
 
 /**
- * ASO: the client's SO contacts (name, mobile, optional email), kept apart from the client's contact persons. Any
- * number of contacts, none required; one is primary when there are any. Saved as one list with "Save SO Contacts";
- * unsaved edits stay on screen (they are not overwritten by other handover saves).
+ * POC contacts (SO, Only Shop Details, Shop + Measurement; stored as soContacts). Two ways, either one:
+ * - "Same as Contact Person": the client's contact person (primary, else the first) becomes a POC contact, saved at once
+ *   (no Save / Discard; unticking removes it the same way).
+ * - "Add POC Contact": manual Name, Designation, Phone Number, Email and Primary, saved with "Save POC Contacts" (the
+ *   forward actions save it too).
+ * At least one for SO (Recce route: for every type), otherwise optional. Exactly one primary when there are any: it is the order's point of
+ * contact. Kept when the assign type changes.
  */
-function SoContactsSection({ orderId, saved, editable }: { orderId: string; saved: SoContact[]; editable: boolean }) {
+function PocContactsSection({
+  orderId,
+  saved,
+  editable,
+  required,
+  clientContacts,
+  primary,
+}: {
+  orderId: string;
+  saved: SoContact[];
+  editable: boolean;
+  /** SO: at least one POC contact. */
+  required: boolean;
+  clientContacts: PocChoice[];
+  /** The order's point of contact as saved (primary POC contact, else the primary client contact). */
+  primary: PrimaryContact | null;
+}) {
   const toast = useToast();
   const save = useSetSoContacts(orderId);
   const savedKey = JSON.stringify(saved);
-  const [rows, setRows] = useState<SoRow[]>(() => soRowsOf(saved));
+  const [rows, setRows] = useState<PocRow[]>(() => pocRowsOf(saved));
   const [base, setBase] = useState(savedKey);
   const [dirty, setDirty] = useState(false);
   const [tried, setTried] = useState(false);
@@ -601,79 +724,160 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
   // Saved list changed elsewhere (another tab, a reload) while nothing is being edited here: show it.
   if (savedKey !== base && !dirty) {
     setBase(savedKey);
-    setRows(soRowsOf(saved));
+    setRows(pocRowsOf(saved));
   }
-  const edit = (next: SoRow[]) => {
+  const edit = (next: PocRow[]) => {
     setRows(next);
     setDirty(true);
     setServerErrors({});
   };
-  const setField = (i: number, f: "name" | "phone" | "email", v: string) => edit(rows.map((r, j) => (j === i ? { ...r, [f]: f === "phone" ? v.replace(/\D/g, "").slice(0, 10) : v } : r)));
-  const makePrimary = (i: number) => edit(rows.map((r, j) => ({ ...r, isPrimary: j === i })));
-  const remove = (i: number) => {
-    const next = rows.filter((_, j) => j !== i);
-    // Deleting the primary hands it to the first remaining contact.
-    if (rows[i]?.isPrimary && next.length && !next.some((r) => r.isPrimary)) next[0] = { ...next[0]!, isPrimary: true };
-    edit(next);
+  // The client's contact person (primary, else the first): what "Same as Contact Person" copies.
+  const person = clientContacts.find((k) => k.isPrimary) ?? clientContacts[0] ?? null;
+  const personReady = !!person && MOBILE_RE.test(person.phone);
+  const sameChecked = !!person && rows.some((r) => r.ref === person.ref);
+
+  /** Saves `next` at once (checkbox, primary, remove): no Save / Discard. False when not saved. */
+  const persist = async (next: PocRow[], message: string) => {
+    const { kept, body } = pocPayload(next);
+    if (kept.some((r) => Object.keys(pocRowErrors(r)).length)) {
+      edit(next);
+      setTried(true);
+      return false;
+    }
+    setRows(next);
+    try {
+      await save.mutateAsync(body);
+      setDirty(false);
+      setTried(false);
+      setServerErrors({});
+      setBase("");
+      toast(message);
+      return true;
+    } catch (e) {
+      setRows(pocRowsOf(saved));
+      toast(errorMessage(e), "error");
+      return false;
+    }
   };
-  const kept = rows.filter((r) => !isBlankSo(r));
-  // ASO needs one saved SO contact with name and phone (what the server checks; blank rows do not count).
+  /** After removing rows: the primary goes to the first remaining contact. */
+  const withPrimary = (list: PocRow[]) => (list.length && !list.some((r) => r.isPrimary) ? list.map((r, i) => ({ ...r, isPrimary: i === 0 })) : list);
+  // With unsaved manual rows the change joins them (one Save); otherwise it is saved at once.
+  const apply = (next: PocRow[], message: string) => (dirty ? edit(next) : void persist(next, message));
+
+  const toggleSame = (on: boolean) => {
+    if (!person) return;
+    const next = on
+      ? [{ key: newKey(), name: person.name, designation: person.designation, phone: person.phone, email: person.email, ref: person.ref, isPrimary: !rows.some((r) => r.isPrimary) }, ...rows]
+      : withPrimary(rows.filter((r) => r.ref !== person.ref));
+    apply(next, on ? `${person.name} added as POC contact` : "Contact person removed from POC contacts");
+  };
+  const addManual = () => {
+    edit([...rows, { key: newKey(), name: "", designation: "", phone: "", email: "", ref: "", isPrimary: !rows.some((r) => r.isPrimary) }]);
+    // Focus the new row's name.
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>(`#ho-so-contacts tbody tr:last-child input`)?.focus());
+  };
+  const setField = (i: number, f: ContactField, v: string) => edit(rows.map((r, j) => (j === i ? { ...r, [f]: f === "phone" ? v.replace(/\D/g, "").slice(0, 10) : v } : r)));
+  const makePrimary = (i: number) => apply(rows.map((r, j) => ({ ...r, isPrimary: j === i })), `${rows[i]?.name || "Contact"} is the primary POC`);
+  const remove = (i: number) => apply(withPrimary(rows.filter((_, j) => j !== i)), "POC contact removed");
+
+  const kept = rows.filter((r) => !isBlankContact(r));
+  // SO needs one saved POC contact with name and phone (what the server checks; blank rows do not count).
   const savedValid = saved.some((k) => k.name.trim() && k.phone.trim());
-  const errors = rows.map(soRowErrors);
-  const invalid = errors.some((e) => Object.keys(e).length);
+  const errors = rows.map(pocRowErrors);
+  const invalid = errors.some((e) => Object.keys(e).length) || (required && !kept.length);
 
   const submit = async () => {
     setTried(true);
-    if (invalid) return;
-    const primary = Math.max(0, kept.findIndex((r) => r.isPrimary));
+    if (invalid) {
+      goToSection("ho-so-contacts");
+      return false;
+    }
+    const { body } = pocPayload(rows);
     try {
-      await save.mutateAsync(kept.map((r, i) => ({ name: r.name.trim(), phone: r.phone, email: r.email.trim() || undefined, isPrimary: i === primary })));
+      await save.mutateAsync(body);
       setDirty(false);
       setTried(false);
       setBase("");
-      toast(kept.length ? `${kept.length} SO contact${kept.length === 1 ? "" : "s"} saved` : "SO contacts cleared");
+      toast(kept.length ? `${kept.length} POC contact${kept.length === 1 ? "" : "s"} saved` : "POC contacts cleared");
+      return true;
     } catch (e) {
-      // Server paths index the kept (non-blank) rows; point them back at the rows on screen.
-      const map: Record<string, string> = {};
-      for (const [path, msg] of Object.entries(fieldErrorsOf(e))) {
-        const m = /^contacts\.(\d+)\.(\w+)$/.exec(path);
-        const row = m ? rows.indexOf(kept[Number(m[1])]!) : -1;
-        if (m && row >= 0) map[`${row}.${m[2]}`] = msg;
-      }
-      setServerErrors(map);
+      setServerErrors(rowErrorsOf(e, kept, rows));
       toast(errorMessage(e), "error");
+      goToSection("ho-so-contacts");
+      return false;
     }
   };
+  usePendingSave("poc-contacts", editable && dirty, submit);
+  // Save / Discard only for manual entries (the checkbox, primary and remove save at once).
+  const showActions = editable && dirty && (rows.length > 0 || saved.length > 0);
 
   return (
-    <Card id="ho-so-contacts" className={cn("p-5 sm:p-6", editable && !savedValid && "border-warning/50")}>
+    <Card id="ho-so-contacts" className={cn("p-5 sm:p-6", editable && required && !savedValid && "border-warning/50")}>
       <SectionTitle
         icon={Contact}
-        title="SO Contacts"
-        description={editable ? "Required for SO: at least one SO contact with name and mobile number; email optional. Add more if needed." : "The client's SO contacts for this SO handover."}
-        action={
-          editable && (
-            <Button variant="brand-outline" size="sm" onClick={() => edit([...rows, { ...blankSo(), isPrimary: !rows.some((r) => r.isPrimary) }])} disabled={rows.length >= 50}>
-              <UserPlus className="size-4" aria-hidden /> Add SO Contact
-            </Button>
-          )
+        title={required ? "POC Contacts" : "POC Contacts (optional)"}
+        description={
+          editable
+            ? `${required ? "Required" : "Optional for this type"}: tick Same as Contact Person, or Add POC Contact (name and phone number required; designation and email optional). The primary POC is the order's point of contact.`
+            : "The client's POC contacts for this handover."
         }
       />
-      {editable && !savedValid && (
+      {editable && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+          <label className={cn("flex min-w-0 items-center gap-2.5 text-sm", personReady ? "cursor-pointer" : "cursor-not-allowed opacity-60")}>
+            <input
+              type="checkbox"
+              className="size-4 accent-brand"
+              checked={sameChecked}
+              disabled={!personReady || save.isPending || rows.length >= 50}
+              onChange={(e) => toggleSame(e.target.checked)}
+            />
+            <span className="min-w-0">
+              <span className="font-semibold text-foreground">Same as Contact Person</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {!person
+                  ? "Save the contact person above first."
+                  : !personReady
+                    ? `${person.name} has no 10-digit mobile number.`
+                    : [person.name, person.designation, `+91 ${person.phone}`, person.email].filter(Boolean).join(" · ")}
+              </span>
+            </span>
+            {save.isPending && !dirty && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />}
+          </label>
+          <Button variant="brand-outline" onClick={addManual} disabled={rows.length >= 50 || save.isPending}>
+            <UserPlus className="size-4" aria-hidden /> Add POC Contact
+          </Button>
+        </div>
+      )}
+      {editable && required && !savedValid && (
         <p role="alert" className="mb-3 flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-          <AlertTriangle className="size-4 shrink-0" aria-hidden /> {SO_CONTACT_GAP}{rows.some((r) => !isBlankSo(r)) ? ", then Save SO Contacts." : "."}
+          <AlertTriangle className="size-4 shrink-0" aria-hidden /> {SO_CONTACT_GAP}
+          {kept.length ? ", then Save POC Contacts." : ": tick Same as Contact Person or Add POC Contact."}
+        </p>
+      )}
+      {primary && (
+        <p className="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <Star className="size-3.5 text-brand" aria-hidden /> Point of contact:
+          <span className="font-semibold text-foreground">{primary.name}</span>
+          {primary.phone && <span className="tabular-nums">+91 {primary.phone}</span>}
+          <Badge tone="neutral">{primary.source === "POC" ? "Primary POC" : "Primary client contact"}</Badge>
         </p>
       )}
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">No SO contacts{editable ? " yet. Add at least one with name and phone number." : "."}</p>
+        <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+          No POC contacts{editable ? (required ? " yet." : " (optional). The primary client contact is used as the point of contact.") : "."}
+        </p>
       ) : (
         <div className="max-h-[min(280px,45dvh)] overflow-auto overscroll-contain rounded-lg border border-border">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-3 py-2.5">Name</th>
-                <th className="px-3 py-2.5">Phone Number</th>
-                <th className="px-3 py-2.5">Email (optional)</th>
+                {POC_FIELDS.map(({ f, label }) => (
+                  <th key={f} className="px-3 py-2.5">
+                    {label}
+                    {editable && (f === "name" || f === "phone") && <span className="text-danger"> *</span>}
+                  </th>
+                ))}
                 <th className="px-3 py-2.5">Primary</th>
                 {editable && (
                   <th className="px-3 py-2.5 text-right">
@@ -684,50 +888,63 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((r, i) => {
-                const err = (f: "name" | "phone" | "email") => serverErrors[`${i}.${f}`] ?? (tried ? errors[i]![f] : undefined);
-                return editable ? (
+                const err = (f: ContactField) => serverErrors[`${i}.${f}`] ?? (tried ? errors[i]![f] : undefined);
+                // The contact person's row shows its details (change them in the contact person, not here).
+                const same = !!person && r.ref === person.ref;
+                const primaryCell = editable ? (
+                  <label className="flex h-10 items-center gap-2 text-sm">
+                    <input type="radio" name={`so-primary-${orderId}`} checked={r.isPrimary} disabled={save.isPending} onChange={() => makePrimary(i)} className="size-4 accent-brand" />
+                    Primary
+                  </label>
+                ) : r.isPrimary ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">
+                    <Star className="size-3" aria-hidden /> Primary
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                );
+                return editable && !same ? (
                   <tr key={r.key} className="align-top">
-                    {(["name", "phone", "email"] as const).map((f) => (
+                    {POC_FIELDS.map(({ f, label, placeholder, max }) => (
                       <td key={f} className="px-3 py-2">
                         <Input
-                          aria-label={`SO contact ${i + 1} ${f === "phone" ? "phone number" : f}`}
+                          aria-label={`POC contact ${i + 1} ${label.toLowerCase()}`}
                           aria-invalid={!!err(f)}
+                          aria-required={f === "name" || f === "phone"}
                           value={r[f]}
                           inputMode={f === "phone" ? "numeric" : f === "email" ? "email" : undefined}
-                          placeholder={f === "phone" ? "10-digit mobile" : f === "email" ? "name@company.com" : "Contact name"}
-                          maxLength={f === "name" ? 120 : f === "email" ? 200 : 10}
+                          placeholder={placeholder}
+                          maxLength={max}
                           autoComplete="off"
                           onChange={(e) => setField(i, f, e.target.value)}
                         />
                         {err(f) && <p className="mt-1 text-xs text-danger">{err(f)}</p>}
                       </td>
                     ))}
-                    <td className="px-3 py-2">
-                      <label className="flex h-10 items-center gap-2 text-sm">
-                        <input type="radio" name={`so-primary-${orderId}`} checked={r.isPrimary} onChange={() => makePrimary(i)} className="size-4 accent-brand" />
-                        Primary
-                      </label>
-                    </td>
+                    <td className="px-3 py-2">{primaryCell}</td>
                     <td className="px-3 py-2 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => remove(i)} aria-label={`Remove SO contact ${r.name || i + 1}`} title="Remove">
+                      <Button variant="ghost" size="icon" onClick={() => remove(i)} disabled={save.isPending} aria-label={`Remove POC contact ${r.name || i + 1}`} title="Remove">
                         <Trash2 className="size-4 text-danger" aria-hidden />
                       </Button>
                     </td>
                   </tr>
                 ) : (
                   <tr key={r.key}>
-                    <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                    <td className="px-3 py-2.5 font-medium">
+                      {r.name}
+                      {same && editable && <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">Same as Contact Person</span>}
+                    </td>
+                    <td className="px-3 py-2.5">{r.designation || "-"}</td>
                     <td className="px-3 py-2.5 tabular-nums">+91 {r.phone}</td>
                     <td className="px-3 py-2.5">{r.email || "-"}</td>
-                    <td className="px-3 py-2.5">
-                      {r.isPrimary ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-xs font-medium text-brand">
-                          <Star className="size-3" aria-hidden /> Primary
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
+                    <td className="px-3 py-2.5">{primaryCell}</td>
+                    {editable && (
+                      <td className="px-3 py-2 text-right">
+                        <Button variant="ghost" size="icon" onClick={() => remove(i)} disabled={save.isPending} aria-label={`Remove POC contact ${r.name}`} title="Remove">
+                          <Trash2 className="size-4 text-danger" aria-hidden />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -735,14 +952,14 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
           </table>
         </div>
       )}
-      {editable && dirty && (
+      {showActions && (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
           <span className="mr-auto text-xs text-warning">Unsaved changes</span>
           <Button
             variant="outline"
             disabled={save.isPending}
             onClick={() => {
-              setRows(soRowsOf(saved));
+              setRows(pocRowsOf(saved));
               setDirty(false);
               setTried(false);
               setServerErrors({});
@@ -751,7 +968,7 @@ function SoContactsSection({ orderId, saved, editable }: { orderId: string; save
             Discard
           </Button>
           <Button variant="brand" loading={save.isPending} onClick={() => void submit()}>
-            <Save className="size-4" aria-hidden /> Save SO Contacts
+            <Save className="size-4" aria-hidden /> Save POC Contacts
           </Button>
         </div>
       )}
@@ -871,7 +1088,7 @@ function StatusBanner({ data }: { data: HandoverState }) {
         <Info className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden />
         {data.full ? (
           <p>
-            <b>Not handed over yet.</b> Choose the assign type, complete what it needs (a shop list for the shop types; at least one SO contact for SO), add
+            <b>Not handed over yet.</b> Choose the assign type, complete what it needs (a shop list for the shop types; at least one POC contact for SO), add
             messages and documents, then assign the order to Client Servicing.
           </p>
         ) : (
@@ -906,7 +1123,7 @@ const SO_DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xl
 const kb = (n?: number | null) => (n ? (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`) : "");
 
 /**
- * SO: Additional Documents (optional), right below the SO contacts. Picking or dropping files uploads them at once
+ * SO: Additional Documents (optional), right below the POC contacts. Picking or dropping files uploads them at once
  * (images, PDF, Excel, Word, PowerPoint, CSV); each saved file has Preview, Download and Remove. Kept apart from the chat
  * files; they go with the project code request email and to the Recce team. Hidden for the other types (still saved).
  */
@@ -1039,7 +1256,7 @@ export function HandoverTab({
   onAssigned?: () => void;
   mode?: "cs" | "recce";
   locked?: boolean;
-  /** Client Servicing workflow, handover sent without details: the assigned person completes type, SO contacts and shops. */
+  /** Client Servicing workflow, handover sent without details: the assigned person completes type, POC contacts and shops. */
   csEdit?: boolean;
   /** Lead Management > Full Details: everything shown, nothing editable (no posting either). */
   readOnly?: boolean;
@@ -1060,7 +1277,7 @@ export function HandoverTab({
   // The Recce team always gets the full handover; the toggle is a Client Servicing option.
   const data = recce ? { ...q.data, full: true } : q.data;
   const open = !data.assignee && !locked && !readOnly; // before handover the BD can still change everything
-  // Handover details (type, SO contacts, shop list, images): the BD before handover, or the assigned Client Servicing
+  // Handover details (type, POC contacts, shop list, images): the BD before handover, or the assigned Client Servicing
   // person completing them (server-checked). Chat, contacts and delete permissions are not affected.
   const details = (canWrite && open) || (csEdit && !locked && !readOnly);
   // The Client Servicing person the order is handed to can reply in the handover chat (read-only otherwise).
@@ -1077,19 +1294,31 @@ export function HandoverTab({
       {!recce && <StatusBanner data={data} />}
       <ClientSection
         order={order}
-        canAddContact={canWrite && open && can("clients:write")}
+        // Recce route: no Add Contact Person (the contact person comes from Zoho, or one row for this order).
+        canAddContact={!recce && canWrite && open && can("clients:write")}
         aso={data.full && data.type === "ASO"}
+        recce={recce}
         orderContacts={data.orderContacts ?? []}
-        // Client Servicing, Recce Team > Assign Type & Details, Zoho client: contact persons for this order only.
-        manualEditable={recce && csEdit && details && order.clientType === "EXISTING"}
+        // Recce Team > Assign Type & Details, client without contact persons: one mandatory contact for this order.
+        manualEditable={recce && details}
       />
       <TypeSection orderId={order._id} data={data} editable={details} toggle={toggle} />
       <AnimatePresence initial={false}>
         {data.full && (
           <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="space-y-4">
-            {/* SO contacts stay on the order for other types too (hidden, not deleted). */}
-            {data.type === "ASO" && <SoContactsSection orderId={order._id} saved={data.soContacts} editable={details} />}
-            {/* SO: optional documents right below the SO contacts (kept, hidden, for the other types). */}
+            {/* POC contacts: every assign type (required for SO only); kept when the type changes. */}
+            {data.type && (
+              <PocContactsSection
+                orderId={order._id}
+                saved={data.soContacts}
+                editable={details}
+                // Recce route: required for every type; the BD / Client Servicing handover: SO only.
+                required={recce || data.type === "ASO"}
+                clientContacts={pocChoicesOf(order.client.contacts?.length ? order.client.contacts : (data.orderContacts ?? []))}
+                primary={data.primaryContact ?? null}
+              />
+            )}
+            {/* SO: optional documents right below the POC contacts (kept, hidden, for the other types). */}
             {data.type === "ASO" && <SoDocumentsSection orderId={order._id} saved={data.soDocuments ?? []} editable={details} />}
             {/* Each shop type has its own list; keyed by type so nothing of the other type's table stays on screen. */}
             {(data.type === "SHOP_DETAILS" || data.type === "SHOP_MEASUREMENT") && (

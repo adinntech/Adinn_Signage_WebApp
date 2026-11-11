@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2, CircleAlert, Info, LockKeyhole, SkipForward, UserRoundCheck } from "lucide-react";
-import { goToHandoverGap, goToSoContacts, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
+import { CONTACT_PERSON_GAP, goToHandoverGap, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
@@ -60,11 +60,17 @@ export function StepFooter({
   onContinue,
   missing: given,
   skip,
+  softGaps = [],
 }: {
   orderId: string;
   next: string;
   onContinue: () => void | Promise<void>;
   missing?: string[];
+  /**
+   * Gaps that do not disable Continue / Skip (Recce route: the contact gaps): their forward action saves unsaved
+   * contacts first and checks again, staying on the step with the inline errors when still missing.
+   */
+  softGaps?: string[];
   /** A second way on that also needs the details complete (Skip: Rate Card). */
   skip?: { label: string; onSkip: () => Promise<void> };
 }) {
@@ -87,17 +93,18 @@ export function StepFooter({
   // `given`: gaps worked out by the caller (Recce route: the full handover, whatever the Client Servicing toggle).
   const missing = given ?? q.data.missing;
   const ready = missing.length === 0;
+  const blocked = missing.some((m) => !softGaps.includes(m));
   return (
     <div id={FOOTER_ID} className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>
       {ready ? <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden /> : <CircleAlert className="size-5 shrink-0 text-warning" aria-hidden />}
       <p className="min-w-0 flex-1 text-sm">
         {ready ? (
           <b>Assign type &amp; details complete.</b>
-        ) : missing[0] === SO_CONTACT_GAP ? (
-          // ASO without an SO contact: say so and take the user to the section.
+        ) : missing[0] === SO_CONTACT_GAP || missing[0] === CONTACT_PERSON_GAP ? (
+          // Missing client contact person / POC contact: say so and take the user to the section.
           <>
             To continue:{" "}
-            <button type="button" onClick={goToSoContacts} className="font-medium underline underline-offset-2 hover:text-primary">
+            <button type="button" onClick={() => goToHandoverGap(missing[0]!)} className="font-medium underline underline-offset-2 hover:text-primary">
               {missing[0]}
             </button>
           </>
@@ -106,11 +113,11 @@ export function StepFooter({
         )}
       </p>
       {skip && (
-        <Button variant="outline" disabled={!ready || busy === "continue"} loading={busy === "skip"} onClick={() => void go("skip")}>
+        <Button variant="outline" disabled={blocked || busy === "continue"} loading={busy === "skip"} onClick={() => void go("skip")}>
           <SkipForward className="size-4" aria-hidden /> {skip.label}
         </Button>
       )}
-      <Button variant="brand" disabled={!ready || busy === "skip"} loading={busy === "continue"} onClick={() => void go("continue")}>
+      <Button variant="brand" disabled={blocked || busy === "skip"} loading={busy === "continue"} onClick={() => void go("continue")}>
         Continue: {next} <ArrowRight className="size-4" aria-hidden />
       </Button>
     </div>

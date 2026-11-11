@@ -75,9 +75,9 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
               </li>
             ))}
           </ul>
-          {h.type === "ASO" && !!h.soContacts?.length && (
+          {!!h.soContacts?.length && (
             <div className="mt-4 border-t border-border pt-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">SO Contacts</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">POC Contacts</p>
               <ul className="grid gap-2 md:grid-cols-2">
                 {h.soContacts.map((k, i) => (
                   <li key={`so-${k.phone}-${i}`} className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
@@ -85,7 +85,7 @@ export function BdHandover({ projectId, h }: { projectId: string; h: ProjectHand
                       {k.name}
                       {k.isPrimary && <Star className="size-3.5 fill-current text-brand" aria-label="Primary" />}
                     </p>
-                    <p className="text-muted-foreground">{[`+91 ${k.phone}`, k.email].filter(Boolean).join(" · ")}</p>
+                    <p className="text-muted-foreground">{[k.designation, `+91 ${k.phone}`, k.email].filter(Boolean).join(" · ")}</p>
                   </li>
                 ))}
               </ul>

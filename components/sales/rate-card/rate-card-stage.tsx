@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, SkipForward, Trash2, UserRound } from "lucide-react";
+import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Phone, Plus, Save, ScrollText, Send, SkipForward, Trash2, UserRound } from "lucide-react";
 import { z } from "zod";
 import { normalizeMobile } from "@/components/clients/company-form";
 import { Button } from "@/components/ui/button";
@@ -76,7 +76,8 @@ const csSchema = schema.extend({ contact: schema.shape.contact.extend({ name: z.
  */
 function toForm(d: QuotationState, typedContact = false): FormValues {
   const src = d.latest ?? d.draft!;
-  const contact = typedContact && !d.latest ? { name: src.contact?.name ?? "", designation: "", phone: "", email: "" } : src.contact;
+  // New rate card: the point of contact's name and phone (Kind Attn), both editable.
+  const contact = typedContact && !d.latest ? { name: src.contact?.name ?? "", designation: "", phone: src.contact?.phone ?? "", email: "" } : src.contact;
   const saved = (src.clientAddress ?? "").trim();
   const full = d.billTo?.full;
   const cityOnly = !saved || saved.toLowerCase() === (d.billTo?.city ?? "").trim().toLowerCase();
@@ -182,11 +183,13 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   // Rate Card step, new rate card: the contact name of a draft read later (e.g. refetched after contacts were saved in
   // Assign Type & Details) fills an untouched, empty Contact Person; a typed or saved name is never overwritten.
   const draftContact = !data.latest ? (data.draft?.contact?.name ?? "") : "";
+  const draftPhone = !data.latest ? (data.draft?.contact?.phone ?? "") : "";
   useEffect(() => {
-    if (!step || data.latest || !draftContact) return;
-    if (form.getFieldState("contact.name").isDirty || form.getValues("contact.name")) return;
-    form.resetField("contact.name", { defaultValue: draftContact });
-  }, [step, data.latest, draftContact, form]);
+    if (!step || data.latest) return;
+    if (draftContact && !form.getFieldState("contact.name").isDirty && !form.getValues("contact.name")) form.resetField("contact.name", { defaultValue: draftContact });
+    // The phone the same way (shown after the name in Kind Attn).
+    if (draftPhone && !form.getFieldState("contact.phone").isDirty && !form.getValues("contact.phone")) form.resetField("contact.phone", { defaultValue: draftPhone });
+  }, [step, data.latest, draftContact, draftPhone, form]);
 
   // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
   // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).
@@ -392,6 +395,23 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     )}
                   </div>
                 </Field>
+                {/* Rate Card step: the contact person's phone (auto-filled; shown after the name in Kind Attn on the PDF). */}
+                {step && (
+                  <Field label="Contact Phone" htmlFor="rc-contact-phone" hint="Optional: shown after the contact person on the PDF" error={e("contact.phone")}>
+                    <div className="relative">
+                      <Phone className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                      <Input
+                        id="rc-contact-phone"
+                        className="pl-9 tabular-nums"
+                        inputMode="numeric"
+                        maxLength={10}
+                        placeholder="10-digit mobile (optional)"
+                        aria-invalid={!!e("contact.phone")}
+                        {...register("contact.phone", { onChange: (ev) => form.setValue("contact.phone", String(ev.target.value).replace(/\D/g, "").slice(0, 10)) })}
+                      />
+                    </div>
+                  </Field>
+                )}
                 {/* Rate Card step: no date input; each new version is dated today (IST) when it is saved. */}
                 {!step && (
                 <Field label="Quotation Date" htmlFor="rc-date" required error={e("quotationDate")}>
