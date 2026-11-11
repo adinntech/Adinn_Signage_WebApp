@@ -146,6 +146,15 @@ export const useRouteLeg = (pid: string) => usePlanMutation(pid, (legKey: string
 export const useSubmitPlan = (pid: string) => usePlanMutation(pid, (b: { justification?: string }) => post(`/projects/${pid}/cost/submit`, b));
 export const useDecidePlan = (pid: string) => usePlanMutation(pid, (b: { approve: boolean; remark?: string }) => post(`/projects/${pid}/cost/decide`, b));
 export const useAssignPlan = (pid: string) => usePlanMutation(pid, () => post<CostView & { assigned: number; skipped: string[]; stage: string | null; vendorsWithoutLogin: { id: string; name: string; email: string | null; mobile: string | null }[] }>(`/projects/${pid}/cost/assign`));
+
+/** After the shops are assigned: per area, the mobile logins to choose from and who already holds its shops. */
+export interface LegLogins {
+  key: string; name: string; channel: Channel; vendorName: string | null; shops: number; unassigned: number;
+  logins: { id: string; name: string; phone: string | null; employeeId: string | null }[];
+  holders: { userId: string; shops: number; assignedAt: string | null; assignedBy: string | null }[];
+}
+export const useLegLogins = (pid: string, enabled: boolean) => useQuery({ queryKey: [...key(pid), "logins"], queryFn: () => api<LegLogins[]>(`/projects/${pid}/cost/logins`), enabled: enabled && !!pid });
+export const useAssignLogins = (pid: string) => usePlanMutation(pid, (b: { legs: { key: string; userId: string }[] }) => post<{ given: number; legs: LegLogins[] }>(`/projects/${pid}/cost/assign-logins`, b));
 export const useClientDecision = (pid: string) => usePlanMutation(pid, (b: { decision: ClientDecision; remark?: string }) => post(`/projects/${pid}/cost/client-decision`, b));
 
 /** Company rates (admin fixes them; everyone who plans reads them). */
@@ -226,7 +235,7 @@ export interface ZohoNearby { zohoContactId: string; vendorNo?: string | null; n
 export const useReadiness = (pid: string) => useQuery({ queryKey: [...key(pid), "readiness"], queryFn: () => api<Verification>(`/projects/${pid}/cost/readiness`), enabled: !!pid, refetchInterval: 30_000 });
 export interface SuggestResult { unlocated?: number; base?: { name: string; lat: number; lng: number; isDefault: boolean }; applied: boolean; verification?: Verification; groupBy: "area" | "district"; proposals: SuggestProposal[]; totals: { shops: number; areas: number; suggested: number; allInHouse: number; allVendor: number; inHouseShops: number; vendorShops: number } }
 export type PlannerMode = "BOTH" | "VENDOR" | "IN_HOUSE";
-export interface PlanShop { id: string; name: string; location: string; district: string; planArea: string | null; lat: number | null; lng: number | null }
+export interface PlanShop { id: string; name: string; location: string; district: string; planArea: string | null; lat: number | null; lng: number | null; pincode?: string; address?: string }
 export interface PlanHistoryRow { _id: string; action: string; reason?: string; at: string; user?: { name?: string; role?: string } | null; changes: { field: string; oldValue: unknown; newValue: unknown }[] }
 export const usePlanShops = (pid: string, enabled = true) => useQuery({ queryKey: [...key(pid), "shops"], queryFn: () => api<PlanShop[]>(`/projects/${pid}/cost/shops`), enabled: enabled && !!pid });
 export const usePlanHistory = (pid: string, enabled = true) => useQuery({ queryKey: [...key(pid), "history"], queryFn: () => api<PlanHistoryRow[]>(`/projects/${pid}/cost/history`), enabled: enabled && !!pid });

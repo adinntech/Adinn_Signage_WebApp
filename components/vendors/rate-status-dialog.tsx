@@ -10,18 +10,18 @@ import { useChangeRateStatus, type RateApproval } from "@/lib/api/vendors";
 import { cn } from "@/lib/utils";
 
 const money = (n: number | null) => (n == null ? "–" : `₹${n}`);
-export const APPROVAL_LABEL: Record<string, string> = { PENDING: "Pending approval", APPROVED: "Approved", NOT_APPROVED: "Not approved" };
+export const APPROVAL_LABEL: Record<string, string> = { PENDING: "Waiting for approval", APPROVED: "Approved", NOT_APPROVED: "Not approved" };
 const TONE: Record<string, string> = { PENDING: "text-approval", APPROVED: "text-finance", NOT_APPROVED: "text-loss" };
 
 /** The status of a vendor amount request, in the Vendors with cost list. */
 export function ApprovalTag({ a }: { a: RateApproval }) {
-  const detail =
-    a.status === "PENDING" ? `${money(a.ratePerShop)}${a.farRatePerShop != null ? ` / ${money(a.farRatePerShop)}` : ""}`
-    : a.status === "NOT_APPROVED" ? `company rate applied ${money(a.appliedRate)}${a.appliedFar != null ? ` / ${money(a.appliedFar)}` : ""}`
-    : `${money(a.appliedRate)}${a.appliedFar != null ? ` / ${money(a.appliedFar)}` : ""}`;
+  const full =
+    a.status === "PENDING" ? `Requested ${money(a.ratePerShop)}${a.farRatePerShop != null ? ` / ${money(a.farRatePerShop)}` : ""}`
+    : a.status === "NOT_APPROVED" ? `Company rate applied ${money(a.appliedRate)}${a.appliedFar != null ? ` / ${money(a.appliedFar)}` : ""}`
+    : `Applied ${money(a.appliedRate)}${a.appliedFar != null ? ` / ${money(a.appliedFar)}` : ""}`;
   return (
-    <span className={cn("mt-1 block text-xs font-semibold", TONE[a.status] ?? "text-muted-foreground")} title={`Company rate ${money(a.limitRate)} / travelling cost ${money(a.limitFar)}. Request ${a.requestId}${a.decidedBy ? `. By ${a.decidedBy}` : ""}`}>
-      {APPROVAL_LABEL[a.status] ?? a.status}: {detail}
+    <span className={cn("mt-1 inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold", { PENDING: "bg-[#fff0e0] text-approval", APPROVED: "bg-[#e2f8ea] text-finance", NOT_APPROVED: "bg-[#fdecec] text-loss" }[a.status] ?? "bg-muted text-muted-foreground")} title={`${full}. Company rate ${money(a.limitRate)} / travelling cost ${money(a.limitFar)}. Request ${a.requestId}${a.decidedBy ? `. By ${a.decidedBy}` : ""}`}>
+      {APPROVAL_LABEL[a.status] ?? a.status}
     </span>
   );
 }

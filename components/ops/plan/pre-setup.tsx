@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LocateShops } from "@/components/allocation/locate-shops";
 import { AllocationMap } from "@/components/allocation/map-loader";
-import { useSetOrigin } from "@/lib/api/allocation";
+import { useSetCoords, useSetOrigin } from "@/lib/api/allocation";
 import { History, Pencil, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,6 +108,53 @@ function EditShops({ projectId, areaKey, areaName, onClose }: { projectId: strin
   );
 }
 
+const km = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+};
+type OrderShop = { name: string; lat: number | null; lng: number | null; location?: string; pincode?: string; address?: string };
+const low = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+/**
+ * Shop ids in visiting order. Shops at the same map point form one stop (they are the same area), stops are visited nearest
+ * first from the start point, and inside a stop shops with the same pincode / street text sit together. A shop without a point
+ * is placed next to the shops of its pincode (else its town); the rest go last, grouped the same way.
+ */
+function routeOrder(ids: string[], byId: Map<string, OrderShop>, origin: { lat: number; lng: number } | null): string[] {
+  const get = (id: string) => byId.get(id);
+  const sortKey = (id: string) => `${get(id)?.pincode ?? ""}|${low(get(id)?.address)}|${low(get(id)?.name)}`;
+  const byKey = (a: string, b: string) => sortKey(a).localeCompare(sortKey(b));
+  const stops = new Map<string, { lat: number; lng: number; ids: string[] }>();
+  const loose: string[] = [];
+  for (const id of ids) {
+    const s = get(id);
+    if (!s || s.lat == null || s.lng == null) { loose.push(id); continue; }
+    const k = `${s.lat.toFixed(4)},${s.lng.toFixed(4)}`;
+    const stop = stops.get(k) ?? { lat: s.lat, lng: s.lng, ids: [] };
+    stop.ids.push(id);
+    stops.set(k, stop);
+  }
+  const left = [...stops.values()];
+  const out: string[] = [];
+  let here = origin ?? (left[0] ? { lat: left[0].lat, lng: left[0].lng } : null);
+  while (left.length && here) {
+    let best = 0;
+    for (let i = 1; i < left.length; i++) if (km(here, left[i]!) < km(here, left[best]!)) best = i;
+    const [stop] = left.splice(best, 1);
+    out.push(...stop!.ids.sort(byKey));
+    here = stop!;
+  }
+  // Shops with no point: after the last shop with the same pincode, else the same town; otherwise at the end.
+  const rest: string[] = [];
+  for (const id of loose.sort(byKey)) {
+    const s = get(id);
+    const same = (o: string) => (!!s?.pincode && get(o)?.pincode === s.pincode) || (!s?.pincode && !!s?.location && low(get(o)?.location) === low(s.location));
+    let at = -1;
+    out.forEach((o, i) => { if (same(o)) at = i; });
+    if (at >= 0) out.splice(at + 1, 0, id); else rest.push(id);
+  }
+  return [...out, ...rest];
+}
 const PALETTE = ["#1e3a8a", "#b45309", "#047857", "#6d28d9", "#be123c", "#0e7490", "#4d7c0f", "#9a3412", "#4338ca", "#475569"];
 const IN_COLOR = "#1e3a8a";
 const VENDOR_COLOR = "#0f766e";
@@ -181,9 +228,9 @@ function Donut({ parts, total, hover, onHover }: { parts: Slice[]; total: number
 
 /** A border of light running round the edge, so the cheaper way is seen at once. Still when the user prefers less motion. */
 function Glow({ on, children }: { on: boolean; children: React.ReactNode }) {
-  if (!on) return <div className="h-full rounded-xl border border-border">{children}</div>;
+  if (!on) return <div className="h-full min-w-0 rounded-xl border border-border">{children}</div>;
   return (
-    <div className="relative h-full overflow-hidden rounded-xl p-[2px]">
+    <div className="relative h-full min-w-0 overflow-hidden rounded-xl p-[2px]">
       <span aria-hidden className="absolute -inset-[60%] animate-[spin_3.2s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0deg,transparent_250deg,#0f766e_320deg,#1e3a8a_350deg,transparent_360deg)] motion-reduce:animate-none" />
       <div className="relative h-full rounded-[10px] bg-surface">{children}</div>
     </div>
@@ -217,7 +264,7 @@ function OptionPanel({ title, sub, opt, color, tag, cheapest, active, onPick, ch
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className={cn("flex items-center gap-1.5 font-semibold text-navy", F.body)}><span className="size-2.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden /><span className="truncate">{title}</span></p>
-          {sub && <p className={cn("truncate text-muted-foreground", F.small)} title={sub}>{sub}</p>}
+          {sub && <p className={cn("line-clamp-2 break-words text-muted-foreground", F.small)} title={sub}>{sub}</p>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {cheapest && <span className="animate-pulse rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white motion-reduce:animate-none">Budget friendly</span>}
@@ -240,7 +287,7 @@ function OptionPanel({ title, sub, opt, color, tag, cheapest, active, onPick, ch
     </div>
   );
   const clickable = onPick ? { role: "button" as const, tabIndex: 0, onClick: onPick, onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && onPick(), className: "cursor-pointer" } : {};
-  return <div {...clickable} className={cn("h-full", clickable.className)}><Glow on={cheapest}>{inner}</Glow></div>;
+  return <div {...clickable} className={cn("h-full min-w-0", clickable.className)}><Glow on={cheapest}>{inner}</Glow></div>;
 }
 
 /** Type-to-filter vendor list: matches the vendor name, vendor ID (code), mobile number or cost, cheapest first. */
@@ -281,13 +328,13 @@ function VendorPicker({ label, vendors, disabled, onPick }: { label: string; ven
   );
 }
 
-function Card({ c, color, hot, onHot, selected, onSelect, shopNames, onMap, canEdit, vendors, onChoose, onEdit, busy }: {
-  c: AreaCard; color: string; hot: boolean; onHot: (on: boolean) => void; selected: boolean; onSelect: () => void; shopNames: string[]; onMap: number; canEdit: boolean; vendors: Vendor[];
+function Card({ c, color, hot, onHot, selected, onSelect, shopNames, shopList, focusId, placingId, onFocusShop, onMap, canEdit, vendors, onChoose, onEdit, busy }: {
+  c: AreaCard; color: string; hot: boolean; onHot: (on: boolean) => void; selected: boolean; onSelect: () => void; shopNames: string[]; shopList: { id: string; name: string; pinned: boolean }[]; focusId: string | null; placingId: string | null; onFocusShop: (id: string) => void; onMap: number; canEdit: boolean; vendors: Vendor[];
   onChoose: (channel: Channel, vendorId?: string) => void; onEdit: () => void; busy: boolean;
 }) {
   const inCheaper = !c.vendor || c.inHouse.total <= c.vendor.total;
   return (
-    <article onClick={onSelect} onMouseEnter={() => onHot(true)} onMouseLeave={() => onHot(false)} className={cn("rounded-2xl border bg-surface p-4 shadow-soft transition-shadow 2xl:p-5", selected ? "border-navy ring-2 ring-navy/20" : hot ? "border-navy/50 shadow-card" : "border-border")}>
+    <article onClick={onSelect} onMouseEnter={() => onHot(true)} onMouseLeave={() => onHot(false)} className={cn("min-w-0 rounded-2xl border bg-surface p-4 shadow-soft transition-shadow 2xl:p-5", selected ? "border-navy ring-2 ring-navy/20" : hot ? "border-navy/50 shadow-card" : "border-border")}>
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="size-3.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
         <h3 className={cn("font-semibold text-navy", F.title)}>{c.name}</h3>
@@ -297,10 +344,21 @@ function Card({ c, color, hot, onHot, selected, onSelect, shopNames, onMap, canE
       </header>
       <details className={cn("mt-2 text-muted-foreground", F.small)} onClick={(e) => e.stopPropagation()}>
         <summary className="cursor-pointer select-none truncate">{shopNames.slice(0, 3).join(" · ")}{shopNames.length > 3 ? ` +${shopNames.length - 3} more` : ""}</summary>
-        <ol className="mt-1 list-decimal space-y-0.5 pl-5">{shopNames.map((n, i) => <li key={`${n}-${i}`}>{n}</li>)}</ol>
+        <p className="mt-1 text-xs">Click a shop to see its point on the map.</p>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+          {shopList.map((s) => (
+            <li key={s.id}>
+              <button type="button" onClick={() => onFocusShop(s.id)} aria-pressed={focusId === s.id || placingId === s.id} title={s.pinned ? "Show on the map" : "Not on the map yet. Click to place it"}
+                className={cn("rounded px-1 text-left hover:bg-muted", (focusId === s.id || placingId === s.id) && "bg-navy font-medium text-white hover:bg-navy")}>
+                {s.name}
+              </button>
+              {!s.pinned && <span className="ml-1.5 rounded bg-[#fff7ed] px-1.5 text-[10px] font-semibold text-approval">{placingId === s.id && canEdit ? "Click the map to place" : "no pin"}</span>}
+            </li>
+          ))}
+        </ol>
       </details>
 
-      <div className="mt-3 grid items-stretch gap-3 2xl:grid-cols-2" onClick={(e) => e.stopPropagation()}>
+      <div className="mt-3 grid grid-cols-1 items-stretch gap-3 2xl:grid-cols-2" onClick={(e) => e.stopPropagation()}>
         <OptionPanel title="In-house team" sub={c.inHouse.note} color={IN_COLOR} opt={c.inHouse} cheapest={inCheaper && !!c.vendor} tag={c.channel === "IN_HOUSE" ? (c.saved ? "Selected" : "Suggested") : undefined} active={c.channel === "IN_HOUSE"} onPick={c.saved && canEdit && !busy ? () => onChoose("IN_HOUSE") : undefined} />
         <OptionPanel title={c.vendorName ?? "Vendor"} sub={c.vendor?.note} color={VENDOR_COLOR} opt={c.vendor} cheapest={!!c.vendor && !inCheaper} tag={c.channel === "VENDOR" ? (c.saved ? "Selected" : "Suggested") : undefined} active={c.channel === "VENDOR"} onPick={c.saved && canEdit && !busy && c.vendorId ? () => onChoose("VENDOR", c.vendorId!) : undefined}>
           {c.saved && canEdit && (
@@ -355,6 +413,9 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
   const skillList = useVendorSkills();
   const qc = useQueryClient();
   const setOrigin = useSetOrigin(projectId);
+  const setCoords = useSetCoords(projectId);
+  const [focusShop, setFocusShop] = useState<string | null>(null);
+  const [placing, setPlacing] = useState<string | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ["cost", projectId] });
   const [mode, setMode] = useState<PlannerMode>("BOTH");
   const [picked, setPicked] = useState<string[]>([]);
@@ -431,9 +492,48 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
   const total = cards.reduce((a, c) => a + c.shops.length, 0);
   const inShops = cards.filter((c) => c.channel === "IN_HOUSE").reduce((a, c) => a + c.shops.length, 0);
 
-  const pins = useMemo(() => { const seen = new Map<string, number>(); return cards.flatMap((c, i) => c.shops.flatMap((id) => { const s = byId.get(id); if (s?.lat == null || s.lng == null) return []; const k = `${s.lat.toFixed(2)},${s.lng.toFixed(2)}`; const n = seen.get(k) ?? 0; seen.set(k, n + 1); const a = n * 2.1; return [{ id, name: s.name, sub: `${c.name}${s.location ? ` · ${s.location}` : ""}`, lat: s.lat + (n ? 0.007 * Math.sin(a) : 0), lng: s.lng + (n ? 0.007 * Math.cos(a) : 0), color: (selected || hover) && (selected ?? hover) !== c.key ? "#cbd5e1" : PALETTE[i % PALETTE.length]! }]; })); }, [cards, byId, selected, hover]);
+  const ownOrigin = cost.data?.project.origin;
+  const base = result?.base;
+  const origin = useMemo(() => ownOrigin ?? (base ? { name: base.name, lat: base.lat, lng: base.lng } : null), [ownOrigin, base]);
+  // Each route's shops in visiting order (nearest next), so shops close to each other sit together in the list and on the map.
+  const orderOf = useMemo(() => new Map(cards.map((c) => [c.key, routeOrder(c.shops, byId, origin)])), [cards, byId, origin]);
+  const { pins, paths } = useMemo(() => {
+    const seen = new Map<string, number>();
+    const lit = selected ?? hover;
+    const paths = new Map<string, [number, number][]>();
+    const pins = cards.flatMap((c, i) => (orderOf.get(c.key) ?? c.shops).flatMap((id, pos) => {
+      const s = byId.get(id);
+      if (s?.lat == null || s.lng == null) return [];
+      // Shops with exactly the same position (found only down to the area) are spread a little so each can be seen and clicked.
+      const k = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
+      const n = seen.get(k) ?? 0; seen.set(k, n + 1);
+      const a = n * 2.1; const r = 0.0007 * Math.sqrt(n);
+      const lat = s.lat + (n ? r * Math.sin(a) : 0), lng = s.lng + (n ? r * Math.cos(a) : 0);
+      paths.set(c.key, [...(paths.get(c.key) ?? []), [lat, lng]]);
+      return [{ id, name: `${pos + 1}. ${s.name}`, sub: `${c.name}${s.location ? ` · ${s.location}` : ""}`, lat, lng, color: lit && lit !== c.key ? "#cbd5e1" : PALETTE[i % PALETTE.length]! }];
+    }));
+    return { pins, paths };
+  }, [cards, byId, selected, hover, orderOf]);
+  // The visiting order of the route being looked at (hovered, selected, the one of the shop clicked, or the only route): start point, then each shop with an arrow.
+  const watched = selected ?? hover ?? cards.find((c) => focusShop && c.shops.includes(focusShop))?.key ?? (cards.length === 1 ? cards[0]!.key : null);
+  const routes = useMemo(() => {
+    const path = watched ? paths.get(watched) : undefined;
+    const i = cards.findIndex((c) => c.key === watched);
+    return path?.length ? [{ color: PALETTE[Math.max(0, i) % PALETTE.length]!, coords: [...(origin ? [[origin.lat, origin.lng] as [number, number]] : []), ...path], arrows: true }] : [];
+  }, [watched, paths, cards, origin]);
+  // Clicking a shop in a route zooms the map to its point; a shop without a point can be placed by clicking the map.
+  const onShopClick = (id: string) => {
+    const s = byId.get(id);
+    if (s?.lat != null && s.lng != null) { setPlacing(null); setFocusShop(focusShop === id ? null : id); return; }
+    setFocusShop(null);
+    if (canEdit) { setPlacing(placing === id ? null : id); toast("This shop has no point yet. Click its place on the map"); }
+    else toast("This shop has no point on the map yet", "error");
+  };
+  const placeShop = (lat: number, lng: number) => {
+    if (!placing) return;
+    setCoords.mutate({ id: placing, lat, lng }, { onSuccess: () => { toast("Shop placed on the map"); setFocusShop(placing); setPlacing(null); refresh(); run(false); }, onError: (e) => toast(errorMessage(e), "error") });
+  };
   const onMapOf = (c: AreaCard) => c.shops.filter((id) => byId.get(id)?.lat != null).length;
-  const origin = cost.data?.project.origin ?? (result?.base ? { name: result.base.name, lat: result.base.lat, lng: result.base.lng } : null);
   const unlocated = (shops.data ?? []).filter((s) => s.lat == null || s.lng == null).length;
   const setStart = (name: string, lat: number, lng: number) => setOrigin.mutate({ name, lat, lng }, { onSuccess: () => { toast(`Start point: ${name}`); setMoving(false); setPinned(null); setPlaceName(""); refresh(); run(false); }, onError: (e) => toast(errorMessage(e), "error") });
   const findAddress = async () => {
@@ -550,14 +650,16 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
           {/* The map stays in view while the routes on the right scroll past it. When the routes are short nothing scrolls. */}
           <div className="grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <div className="flex flex-col gap-2 xl:sticky xl:top-3 xl:h-[calc(100dvh-1.5rem)] xl:self-start">
-              <div className="h-[360px] min-h-0 xl:h-auto xl:flex-1"><AllocationMap pins={pins} origin={pinned ? { name: "New place", ...pinned } : origin} height="100%" onPick={canEdit && moving ? (lat, lng) => setPinned({ lat, lng }) : undefined} /></div>
+              <div className="h-[360px] min-h-0 xl:h-auto xl:flex-1"><AllocationMap pins={pins} routes={routes} origin={pinned ? { name: "New place", ...pinned } : origin} height="100%" focusId={focusShop} onPick={canEdit && moving ? (lat, lng) => setPinned({ lat, lng }) : canEdit && placing ? placeShop : undefined} /></div>
               <p className={cn("text-muted-foreground", F.small)}>{pins.length} of {total} shops are on the map{pins.length < total ? ". The others have no position yet; they are still counted in the cost." : "."}</p>
               <ul className={cn("flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground", F.small)}>{cards.map((c, i) => <li key={c.key} className="flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: PALETTE[i % PALETTE.length] }} aria-hidden />{c.name}</li>)}</ul>
             </div>
             <div className="min-w-0 space-y-3">
               {cards.map((c, i) => (
                 <Card key={c.key} c={c} color={PALETTE[i % PALETTE.length]!} hot={hover === c.key} onHot={(on) => setHover(on ? c.key : null)} selected={selected === c.key} onSelect={() => setSelected(selected === c.key ? null : c.key)} canEdit={canEdit} vendors={vendors.data ?? []} busy={choose.isPending} onMap={onMapOf(c)}
-                  shopNames={c.shops.map((id) => byId.get(id)?.name ?? "").filter(Boolean)}
+                  shopNames={(orderOf.get(c.key) ?? c.shops).map((id) => byId.get(id)?.name ?? "").filter(Boolean)}
+                  shopList={(orderOf.get(c.key) ?? c.shops).flatMap((id) => { const s = byId.get(id); return s ? [{ id, name: s.name, pinned: s.lat != null && s.lng != null }] : []; })}
+                  focusId={focusShop} placingId={placing} onFocusShop={onShopClick}
                   onChoose={(channel, vendorId) => choose.mutate({ areaKey: c.key, channel, ...(vendorId ? { vendorId } : {}) }, { onSuccess: () => toast("Saved in the planning history"), onError: (e) => toast(errorMessage(e), "error") })}
                   onEdit={() => setEditing({ key: c.key, name: c.name })} />
               ))}

@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
-import { useSetVendorId, type Vendor } from "@/lib/api/vendors";
+import { correctionReply, useSetVendorId, type Vendor } from "@/lib/api/vendors";
 
 /** Accounts replied to the registration mail with the vendor ID: type it here, straight from the vendor list. */
 export function VendorIdDialog({ vendor, onClose }: { vendor: Pick<Vendor, "_id" | "name" | "code" | "zohoVendorNo" | "registration">; onClose: () => void }) {
@@ -22,10 +22,12 @@ export function VendorIdDialog({ vendor, onClose }: { vendor: Pick<Vendor, "_id"
   const changes = [...(vendor.registration?.idHistory ?? [])].reverse();
   // A reply read after the ID was saved is a correction: its ID is filled in (a person still checks and saves it).
   const r = vendor.registration;
-  const newer = !!latest?.detectedVendorNo && !!latest.receivedAt && !!r?.vendorIdAt && new Date(latest.receivedAt) > new Date(r.vendorIdAt);
-  const [no, setNo] = useState(vendor.zohoVendorNo ? (newer ? latest!.detectedVendorNo! : vendor.zohoVendorNo) : detected || "");
+  // The mail's own time can be a few seconds (or a minute) before the save even when the mail came after it (mail clocks, Date header without seconds),
+  // so a reply also counts as newer when it was READ after the save.
+  const fix = correctionReply(r, vendor.zohoVendorNo);
+  const [no, setNo] = useState(vendor.zohoVendorNo ? (fix ? fix.vendorNo : vendor.zohoVendorNo) : detected || "");
   const [error, setError] = useState("");
-  const corrected = !!vendor.zohoVendorNo && newer && detected !== vendor.zohoVendorNo;
+  const corrected = !!fix;
 
   function submit() {
     if (!/^\d{2,8}$/.test(no)) return setError("Enter the vendor ID Accounts sent (2 to 8 digits)");

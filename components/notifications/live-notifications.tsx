@@ -33,7 +33,7 @@ export function LiveNotifications() {
     (n: NotificationItem) => {
       markRead.mutate(n.id);
       dismiss(n.id);
-      router.push(notificationHref(role, n.projectId, n.kind));
+      router.push(notificationHref(role, n.projectId, n.kind, n.orderId, n.path));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [role, router, dismiss],

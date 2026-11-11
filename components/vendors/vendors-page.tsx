@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, KeyRound, Loader2, Mail, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, downloadVendors, useDeleteVendor, useVendors, useZohoDirectory, useZohoDirectoryStatus, type Vendor, type VendorStatus, type VendorType, type ZohoVendorRow } from "@/lib/api/vendors";
+import { VENDOR_STATUS_LABEL, VENDOR_TYPE_LABEL, correctionReply, downloadVendors, useDeleteVendor, useVendor, useVendors, useZohoDirectory, useZohoDirectoryStatus, type Vendor, type VendorStatus, type VendorType, type ZohoVendorRow } from "@/lib/api/vendors";
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { SortHeader, nextSort, type SortState } from "@/components/ui/sort-header";
@@ -66,6 +66,10 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
   const registration = which === "registration";
   const [mailing, setMailing] = useState<Vendor | null>(null);
   const [idFor, setIdFor] = useState<Vendor | null>(null);
+  // A notification link (?idFor=<vendor id>) opens that vendor's ID dialog straight away, then the address is cleaned.
+  const [linkedId, setLinkedId] = useState<string | undefined>(() => { if (typeof window === "undefined") return undefined; const id = new URLSearchParams(window.location.search).get("idFor"); return id && /^[a-f0-9]{24}$/i.test(id) ? id : undefined; });
+  useEffect(() => { if (linkedId) window.history.replaceState(null, "", window.location.pathname); }, [linkedId]);
+  const linked = useVendor(linkedId);
   const [importing, setImporting] = useState(false);
   const [view, setView] = useState<Vendor | null>(null);
   const [toDelete, setToDelete] = useState<Vendor | null>(null);
@@ -191,7 +195,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
                     <td className="px-4 py-3 text-right tabular-nums">{v.ratePerShop != null ? `₹${v.ratePerShop}` : <span className="text-xs text-muted-foreground">Company</span>}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{v.allocatedShops ?? 0}</td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      {v.zohoVendorNo ? <><span className="text-xs">Vendor ID <span className="font-mono font-semibold text-navy">{v.zohoVendorNo}</span></span>{v.registration?.reply?.detectedVendorNo && v.registration.reply.detectedVendorNo !== v.zohoVendorNo && !!v.registration.reply.receivedAt && !!v.registration.vendorIdAt && new Date(v.registration.reply.receivedAt) > new Date(v.registration.vendorIdAt) && <span className="block text-xs font-semibold text-approval">Newer reply says <span className="font-mono">{v.registration.reply.detectedVendorNo}</span></span>}{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> Edit ID</button>}</>
+                      {v.zohoVendorNo ? <><span className="text-xs">Vendor ID <span className="font-mono font-semibold text-navy">{v.zohoVendorNo}</span></span>{correctionReply(v.registration, v.zohoVendorNo) && <span className="block text-xs font-semibold text-approval">Newer reply says <span className="font-mono">{correctionReply(v.registration, v.zohoVendorNo)!.vendorNo}</span></span>}{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> Edit ID</button>}</>
                         : v.registration?.mailSentAt ? <>{v.registration.reply ? <span className="block text-xs font-semibold text-finance">Reply received{v.registration.reply.detectedVendorNo ? <> · ID <span className="font-mono">{v.registration.reply.detectedVendorNo}</span></> : " · no ID found"}</span> : <span className="block text-xs text-approval">Mail sent · waiting for ID</span>}{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setIdFor(v)}><KeyRound className="size-3" aria-hidden /> {v.registration.reply?.detectedVendorNo ? "Check and save ID" : "Enter vendor ID"}</button>}</>
                         : v.source === "ZOHO" ? <span className="text-xs text-muted-foreground">From Zoho</span>
                         : <><span className="block text-xs text-muted-foreground">{v.registration?.draft?.savedAt ? "Mail draft saved" : "Mail not sent"}</span>{canWrite && <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-royal hover:underline" onClick={() => setMailing(v)}><Mail className="size-3" aria-hidden /> {v.registration?.draft?.savedAt ? "Continue mail" : "Send mail"}</button>}</>}
@@ -227,7 +231,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
       <ZohoVendorDrawer vendor={zview} canWrite={false} onCost={() => undefined} onClose={() => setZview(null)} />
       {importing &&<VendorImport open onClose={() => setImporting(false)} />}
       {mailing && <VendorRegistrationMail vendor={mailing} open onClose={() => setMailing(null)} />}
-      {idFor && <VendorIdDialog vendor={idFor} onClose={() => setIdFor(null)} />}
+      {(idFor ?? linked.data) && (idFor || linkedId) && <VendorIdDialog vendor={(idFor ?? linked.data)!} onClose={() => { setIdFor(null); setLinkedId(undefined); }} />}
       <VendorDrawer vendor={view ? (rows.find((r) => r._id === view._id) ?? view) : null} onClose={() => setView(null)} onEdit={(v) => { setView(null); setForm({ open: true, vendor: v }); }} />
       <ConfirmDialog
         autoClose

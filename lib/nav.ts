@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   FolderKanban,
   MapPin,
-  Route,
   ScanSearch,
   Store,
   Wallet,
@@ -211,9 +210,10 @@ export function navFor(role: string | undefined, can: (p?: string) => boolean): 
 const OPERATIONS_NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/operations/dashboard", permission: "dashboard:view" },
   { label: "Projects", icon: FolderKanban, href: "/operations/projects", permission: "projects:read" },
-  { label: "Cost Comparison", icon: BarChart3, href: "/operations/cost", permission: "sites:read" },
-  { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
-  { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
+  // Hidden for now (screens and routes still exist): Cost Comparison, Shop Allocation, Movement.
+  // { label: "Cost Comparison", icon: BarChart3, href: "/operations/cost", permission: "sites:read" },
+  // { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
+  // { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
   { label: "Vendors", icon: Store, href: "/operations/vendors", permission: "vendors:manage" },
   { label: "Approvals", icon: AlertTriangle, href: "/operations/approvals", permission: "verification:manage" },
   { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },

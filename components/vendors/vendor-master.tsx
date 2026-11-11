@@ -101,7 +101,7 @@ function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { 
         <ZohoToggle on={all} onChange={(v) => { onAll(v); setPage(1); }} />
       </div>
       {!searching ? (
-        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">Type a vendor name, number, phone or e-mail, or switch on “Zoho vendors” to browse the list (read live from Zoho, page by page; nothing is saved until you add a cost).</p>
+        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">Type at least 2 letters or digits of a vendor name, vendor ID, phone or e-mail to search every vendor in Zoho, or switch on “Zoho vendors” to browse the list (read live from Zoho, page by page; nothing is saved until you add a cost).</p>
       ) : list.isPending ? (
         <RowsSkeleton rows={4} className="p-4" />
       ) : list.isError ? (
@@ -167,22 +167,24 @@ function WithCost({ canWrite, onView, onEdit, onRemove, onStatus }: { canWrite: 
         ) : rows.length === 0 ? (
           <EmptyState title="No vendor has a cost yet" description="Search a vendor above and press “Add cost”. It will be listed here, also while its cost waits for approval." />
         ) : (
-          <table className="w-full min-w-[1250px] text-sm">
+          <table className="w-full min-w-[1050px] text-sm">
             <thead className="bg-[#f6f0ff] text-left text-xs uppercase tracking-wide text-navy">
-              <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#f6f0ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#f6f0ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">City</th><th className="px-4 py-3 text-right">Price / shop</th><th className="px-4 py-3 text-right">Travelling cost</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3">Cost added</th><th className="px-4 py-3">Last updated</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#f6f0ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#f6f0ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-3 py-3">Phone</th><th className="px-3 py-3">City</th><th className="px-3 py-3 text-right">Price / shop</th><th className="px-3 py-3 text-right">Travelling cost</th><th className="px-3 py-3">Skills</th><th className="px-3 py-3">Cost added / updated</th><th className="px-4 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((v) => (
                 <tr key={v._id} className="group cursor-pointer hover:bg-[#faf6ff]" onClick={() => onView(v)} title="Click to see all details">
                   <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#faf6ff]`}>{v.vendorNo ?? "–"}</td>
                   <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#faf6ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
-                  <td className="max-w-40 px-4 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(v.price.ratePerShop)}{v.price.approval && <ApprovalTag a={v.price.approval} />}{canWrite && v.price.approval && <button type="button" className="mt-0.5 block text-xs font-semibold text-royal hover:underline" onClick={(e) => { e.stopPropagation(); onStatus(v); }}>Change status</button>}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{money(v.price.farRatePerShop)}</td>
-                  <td className="px-4 py-3"><div className="flex max-w-60 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{v.price.createdAt ? formatDateTime(v.price.createdAt) : "–"}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">{v.price.updatedAt ? formatDateTime(v.price.updatedAt) : "–"}</td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums">{v.mobile ?? "–"}</td>
+                  <td className="max-w-32 px-3 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.ratePerShop)}</span> : money(v.price.ratePerShop)}{v.price.approval && <div><ApprovalTag a={v.price.approval} /></div>}{canWrite && v.price.approval && <button type="button" className="mt-0.5 block w-full text-right text-xs font-semibold text-royal hover:underline" onClick={(e) => { e.stopPropagation(); onStatus(v); }}>Change status</button>}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{v.price.farRatePerShop == null && v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.farRatePerShop)}</span> : money(v.price.farRatePerShop)}</td>
+                  <td className="px-3 py-3"><div className="flex max-w-56 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>
+                  <td className="whitespace-nowrap px-3 py-3 text-xs">
+                    <span className="block text-muted-foreground">Added {v.price.createdAt ? formatDateTime(v.price.createdAt) : "–"}</span>
+                    <span className="block">Updated {v.price.updatedAt ? formatDateTime(v.price.updatedAt) : "–"}</span>
+                  </td>
                   <td className="px-4 py-3">
                     {canWrite && (
                       <div className="flex justify-end gap-1">

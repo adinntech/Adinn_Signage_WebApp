@@ -32,6 +32,25 @@ export function requiredDocKeys(v: { type?: VendorType | undefined; hasGst?: boo
 
 /** State and district of a pincode (looked up by the backend). Runs only for a complete 6-digit pincode. */
 export interface PincodeInfo { pincode: string; state: string; district: string; areas: string[] }
+type RegReply = { receivedAt?: string; at?: string; detectedVendorNo?: string };
+/**
+ * The newest reply from Accounts that carries a vendor ID and came AFTER the saved ID (a correction), or null.
+ * "After" = the mail time OR the time it was read is later than the save: the mail's own clock can be a few seconds (or a
+ * minute) behind the save even when the mail was sent after it. Used by the vendor list and the vendor ID dialog alike.
+ */
+export function correctionReply(
+  reg: { vendorIdAt?: string; reply?: RegReply; replyHistory?: RegReply[] } | undefined,
+  savedNo: string | undefined,
+): { vendorNo: string } | null {
+  if (!reg?.vendorIdAt || !savedNo) return null;
+  const saved = new Date(reg.vendorIdAt).getTime();
+  const t = (x?: string) => (x ? new Date(x).getTime() : 0);
+  const rows = [...(reg.replyHistory ?? []), ...(reg.reply ? [reg.reply] : [])].filter((r) => r.detectedVendorNo);
+  const newest = rows.sort((a, b) => Math.max(t(b.receivedAt), t(b.at)) - Math.max(t(a.receivedAt), t(a.at)))[0];
+  if (!newest?.detectedVendorNo || newest.detectedVendorNo === savedNo) return null;
+  return t(newest.receivedAt) > saved || t(newest.at) > saved ? { vendorNo: newest.detectedVendorNo } : null;
+}
+
 export const usePincode = (pin: string) =>
   useQuery({ queryKey: ["vendors", "pincode", pin], queryFn: () => api<PincodeInfo>(`/vendors/pincode/${pin}`), enabled: /^[1-9]\d{5}$/.test(pin), retry: false, staleTime: 3_600_000 });
 
@@ -129,6 +148,9 @@ export function useVendors(params: VendorListParams) {
     placeholderData: keepPreviousData,
   });
 }
+/** One vendor by id (opened from a notification link). */
+export const useVendor = (id: string | undefined) => useQuery({ queryKey: [...key, "one", id], queryFn: () => api<Vendor>(`/vendors/${id}`), enabled: !!id });
+
 export function useActiveVendors(enabled = true) {
   return useQuery({ queryKey: [...key, "active"], queryFn: () => api<Vendor[]>("/vendors/active"), enabled, staleTime: 30_000 });
 }

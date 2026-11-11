@@ -16,6 +16,7 @@ import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { VendorLogins } from "@/components/vendors/vendor-logins";
 import { inr } from "./leg-card";
+import { LoginAssign } from "./login-assign";
 
 const who = (l: PlanLeg) => (l.channel === "IN_HOUSE" ? "In-house team" : l.channel === "VENDOR" ? (l.vendorName ?? "Vendor") : null);
 
@@ -49,6 +50,8 @@ export function PlanReview({ projectId, view, dirty, closed }: { projectId: stri
   const legs = plan.legs;
   const open = legs.filter((l) => !l.channel);
   const canPlan = can("sites:write") && !closed && plan.clientDecision !== "ACCEPTED";
+  // Assigning stays open after the client accepts the cost: acceptance only locks editing of the plan.
+  const canAssign = can("sites:write") && !closed;
   const canDecide = can("finance:manage") && plan.status === "APPROVAL_PENDING";
   const ready = legs.length > 0 && open.length === 0 && !dirty;
   const submitted = ["APPROVAL_PENDING", "APPROVED", "CONFIRMED", "ASSIGNED"].includes(plan.status);
@@ -141,12 +144,13 @@ export function PlanReview({ projectId, view, dirty, closed }: { projectId: stri
         </div>
       )}
 
-      {canPlan && mayAssign && (
+      {canAssign && mayAssign && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#bbf0d3] bg-[#e7f9ef] p-4">
           <p className="text-sm text-finance"><strong>Final review done.</strong> Assigning gives every district&apos;s shops to the team or vendor above.</p>
           <Button className="bg-finance hover:bg-finance/90" loading={assign.isPending} onClick={() => assign.mutate(undefined, { onSuccess: (r) => { toast(`${r.assigned} shop(s) assigned${r.skipped.length ? `; not matched: ${r.skipped.join(", ")}` : ""}${r.stage === "IN_PROGRESS" ? ". Project is now in progress" : ""}`); setNoLogin(r.vendorsWithoutLogin); }, onError: (e) => toast(errorMessage(e), "error") })}><CheckCircle2 className="size-4" aria-hidden /> Confirm &amp; assign shops</Button>
         </div>
       )}
+      {plan.status === "ASSIGNED" && <LoginAssign projectId={projectId} canEdit={can("sites:write") && !closed} />}
       {plan.status === "ASSIGNED" && <Button asChild variant="outline"><Link href={`/operations/allocation/${projectId}`}>See the allocation <ArrowRight className="size-4" aria-hidden /></Link></Button>}
 
       {submitted && view.clientCost && (

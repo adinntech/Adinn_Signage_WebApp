@@ -306,6 +306,8 @@ export interface NotificationItem {
   projectCode: string;
   /** Set for sales order notifications (e.g. an order handed over to Client Servicing). */
   orderId?: string | null;
+  /** A web path to open instead (e.g. the vendor ID screen); set by the backend. */
+  path?: string | null;
   client: string;
   read: boolean;
 }
@@ -340,7 +342,8 @@ export function useMarkNotificationsRead() {
 
 /** Where a notification should take this person: Operations opens the task, BD opens the project drawer. */
 const OPS_TAB: Partial<Record<NotificationKindKey, string>> = { documents: "documents", imported: "work", approval: "approvals" };
-export const notificationHref = (role: string | undefined, projectId: string, kind?: NotificationKindKey, orderId?: string | null) =>
+export const notificationHref = (role: string | undefined, projectId: string, kind?: NotificationKindKey, orderId?: string | null, path?: string | null) =>
+  path ? path :
   orderId
     ? `/orders/${orderId}?tab=handover`
     : role === "OPERATIONS" || role === "RECCE_COORDINATOR" ? `/operations/projects/${projectId}${kind && OPS_TAB[kind] ? `?tab=${OPS_TAB[kind]}` : ""}` : role === "BD" ? `/bd/dashboard?view=${projectId}` : "/dashboard";

@@ -120,8 +120,9 @@ export function ProjectDetails() {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-4">
-      <header className="sticky top-0 z-40 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface/95 px-5 py-1 shadow-soft backdrop-blur">
+    <div className="mx-auto min-w-0 max-w-[1400px] space-y-4">
+      <div className="sticky -top-4 z-40 -mx-4 -mt-4 bg-background px-4 pb-1 pt-4 lg:-top-6 lg:-mx-6 lg:-mt-6 lg:px-6 lg:pt-6">
+      <header className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface px-5 py-1 shadow-soft">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-lg font-semibold text-navy">{p.client?.name} · {p.code}</h1>
         </div>
@@ -133,6 +134,7 @@ export function ProjectDetails() {
         )}
         <Button asChild variant="ghost" size="sm"><Link href="/operations/projects"><ArrowLeft className="size-4" aria-hidden /> Projects</Link></Button>
       </header>
+      </div>
 
       <section aria-label="Project details" className={cn("grid gap-4", hasPoc && "lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]")}>
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
