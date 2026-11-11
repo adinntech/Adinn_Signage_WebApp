@@ -53,6 +53,20 @@ function QuickAction({ icon: Icon, label, hint, color, onClick }: { icon: Lucide
   );
 }
 
+/** A titled card section of the project page (BD Handover). */
+function Section({ id, icon: Icon, title, hint, children, className }: { id?: string; icon: LucideIcon; title: string; hint?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <section id={id} className={cn("scroll-mt-4 rounded-xl border border-border bg-surface p-4 shadow-soft", className)}>
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className="size-4 text-royal" aria-hidden />
+        <h2 className="text-sm font-semibold text-navy">{title}</h2>
+        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 /**
  * One workspace per project (no tabs to hunt through): summary and stage, key numbers, the requirement's own work area,
  * then documents, contacts, quick actions and recent activity.
