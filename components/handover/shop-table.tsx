@@ -563,6 +563,7 @@ export function ShopTable({
   canAddImages,
   projectId,
   columns: columnsProp,
+  hideHistory = false,
 }: {
   orderId: string;
   type: HandoverType;
@@ -574,6 +575,8 @@ export function ShopTable({
   projectId?: string;
   /** Imported columns from the handover (the rows' list carries them too; used while the table has no rows). */
   columns?: ShopColumn[] | null;
+  /** Read-only previews (Project Code Request Email > Shop list View): no table or row History buttons. */
+  hideHistory?: boolean;
 }) {
   const toast = useToast();
   const measurement = type === "SHOP_MEASUREMENT";
@@ -698,7 +701,7 @@ export function ShopTable({
                   </Button>
                 </>
               )}
-              {!projectId && (
+              {!projectId && !hideHistory && (
                 <Button variant="outline" size="sm" onClick={() => setHistory("all")}>
                   <History className="size-4" aria-hidden /> History
                 </Button>
@@ -866,7 +869,7 @@ export function ShopTable({
                             <Pencil className="size-4" aria-hidden />
                           </Button>
                         )}
-                        {!projectId && (
+                        {!projectId && !hideHistory && (
                           <Button variant="ghost" size="sm" onClick={() => setHistory(r)} aria-label={`History of row ${r.rowNumber}`} title="History">
                             <History className="size-4" aria-hidden />
                           </Button>

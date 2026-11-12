@@ -27,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile } from "@/lib/api/files";
-import { downloadShopExcel, downloadShopPdf, useHandover, useOrderEmails } from "@/lib/api/sales";
+import { downloadShopExcel, useHandover, useOrderEmails } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useRecceZohoEstimates, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState, type ZohoEstimateOption } from "@/lib/api/recce";
@@ -72,7 +72,6 @@ function AttachmentRow({ icon: Icon, name, meta, onPreview, previewLabel = "Prev
  */
 function ShopListPreview({ orderId, onClose }: { orderId: string; onClose: () => void }) {
   const h = useHandover(orderId);
-  const toast = useToast();
   const total = h.data?.shopList?.total ?? 0;
   return (
     <Modal
@@ -81,16 +80,7 @@ function ShopListPreview({ orderId, onClose }: { orderId: string; onClose: () =>
       title="Shop list"
       description={h.data ? `${total} shop${total === 1 ? "" : "s"} · read-only, as attached to this email` : undefined}
       className="max-w-[min(96vw,1400px)] max-h-[90dvh]"
-      footer={
-        <>
-          {total > 0 && (
-            <Button variant="outline" onClick={() => void downloadShopPdf(orderId).catch((e) => toast(errorMessage(e), "error"))}>
-              <FileText className="size-4" aria-hidden /> Download PDF
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose}>Close</Button>
-        </>
-      }
+      footer={<Button variant="outline" onClick={onClose}>Close</Button>}
     >
       {h.isPending ? (
         <RowsSkeleton rows={6} />
@@ -99,7 +89,7 @@ function ShopListPreview({ orderId, onClose }: { orderId: string; onClose: () =>
       ) : !h.data.type || h.data.type === "ASO" || !total ? (
         <EmptyState title="No shops in the list" description="The shop table of this order is empty." />
       ) : (
-        <ShopTable orderId={orderId} type={h.data.type} summary={h.data.shopList} columns={h.data.columns} editable={false} canAddImages={false} />
+        <ShopTable orderId={orderId} type={h.data.type} summary={h.data.shopList} columns={h.data.columns} editable={false} canAddImages={false} hideHistory />
       )}
     </Modal>
   );

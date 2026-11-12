@@ -48,6 +48,8 @@ export function LeadsView() {
   const list = useLeads({ page, limit: 20, q: dq, stage, status, clientType: clientFilter });
   const summary = useLeadSummary();
   const rows = list.data?.data ?? [];
+  // S.No of the first row on this page, from the page the server returned (filters reset to page 1).
+  const serialFrom = list.data ? (list.data.meta.page - 1) * list.data.meta.limit + 1 : 1;
   const filtered = !!(dq || stage || clientFilter || status !== "OPEN");
   const reset = (fn: () => void) => {
     fn();
@@ -153,9 +155,11 @@ export function LeadsView() {
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className={cn("w-full text-left text-sm", cs ? "min-w-[1040px]" : "min-w-[980px]")}>
+            <table className={cn("w-full text-left text-sm", cs ? "min-w-[1100px]" : "min-w-[980px]")}>
               <thead className="sticky top-0 z-10 border-b border-border bg-muted text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <tr>
+                  {/* Create Project: serial number across pages (page 2 starts at 21). */}
+                  {cs && <th className="w-16 px-4 py-3">S.No</th>}
                   <th className={cn("px-4 py-3", cs && "w-40")}>Order No</th>
                   <th className="px-4 py-3">Client Company</th>
                   {/* Client Servicing (Create Project): no Client Flag and BD columns. */}
@@ -183,6 +187,7 @@ export function LeadsView() {
                   const closed = l.lead.status === "CLOSED";
                   return (
                     <motion.tr key={l._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="transition-colors hover:bg-muted/50">
+                      {cs && <td className="px-4 py-3 tabular-nums text-muted-foreground">{serialFrom + i}</td>}
                       <td className="px-4 py-3 font-mono text-xs font-semibold">
                         <Link href={`${base}/${l._id}`} className="text-brand hover:underline">
                           {l.orderNo}
