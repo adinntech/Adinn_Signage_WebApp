@@ -346,11 +346,19 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const [errors, setErrors] = useState<Record<string, string>>({});
   // Each reply read to the request mail fills the codes in once (a person checks, edits if needed and saves). A newer reply (a corrected
   // one) overwrites what the earlier reply filled in, and anything typed before it; what is typed after it is kept.
-  const reply = r.codeReply;
+  // A later mail that has no project code (only an estimate) keeps the code an earlier reply gave; a later mail with estimates
+  // replaces the earlier estimates (a correction), and one without estimates keeps them. The newest reply still decides the rest.
+  const latest = r.codeReply;
+  const past = [...(r.codeReplyHistory ?? [])].sort((a, b) => +new Date(b.receivedAt ?? b.at ?? 0) - +new Date(a.receivedAt ?? a.at ?? 0));
+  const reply = latest && {
+    ...latest,
+    detectedCode: latest.detectedCode ?? past.find((h) => h.detectedCode)?.detectedCode,
+    estimates: latest.estimates?.length ? latest.estimates : past.find((h) => h.estimates?.length)?.estimates,
+  };
   // Only the 6 digits after EST- are used; the first such estimate fills the box, the others can be picked below it.
   const sixDigits = (reply?.estimates ?? []).map((x) => /^EST-?(\d{6})$/i.exec(x)?.[1]).filter((x): x is string => !!x);
   const estFromReply = sixDigits[0] ?? "";
-  const replyKey = reply?.messageId ?? "";
+  const replyKey = reply ? `${reply.messageId ?? ""}:${reply.detectedCode ?? ""}` : "";
   useEffect(() => {
     if (!replyKey || r.codes || readStepDraft<string>(`${key}:applied`) === replyKey) return;
     writeStepDraft(`${key}:applied`, replyKey);

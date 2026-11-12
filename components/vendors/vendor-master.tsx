@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { BadgeIndianRupee, Check, CloudDownload, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { BadgeIndianRupee, Check, ChevronDown, CloudDownload, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -13,7 +14,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { downloadZohoVendors, useAddVendorSkill, useCompanyRates, useSetZohoPrice, useVendorSkills, useZohoDirectory, type ZohoVendorRow } from "@/lib/api/vendors";
+import { downloadZohoVendors, useAddVendorSkill, useCompanyRates, useSetZohoPrice, useVendorSkills, useZohoDirectory, useStartZohoCitySync, useZohoVendorCities, type ZohoVendorRow } from "@/lib/api/vendors";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ExportMenu } from "./export-menu";
@@ -88,20 +89,78 @@ function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   /** Off (the default): Zoho is not called until the toggle is switched on or something is typed. On: the list is read page by page; the search narrows it. */
-  const searching = all || dq.length >= 2;
-  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active", signageOnly: signageOnly ? "true" : "false" }, searching);
+  const [cities, setCities] = useState<string[]>([]);
+  const cityChoices = useZohoVendorCities();
+  const startSync = useStartZohoCitySync();
+  const sync = cityChoices.data?.sync;
+  /** Cost filter: every vendor, only those with a cost added, or only those without one. */
+  const [cost, setCost] = useState<"" | "set" | "missing">("");
+  const costLabel = { "": "Cost", set: "Cost added", missing: "Cost not added" }[cost];
+  const searching = all || dq.length >= 2 || cities.length > 0 || cost !== "";
+  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active", signageOnly: signageOnly ? "true" : "false", ...(cities.length ? { cities: cities.join(",") } : {}), ...(cost ? { price: cost } : {}) }, searching);
+  const toggleCity = (c: string) => { setCities((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c])); setPage(1); };
   const rows = list.data?.data ?? [];
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 p-3">
         <div className="relative min-w-52 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search Zoho by vendor ID, name, phone or e-mail…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
+          <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search Zoho by vendor ID, name, phone, GST / PAN, city or address…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" aria-label="Filter by cost" className={cn(cost && "border-vendor text-vendor")}>
+              <BadgeIndianRupee className="size-4" aria-hidden /> {costLabel} <ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Show vendors with</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {([["", "All vendors"], ["set", "Cost added"], ["missing", "Cost not added"]] as const).map(([v, label]) => (
+              <DropdownMenuItem key={v || "all"} onSelect={() => { setCost(v); setPage(1); }}>
+                <span className={cn("flex size-4 items-center justify-center rounded-full border", cost === v ? "border-vendor bg-vendor text-white" : "border-border bg-white")}>{cost === v && <Check className="size-3" aria-hidden />}</span>
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" aria-label="Filter by city" className={cn(cities.length > 0 && "border-vendor text-vendor")}>
+              <MapPin className="size-4" aria-hidden />
+              {cities.length === 0 ? "City" : cities.length === 1 ? cities[0] : `${cities.length} cities`}
+              <ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-80 min-w-56 overflow-y-auto">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Tick the cities to show</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {sync?.running && <p className="px-3 py-2 text-xs text-muted-foreground">{sync.signageLeft > 0 ? `Reading Signage vendors first… ${sync.signageTotal - sync.signageLeft} / ${sync.signageTotal}` : `Signage vendors ready. Reading the other vendors… ${sync.done} / ${sync.total || "…"}`} More cities appear as it goes.</p>}
+            {!sync?.running && !cityChoices.data?.cities.length && <p className="px-3 py-2 text-xs text-muted-foreground">No city read yet.</p>}
+            {!sync?.running && (
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); startSync.mutate(); }}>Read addresses from Zoho again</DropdownMenuItem>
+            )}
+            {cityChoices.data?.cities.map(({ name: c, count }) => {
+              const on = cities.includes(c);
+              return (
+                <DropdownMenuItem key={c} onSelect={(e) => { e.preventDefault(); toggleCity(c); }}>
+                  <span className={cn("flex size-4 items-center justify-center rounded border", on ? "border-vendor bg-vendor text-white" : "border-border bg-white")}>{on && <Check className="size-3" aria-hidden />}</span>
+                  <span className="flex-1">{c}</span><span className="text-xs text-muted-foreground">{count}</span>
+                </DropdownMenuItem>
+              );
+            })}
+            {cities.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setCities([]); setPage(1); }}>Clear cities</DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <ZohoToggle on={all} onChange={(v) => { onAll(v); setPage(1); }} />
       </div>
       {!searching ? (
-        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">Type at least 2 letters or digits of a vendor name, vendor ID, phone or e-mail to search every vendor in Zoho, or switch on “Zoho vendors” to browse the list (read live from Zoho, page by page; nothing is saved until you add a cost).</p>
+        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">Type at least 2 letters or digits of a vendor name, vendor ID, phone, GST / PAN, city or address to search every vendor in Zoho, pick a City or Cost filter, or switch on “Zoho vendors” to browse the list (read live from Zoho, page by page; nothing is saved until you add a cost).</p>
       ) : list.isPending ? (
         <RowsSkeleton rows={4} className="p-4" />
       ) : list.isError ? (

@@ -217,11 +217,19 @@ export interface ZohoDirectoryStatus {
   /** Zoho's own counts for the chosen scope; counted page by page in the background, so null until `ready`. */
   zoho: { ready: boolean; counting: boolean; counted: number; error?: string; total: number | null; active: number | null; inactive: number | null };
 }
-export interface ZohoDirectoryParams { page?: number; limit?: number; q?: string; status?: "active" | "inactive" | ""; registered?: "yes" | "no" | ""; price?: "set" | "missing" | ""; signageOnly?: "true" | "false" | "" }
+export interface ZohoDirectoryParams { page?: number; limit?: number; q?: string; status?: "active" | "inactive" | ""; registered?: "yes" | "no" | ""; price?: "set" | "missing" | ""; signageOnly?: "true" | "false" | ""; /** comma separated cities */ cities?: string }
+
+/** The cities found in the Zoho vendors' addresses (with the vendor count) and how far the addresses have been read from Zoho. */
+export interface ZohoCityChoices { cities: { name: string; count: number }[]; sync: { running: boolean; done: number; total: number; signageTotal: number; signageLeft: number; error: string | null } }
+export const useZohoVendorCities = () => useQuery({ queryKey: ["zoho", "directory-cities"], queryFn: () => api<ZohoCityChoices>("/vendors/zoho-directory/cities"), refetchInterval: (q) => (q.state.data?.sync.running ? 8000 : false) });
+export function useStartZohoCitySync() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => api("/vendors/zoho-directory/cities/sync", { method: "POST" }), onSuccess: () => qc.invalidateQueries({ queryKey: ["zoho", "directory-cities"] }) });
+}
 
 /** The Zoho vendor list is read from Zoho Books on every call (nothing is stored); "price: set" is read from the stored vendors with a cost. */
 export function useZohoDirectory(params: ZohoDirectoryParams, enabled = true) {
-  return useQuery({ queryKey: ["zoho", "directory", params], queryFn: () => apiPage<ZohoVendorRow>(`/vendors/zoho-directory${qs(params)}`), placeholderData: keepPreviousData, enabled });
+  return useQuery({ queryKey: ["zoho", "directory", params], queryFn: () => apiPage<ZohoVendorRow>(`/vendors/zoho-directory${qs(params)}`), placeholderData: keepPreviousData, enabled, refetchInterval: params.cities ? (q) => (((q.state.data?.meta as { syncing?: boolean } | undefined)?.syncing) ? 10000 : false) : false });
 }
 /** signageOnly: true / false picks which Zoho vendors are counted; left out, the backend's setting is used. Polls while Zoho is still being counted. */
 export function useZohoDirectoryStatus(signageOnly?: boolean | null, count = false) {
