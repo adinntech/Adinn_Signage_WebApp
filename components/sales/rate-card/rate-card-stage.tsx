@@ -571,7 +571,13 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
           </fieldset>
 
           {!step && <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">{actions}</div>}
-          {bottomSave && saveButton && <div className="mt-6 flex justify-end border-t border-border pt-4">{saveButton}</div>}
+          {bottomSave && saveButton && (
+            // Sticky action bar: Save & Continue stays visible at the bottom of the scroll area while the fields scroll
+            // (opaque, flush with the card edges, so fields pass under it; it rests at the card bottom at the end).
+            <div role="toolbar" aria-label="Save rate card" className="sticky bottom-0 z-10 -mx-5 -mb-5 mt-6 flex justify-end rounded-b-lg border-t border-border bg-surface px-5 py-3 shadow-[0_-4px_12px_-6px_rgba(16,36,73,0.15)] sm:-mx-6 sm:-mb-6 sm:px-6">
+              {saveButton}
+            </div>
+          )}
         </Card>
       </div>
 

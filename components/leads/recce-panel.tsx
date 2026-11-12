@@ -11,6 +11,8 @@ import { DeliveryBadge, EmailHistory, emailTypes } from "@/components/sales/emai
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ShopTable } from "@/components/handover/shop-table";
+import { Modal } from "@/components/ui/modal";
 import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { Input } from "@/components/ui/input";
@@ -25,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { downloadFile } from "@/lib/api/files";
-import { downloadShopExcel, useOrderEmails } from "@/lib/api/sales";
+import { downloadShopExcel, downloadShopPdf, useHandover, useOrderEmails } from "@/lib/api/sales";
 import type { LeadDetail } from "@/lib/api/leads";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useRecceZohoEstimates, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState, type ZohoEstimateOption } from "@/lib/api/recce";
@@ -40,7 +42,7 @@ const TEAL = ASSIGN_META.RECCE.color;
 const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
 
 /** One attachment line: icon, file name, what it is, Preview (images / PDF; others download) and Download. */
-function AttachmentRow({ icon: Icon, name, meta, onPreview, onDownload }: { icon: typeof FileText; name: string; meta?: string; onPreview?: () => void; onDownload: () => void }) {
+function AttachmentRow({ icon: Icon, name, meta, onPreview, previewLabel = "Preview", onDownload }: { icon: typeof FileText; name: string; meta?: string; onPreview?: () => void; previewLabel?: string; onDownload: () => void }) {
   return (
     <li className="flex flex-wrap items-center gap-3 px-3 py-2.5">
       <Icon className="size-4 shrink-0 text-[#0891b2]" aria-hidden />
@@ -52,8 +54,8 @@ function AttachmentRow({ icon: Icon, name, meta, onPreview, onDownload }: { icon
       </span>
       <span className="flex shrink-0 gap-1.5">
         {onPreview && (
-          <Button variant="outline" size="sm" onClick={onPreview} aria-label={`Preview ${name}`}>
-            <Eye className="size-4" aria-hidden /> Preview
+          <Button variant="outline" size="sm" onClick={onPreview} aria-label={`${previewLabel} ${name}`}>
+            <Eye className="size-4" aria-hidden /> {previewLabel}
           </Button>
         )}
         <Button variant="outline" size="sm" onClick={onDownload} aria-label={`Download ${name}`}>
@@ -61,6 +63,45 @@ function AttachmentRow({ icon: Icon, name, meta, onPreview, onDownload }: { icon
         </Button>
       </span>
     </li>
+  );
+}
+
+/**
+ * Read-only view of the shop list attached to the request email: the saved shop table (its original Excel columns and
+ * rows, paginated, scrolling both ways) — the same data the attached Excel is exported from when the email is sent.
+ */
+function ShopListPreview({ orderId, onClose }: { orderId: string; onClose: () => void }) {
+  const h = useHandover(orderId);
+  const toast = useToast();
+  const total = h.data?.shopList?.total ?? 0;
+  return (
+    <Modal
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title="Shop list"
+      description={h.data ? `${total} shop${total === 1 ? "" : "s"} · read-only, as attached to this email` : undefined}
+      className="max-w-[min(96vw,1400px)] max-h-[90dvh]"
+      footer={
+        <>
+          {total > 0 && (
+            <Button variant="outline" onClick={() => void downloadShopPdf(orderId).catch((e) => toast(errorMessage(e), "error"))}>
+              <FileText className="size-4" aria-hidden /> Download PDF
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      {h.isPending ? (
+        <RowsSkeleton rows={6} />
+      ) : h.isError ? (
+        <ErrorState error={h.error} onRetry={() => void h.refetch()} />
+      ) : !h.data.type || h.data.type === "ASO" || !total ? (
+        <EmptyState title="No shops in the list" description="The shop table of this order is empty." />
+      ) : (
+        <ShopTable orderId={orderId} type={h.data.type} summary={h.data.shopList} columns={h.data.columns} editable={false} canAddImages={false} />
+      )}
+    </Modal>
   );
 }
 
@@ -73,6 +114,7 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
   const a = r.autoAttachments;
   const source = { orderId: r.orderId };
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const [shopsOpen, setShopsOpen] = useState(false);
   const fail = (e: unknown) => toast(errorMessage(e), "error");
   return (
     <div className="space-y-4" data-testid="auto-attachments">
@@ -101,9 +143,12 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
               icon={FileSpreadsheet}
               name={`Shop list (${a.shopExcel.rows} shop${a.shopExcel.rows === 1 ? "" : "s"}).xlsx`}
               meta={`${a.shopExcel.sized ? "With sizes · " : ""}as the table is when you send · Excel opens after download`}
+              onPreview={() => setShopsOpen(true)}
+              previewLabel="View"
               onDownload={() => void downloadShopExcel(r.orderId).catch(fail)}
             />
           )}
+          {shopsOpen && <ShopListPreview orderId={r.orderId} onClose={() => setShopsOpen(false)} />}
           {a?.gstCertificates?.map((d) => (
             <AttachmentRow
               key={`gst-${d.fileId}`}
@@ -555,7 +600,6 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
   const [person, setPerson] = useStepDraft<SearchOption | null>(`${key}:person`, null);
   const [startDate, setStartDate] = useStepDraft(`${key}:start`, today);
   const [targetDate, setTargetDate] = useStepDraft(`${key}:end`, "");
-  const [district, setDistrict] = useStepDraft(`${key}:district`, "");
   const [priority, setPriority] = useStepDraft<Priority>(`${key}:priority`, "MEDIUM");
   const [note, setNote] = useStepDraft(`${key}:note`, "");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -573,7 +617,6 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
     if (!startDate) e.startDate = "Choose the start date";
     if (!targetDate) e.targetDate = "Choose the expected end date";
     else if (startDate && targetDate < startDate) e.targetDate = "End date must be on or after the start date";
-    if (district.trim().length < 2) e.district = "Enter the district / location";
     setErrors(e);
     if (!Object.keys(e).length) setConfirm(true);
   };
@@ -608,9 +651,6 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
             placeholder="Search the Recce / Operations team..."
             emptyText={users.isError ? `Could not load: ${errorMessage(users.error)}` : users.isPending ? "Loading..." : "No active Recce / Operations users"}
           />
-        </Field>
-        <Field label="District / Location" htmlFor="recce-district" required error={errors.district}>
-          <Input id="recce-district" maxLength={120} placeholder="e.g. Chennai" value={district} aria-invalid={!!errors.district} onChange={(e) => setDistrict(e.target.value)} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start Date" htmlFor="recce-start" required error={errors.startDate}>
@@ -648,7 +688,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
         autoClose={false}
         onConfirm={async () => {
           try {
-            await assign.mutateAsync({ assigneeId: person!.value, startDate, targetDate, district: district.trim(), priority, note: note.trim() || undefined });
+            await assign.mutateAsync({ assigneeId: person!.value, startDate, targetDate, priority, note: note.trim() || undefined });
             toast(`Project ${r.codes?.projectCode} created and assigned to ${person!.label}. They have been notified.`);
             setConfirm(false);
             clearStepDraft(key);

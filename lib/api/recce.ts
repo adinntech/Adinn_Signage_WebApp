@@ -69,7 +69,7 @@ export interface RecceAssignInput {
   assigneeId: string;
   startDate: string;
   targetDate: string;
-  district: string;
+  district?: string;
   priority: Priority;
   note?: string;
 }
