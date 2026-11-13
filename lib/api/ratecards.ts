@@ -121,6 +121,11 @@ export interface QuotationState {
   editable: boolean;
   /** Why it cannot be edited now (null when editable). */
   lockedReason: string | null;
+  /**
+   * Rate Card step: the order's point of contact changed after the saved version (whose contact came from the order's
+   * contacts). The editor offers it as an unsaved change; saving makes the next version. Null otherwise.
+   */
+  pocUpdate?: { name: string; phone: string; previousName: string; previousPhone: string } | null;
   /** Lead Management stage of the order, or null outside Lead Management. */
   leadStage: string | null;
   quotationRef: string;

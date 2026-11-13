@@ -143,6 +143,16 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
               <SkipForward className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Rate Card skipped: no rate card goes with this email
             </li>
           )}
+          {/* The included Rate Card was saved with another contact than the current point of contact (changed later). */}
+          {a?.rateCard && r.rateCard?.includedContact && r.primaryContact?.name && r.rateCard.includedContact.trim().toLowerCase() !== r.primaryContact.name.trim().toLowerCase() && (
+            <li className="flex items-start gap-3 bg-warning-soft/70 px-3 py-2.5 text-sm">
+              <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <span>
+                Rate Card {a.rateCard.label} has Kind Attn <b>{r.rateCard.includedContact}</b>, but the point of contact is now <b>{r.primaryContact.name}</b>. Open the Rate Card (Previous) and Save &amp; Continue to send a version
+                with the new contact, or send with {a.rateCard.label} as it is.
+              </span>
+            </li>
+          )}
           {a?.rateCard && (
             <AttachmentRow
               icon={FileText}

@@ -29,7 +29,7 @@ export interface RecceState {
   /** Handover Type & Details confirmed with "Continue" (step 1 done): unlocks the request email. */
   handoverDone?: boolean;
   /** `includedLabel`: the version that goes with the request email (null when skipped). */
-  rateCard?: (RateCardStep & { items: number; includedLabel?: string | null }) | null;
+  rateCard?: (RateCardStep & { items: number; includedLabel?: string | null; includedContact?: string | null }) | null;
   /** Gaps of the full handover (step 1). */
   handoverMissing?: string[];
   /** Operational point of contact (primary POC contact, else the primary client contact). */

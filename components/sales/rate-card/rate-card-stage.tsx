@@ -186,10 +186,58 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   const draftPhone = !data.latest ? (data.draft?.contact?.phone ?? "") : "";
   useEffect(() => {
     if (!step || data.latest) return;
-    if (draftContact && !form.getFieldState("contact.name").isDirty && !form.getValues("contact.name")) form.resetField("contact.name", { defaultValue: draftContact });
+    // Untouched (not dirty) means it still holds a prefill: a newer point of contact (refetched after the POC contacts
+    // were saved, no page refresh needed) replaces it.
+    if (draftContact && !form.getFieldState("contact.name").isDirty && form.getValues("contact.name") !== draftContact) form.resetField("contact.name", { defaultValue: draftContact });
     // The phone the same way (shown after the name in Kind Attn).
-    if (draftPhone && !form.getFieldState("contact.phone").isDirty && !form.getValues("contact.phone")) form.resetField("contact.phone", { defaultValue: draftPhone });
+    if (draftPhone && !form.getFieldState("contact.phone").isDirty && form.getValues("contact.phone") !== draftPhone) form.resetField("contact.phone", { defaultValue: draftPhone });
   }, [step, data.latest, draftContact, draftPhone, form]);
+
+  // Rate Card step, saved version: the point of contact changed in Assign Type & Details since. Once per opening, the
+  // new contact replaces the saved one as an UNSAVED change (preview updates; Save & Continue makes the next version),
+  // only while the fields still hold the saved contact. "Keep" puts the saved contact back.
+  const poc = step && data.editable ? (data.pocUpdate ?? null) : null;
+  const [pocNotice, setPocNotice] = useState(false);
+  /** "Keep" was clicked: the saved contact stays for this opening. */
+  const [keptSaved, setKeptSaved] = useState(false);
+  // The contact this effect filled last: a newer point of contact (the rate card data is refetched after the POC
+  // contacts are saved, without a page refresh) may replace it, as it may replace the saved contact. Applying again
+  // after a form reset (mount, React's dev double-run) is harmless; a name the person typed is never touched.
+  const autoPoc = useRef<{ name: string; phone: string } | null>(null);
+  const pocName = poc?.name ?? null;
+  const pocPhone = poc?.phone ?? null;
+  useEffect(() => {
+    if (!step || !data.latest || keptSaved) return;
+    const same = (a?: string | null, b?: string | null) => (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+    const cur = form.getValues("contact.name");
+    const auto = autoPoc.current;
+    const untouched = same(cur, data.latest.contact?.name) || (!!auto && same(cur, auto.name) && same(form.getValues("contact.phone"), auto.phone));
+    if (!untouched) {
+      // Typed by the person (or a kept draft): left alone; the notice still explains a matching new contact.
+      if (pocName && same(cur, pocName)) setPocNotice(true);
+      return;
+    }
+    if (pocName) {
+      if (!same(cur, pocName) || !same(form.getValues("contact.phone"), pocPhone)) {
+        setValue("contact.name", pocName, { shouldDirty: true });
+        setValue("contact.phone", pocPhone ?? "", { shouldDirty: true });
+      }
+      autoPoc.current = { name: pocName, phone: pocPhone ?? "" };
+      setPocNotice(true);
+    } else if (auto) {
+      // The point of contact is the saved one again: back to the saved contact.
+      setValue("contact.name", data.latest.contact?.name ?? "", { shouldDirty: true });
+      setValue("contact.phone", data.latest.contact?.phone ?? "", { shouldDirty: true });
+      autoPoc.current = null;
+      setPocNotice(false);
+    }
+  }, [step, pocName, pocPhone, data.latest, keptSaved, form, setValue]);
+  const keepSavedContact = () => {
+    setKeptSaved(true);
+    setValue("contact.name", data.latest?.contact?.name ?? "", { shouldDirty: true });
+    setValue("contact.phone", data.latest?.contact?.phone ?? "", { shouldDirty: true });
+    setPocNotice(false);
+  };
 
   // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
   // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).
@@ -351,6 +399,20 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
           <fieldset disabled={!editable} className="min-w-0 space-y-6">
             <section>
               <SectionTitle icon={ClipboardList} title="Client & Quotation Details" />
+              {pocNotice && poc && (
+                <div role="status" className="mb-4 flex flex-wrap items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/60 px-4 py-3 text-sm">
+                  <UserRound className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                  <p className="min-w-0 flex-1">
+                    <span className="font-semibold text-foreground">Point of contact changed in Assign Type &amp; Details</span>
+                    <span className="block text-muted-foreground">
+                      {poc.previousName || "(none)"} → <b className="text-foreground">{poc.name}</b>. Contact Person and Contact Phone are updated (not saved yet). Save &amp; Continue to create the next version; {data.latest?.label} stays in the history.
+                    </span>
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={keepSavedContact}>
+                    Keep {poc.previousName || "saved contact"}
+                  </Button>
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
                 {step?.company ? (
                   // Rate Card Creation: the Zoho company picker; choosing fills the contact person and address (editable).
