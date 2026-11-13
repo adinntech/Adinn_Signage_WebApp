@@ -41,6 +41,7 @@ import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref
 import { downloadFile, formData, type FileRef } from "@/lib/api/files";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -390,14 +391,14 @@ function contactPrefillOf(c: Order["client"]): ContactRow {
 function contactRowErrors(r: ContactRow) {
   const e: Partial<Record<ContactField, string>> = {};
   if (!r.name.trim()) e.name = "Enter the contact person";
-  if (!MOBILE_RE.test(r.phone)) e.phone = "10-digit mobile number";
+  if (!MOBILE_RE.test(r.phone)) e.phone = "Enter a valid 10-digit mobile number";
   if (r.email.trim() && !EMAIL_RE.test(r.email.trim())) e.email = "Enter a valid email";
   return e;
 }
 const CONTACT_FIELDS: { f: ContactField; label: string; placeholder: string; max: number }[] = [
   { f: "name", label: "Contact Person", placeholder: "Contact name", max: 120 },
   { f: "designation", label: "Designation", placeholder: "Optional", max: 120 },
-  { f: "phone", label: "Mobile", placeholder: "10-digit mobile", max: 10 },
+  { f: "phone", label: "Mobile", placeholder: "10-digit number", max: 10 },
   { f: "email", label: "Email", placeholder: "Optional", max: 200 },
 ];
 /** Server field paths (`contacts.<i>.<field>`) index the rows that were sent; point them back at the rows on screen. */
@@ -548,17 +549,29 @@ function OrderContactsSection({ orderId, saved, editable, prefill }: { orderId: 
                   <tr key={r.key} className="align-top">
                     {CONTACT_FIELDS.map(({ f, label, placeholder, max }) => (
                       <td key={f} className="px-3 py-2">
-                        <Input
-                          aria-label={`Contact person ${i + 1} ${label.toLowerCase()}`}
-                          aria-invalid={!!err(f)}
-                          aria-required={f === "name" || f === "phone"}
-                          value={r[f]}
-                          inputMode={f === "phone" ? "numeric" : f === "email" ? "email" : undefined}
-                          placeholder={placeholder}
-                          maxLength={max}
-                          autoComplete="off"
-                          onChange={(e) => setField(i, f, e.target.value)}
-                        />
+                        {f === "phone" ? (
+                          // Mobile: fixed +91, only the 10 digits are typed and saved.
+                          <PhoneInput
+                            aria-label={`Contact person ${i + 1} mobile number`}
+                            aria-invalid={!!err(f)}
+                            aria-required
+                            value={r.phone}
+                            placeholder={placeholder}
+                            onChange={(e) => setField(i, f, e.target.value)}
+                          />
+                        ) : (
+                          <Input
+                            aria-label={`Contact person ${i + 1} ${label.toLowerCase()}`}
+                            aria-invalid={!!err(f)}
+                            aria-required={f === "name"}
+                            value={r[f]}
+                            inputMode={f === "email" ? "email" : undefined}
+                            placeholder={placeholder}
+                            maxLength={max}
+                            autoComplete="off"
+                            onChange={(e) => setField(i, f, e.target.value)}
+                          />
+                        )}
                         {err(f) && <p className="mt-1 text-xs text-danger">{err(f)}</p>}
                       </td>
                     ))}
@@ -670,14 +683,14 @@ function pocRowErrors(r: PocRow) {
   if (isBlankContact(r)) return {};
   const e: Partial<Record<ContactField, string>> = {};
   if (!r.name.trim()) e.name = "Enter the name";
-  if (!MOBILE_RE.test(r.phone)) e.phone = "10-digit phone number";
+  if (!MOBILE_RE.test(r.phone)) e.phone = "Enter a valid 10-digit phone number";
   if (r.email.trim() && !EMAIL_RE.test(r.email.trim())) e.email = "Enter a valid email";
   return e;
 }
 const POC_FIELDS: { f: ContactField; label: string; placeholder: string; max: number }[] = [
   { f: "name", label: "Name", placeholder: "POC name", max: 120 },
   { f: "designation", label: "Designation", placeholder: "Optional", max: 120 },
-  { f: "phone", label: "Phone Number", placeholder: "10-digit mobile", max: 10 },
+  { f: "phone", label: "Phone Number", placeholder: "10-digit number", max: 10 },
   { f: "email", label: "Email", placeholder: "Optional", max: 200 },
 ];
 /** Rows as the API takes them (blank rows dropped; exactly one primary). */
@@ -907,17 +920,29 @@ function PocContactsSection({
                   <tr key={r.key} className="align-top">
                     {POC_FIELDS.map(({ f, label, placeholder, max }) => (
                       <td key={f} className="px-3 py-2">
-                        <Input
-                          aria-label={`POC contact ${i + 1} ${label.toLowerCase()}`}
-                          aria-invalid={!!err(f)}
-                          aria-required={f === "name" || f === "phone"}
-                          value={r[f]}
-                          inputMode={f === "phone" ? "numeric" : f === "email" ? "email" : undefined}
-                          placeholder={placeholder}
-                          maxLength={max}
-                          autoComplete="off"
-                          onChange={(e) => setField(i, f, e.target.value)}
-                        />
+                        {f === "phone" ? (
+                          // Phone Number: fixed +91, only the 10 digits are typed and saved.
+                          <PhoneInput
+                            aria-label={`POC contact ${i + 1} phone number`}
+                            aria-invalid={!!err(f)}
+                            aria-required
+                            value={r.phone}
+                            placeholder={placeholder}
+                            onChange={(e) => setField(i, f, e.target.value)}
+                          />
+                        ) : (
+                          <Input
+                            aria-label={`POC contact ${i + 1} ${label.toLowerCase()}`}
+                            aria-invalid={!!err(f)}
+                            aria-required={f === "name"}
+                            value={r[f]}
+                            inputMode={f === "email" ? "email" : undefined}
+                            placeholder={placeholder}
+                            maxLength={max}
+                            autoComplete="off"
+                            onChange={(e) => setField(i, f, e.target.value)}
+                          />
+                        )}
                         {err(f) && <p className="mt-1 text-xs text-danger">{err(f)}</p>}
                       </td>
                     ))}

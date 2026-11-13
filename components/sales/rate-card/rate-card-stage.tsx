@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Phone, Plus, Save, ScrollText, Send, SkipForward, Trash2, UserRound } from "lucide-react";
+import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, SkipForward, Trash2, UserRound } from "lucide-react";
 import { z } from "zod";
 import { normalizeMobile } from "@/components/clients/company-form";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PhoneInput, toMobile10 } from "@/components/ui/phone-input";
 import { SectionTitle } from "@/components/ui/page-header";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select } from "@/components/ui/select";
@@ -66,7 +67,13 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 /** Client Servicing rate cards (Rate Card step, Rate Card Creation): the contact person is optional. */
-const csSchema = schema.extend({ contact: schema.shape.contact.extend({ name: z.string().trim().max(120) }) });
+// Contact Phone (Rate Card step, +91 field): optional, but when given exactly a 10-digit Indian mobile number.
+const csSchema = schema.extend({
+  contact: schema.shape.contact.extend({
+    name: z.string().trim().max(120),
+    phone: z.string().refine((v) => !v.trim() || /^[6-9]\d{9}$/.test(toMobile10(v)), "Enter a valid 10-digit mobile number, or leave it empty"),
+  }),
+});
 
 /**
  * `typedContact` (Rate Card step): the contact is typed; a new rate card starts with the name of the order's primary
@@ -83,7 +90,8 @@ function toForm(d: QuotationState, typedContact = false): FormValues {
   const cityOnly = !saved || saved.toLowerCase() === (d.billTo?.city ?? "").trim().toLowerCase();
   return {
     clientAddress: full && cityOnly ? full : (src.clientAddress ?? ""),
-    contact: { name: contact?.name ?? "", designation: contact?.designation ?? "", phone: contact?.phone ?? "", email: contact?.email ?? "" },
+    // Rate Card step: phones are shown as the 10 digits after a fixed +91 (a stored "+91 …" is shown without it).
+    contact: { name: contact?.name ?? "", designation: contact?.designation ?? "", phone: typedContact ? toMobile10(contact?.phone) : (contact?.phone ?? ""), email: contact?.email ?? "" },
     quotationDate: toDateInput(src.quotationDate) || toDateInput(new Date().toISOString()),
     items: (src.items ?? []).map((i) => ({
       masterItemId: "masterItem" in i ? (i.masterItem ?? null) : ((i as { masterItemId?: string | null }).masterItemId ?? null),
@@ -95,13 +103,14 @@ function toForm(d: QuotationState, typedContact = false): FormValues {
       overrideReason: i.overrideReason ?? "",
     })),
     terms: src.terms ?? "",
-    regards: { name: src.regards?.name ?? "", designation: src.regards?.designation ?? "", mobile: src.regards?.mobile ?? "", email: src.regards?.email ?? "" },
+    regards: { name: src.regards?.name ?? "", designation: src.regards?.designation ?? "", mobile: typedContact ? toMobile10(src.regards?.mobile) : (src.regards?.mobile ?? ""), email: src.regards?.email ?? "" },
   };
 }
 
 const toApi = (v: FormValues): QuotationValues => ({
   clientAddress: v.clientAddress || undefined,
-  contact: { name: v.contact.name, designation: v.contact.designation || undefined, phone: v.contact.phone || undefined, email: v.contact.email || undefined },
+  // A 10-digit mobile is stored as the 10 digits only (never with +91); any other phone (BD contacts) as it is.
+  contact: { name: v.contact.name, designation: v.contact.designation || undefined, phone: (/^[6-9]\d{9}$/.test(toMobile10(v.contact.phone)) ? toMobile10(v.contact.phone) : v.contact.phone) || undefined, email: v.contact.email || undefined },
   quotationDate: v.quotationDate,
   items: v.items.map((i) => ({ ...i, specifications: i.specifications || undefined, overrideReason: i.overrideReason || undefined, masterItemId: i.masterItemId || undefined })),
   terms: v.terms,
@@ -183,7 +192,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   // Rate Card step, new rate card: the contact name of a draft read later (e.g. refetched after contacts were saved in
   // Assign Type & Details) fills an untouched, empty Contact Person; a typed or saved name is never overwritten.
   const draftContact = !data.latest ? (data.draft?.contact?.name ?? "") : "";
-  const draftPhone = !data.latest ? (data.draft?.contact?.phone ?? "") : "";
+  const draftPhone = !data.latest ? toMobile10(data.draft?.contact?.phone) : "";
   useEffect(() => {
     if (!step || data.latest) return;
     // Untouched (not dirty) means it still holds a prefill: a newer point of contact (refetched after the POC contacts
@@ -227,7 +236,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     } else if (auto) {
       // The point of contact is the saved one again: back to the saved contact.
       setValue("contact.name", data.latest.contact?.name ?? "", { shouldDirty: true });
-      setValue("contact.phone", data.latest.contact?.phone ?? "", { shouldDirty: true });
+      setValue("contact.phone", toMobile10(data.latest.contact?.phone), { shouldDirty: true });
       autoPoc.current = null;
       setPocNotice(false);
     }
@@ -235,7 +244,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   const keepSavedContact = () => {
     setKeptSaved(true);
     setValue("contact.name", data.latest?.contact?.name ?? "", { shouldDirty: true });
-    setValue("contact.phone", data.latest?.contact?.phone ?? "", { shouldDirty: true });
+    setValue("contact.phone", toMobile10(data.latest?.contact?.phone), { shouldDirty: true });
     setPocNotice(false);
   };
 
@@ -460,18 +469,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                 {/* Rate Card step: the contact person's phone (auto-filled; shown after the name in Kind Attn on the PDF). */}
                 {step && (
                   <Field label="Contact Phone" htmlFor="rc-contact-phone" hint="Optional: shown after the contact person on the PDF" error={e("contact.phone")}>
-                    <div className="relative">
-                      <Phone className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                      <Input
-                        id="rc-contact-phone"
-                        className="pl-9 tabular-nums"
-                        inputMode="numeric"
-                        maxLength={10}
-                        placeholder="10-digit mobile (optional)"
-                        aria-invalid={!!e("contact.phone")}
-                        {...register("contact.phone", { onChange: (ev) => form.setValue("contact.phone", String(ev.target.value).replace(/\D/g, "").slice(0, 10)) })}
-                      />
-                    </div>
+                    {/* Fixed +91; only the 10 digits are typed and saved (a pasted "+91 …" keeps its 10 digits). */}
+                    <PhoneInput id="rc-contact-phone" placeholder="10-digit number (optional)" aria-invalid={!!e("contact.phone")} {...register("contact.phone")} />
                   </Field>
                 )}
                 {/* Rate Card step: no date input; each new version is dated today (IST) when it is saved. */}
@@ -625,7 +624,12 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     <Input id="rc-remail" type="email" aria-invalid={!!e("regards.email")} {...register("regards.email")} />
                   </Field>
                   <Field label="Phone Number" htmlFor="rc-rmob" required error={e("regards.mobile")}>
-                    <Input id="rc-rmob" inputMode="numeric" maxLength={10} aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
+                    {step ? (
+                      // Rate Card step: fixed +91, only the 10 digits are typed and saved.
+                      <PhoneInput id="rc-rmob" placeholder="10-digit number" aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
+                    ) : (
+                      <Input id="rc-rmob" inputMode="numeric" maxLength={10} aria-invalid={!!e("regards.mobile")} {...register("regards.mobile")} />
+                    )}
                   </Field>
                 </div>
               </section>
