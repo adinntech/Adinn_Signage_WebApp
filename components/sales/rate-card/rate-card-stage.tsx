@@ -74,6 +74,10 @@ const csSchema = schema.extend({
     phone: z.string().refine((v) => !v.trim() || /^[6-9]\d{9}$/.test(toMobile10(v)), "Enter a valid 10-digit mobile number, or leave it empty"),
   }),
 });
+/** Recce Rate Card step: the contact is not typed (the point of contact's, set by the server), so it is not validated here. */
+const lockedSchema = csSchema.extend({ contact: csSchema.shape.contact.extend({ phone: z.string() }) });
+/** A field that is shown but never typed (Recce Rate Card step: client details and point of contact). */
+const LOCKED = "cursor-default bg-muted/60 text-foreground focus-visible:ring-0";
 
 /**
  * `typedContact` (Rate Card step): the contact is typed; a new rate card starts with the name of the order's primary
@@ -156,7 +160,10 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
   const [tab, setTab] = useState<BottomTab>("history");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const form = useForm<FormValues>({ resolver: zodResolver(step ? csSchema : schema), defaultValues: toForm(data, !!step), mode: "onTouched" });
+  // Recce Rate Card step (not Rate Card Creation): Company Name, Contact Person, Contact Phone and Bill To are not typed;
+  // they are always the client's details and the order's current point of contact (the server saves those values).
+  const lockedClient = !!step && !step.company;
+  const form = useForm<FormValues>({ resolver: zodResolver(lockedClient ? lockedSchema : step ? csSchema : schema), defaultValues: toForm(data, !!step), mode: "onTouched" });
   const { register, control, handleSubmit, reset, setValue, setError, formState } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "items" });
   const watched = useWatch({ control }) as FormValues;
@@ -189,64 +196,36 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Rate Card step, new rate card: the contact name of a draft read later (e.g. refetched after contacts were saved in
-  // Assign Type & Details) fills an untouched, empty Contact Person; a typed or saved name is never overwritten.
+  // Rate Card step, new rate card: the contact of a draft read later (e.g. refetched after contacts were saved in
+  // Assign Type & Details) fills an untouched Contact Person; a typed name is never overwritten. Recce Rate Card step
+  // (locked fields): always the current point of contact.
   const draftContact = !data.latest ? (data.draft?.contact?.name ?? "") : "";
   const draftPhone = !data.latest ? toMobile10(data.draft?.contact?.phone) : "";
   useEffect(() => {
     if (!step || data.latest) return;
     // Untouched (not dirty) means it still holds a prefill: a newer point of contact (refetched after the POC contacts
     // were saved, no page refresh needed) replaces it.
-    if (draftContact && !form.getFieldState("contact.name").isDirty && form.getValues("contact.name") !== draftContact) form.resetField("contact.name", { defaultValue: draftContact });
+    if ((lockedClient || (draftContact && !form.getFieldState("contact.name").isDirty)) && form.getValues("contact.name") !== draftContact) form.resetField("contact.name", { defaultValue: draftContact });
     // The phone the same way (shown after the name in Kind Attn).
-    if (draftPhone && !form.getFieldState("contact.phone").isDirty && form.getValues("contact.phone") !== draftPhone) form.resetField("contact.phone", { defaultValue: draftPhone });
-  }, [step, data.latest, draftContact, draftPhone, form]);
+    if ((lockedClient || (draftPhone && !form.getFieldState("contact.phone").isDirty)) && form.getValues("contact.phone") !== draftPhone) form.resetField("contact.phone", { defaultValue: draftPhone });
+  }, [step, lockedClient, data.latest, draftContact, draftPhone, form]);
 
-  // Rate Card step, saved version: the point of contact changed in Assign Type & Details since. Once per opening, the
-  // new contact replaces the saved one as an UNSAVED change (preview updates; Save & Continue makes the next version),
-  // only while the fields still hold the saved contact. "Keep" puts the saved contact back.
-  const poc = step && data.editable ? (data.pocUpdate ?? null) : null;
-  const [pocNotice, setPocNotice] = useState(false);
-  /** "Keep" was clicked: the saved contact stays for this opening. */
-  const [keptSaved, setKeptSaved] = useState(false);
-  // The contact this effect filled last: a newer point of contact (the rate card data is refetched after the POC
-  // contacts are saved, without a page refresh) may replace it, as it may replace the saved contact. Applying again
-  // after a form reset (mount, React's dev double-run) is harmless; a name the person typed is never touched.
-  const autoPoc = useRef<{ name: string; phone: string } | null>(null);
+  // Recce Rate Card step, saved version: the fields are not typed, so they always show the order's current point of
+  // contact and the client's address. When those changed since the version was saved (e.g. the primary POC was
+  // removed in Assign Type & Details), the new values are an UNSAVED change: the preview updates and Save & Continue
+  // makes the next version; the saved version stays in the history. Re-applied on every refetch (no page refresh).
+  const poc = lockedClient && data.editable ? (data.pocUpdate ?? null) : null;
   const pocName = poc?.name ?? null;
   const pocPhone = poc?.phone ?? null;
+  const billToNow = lockedClient ? data.billTo?.full || data.billTo?.city || "" : "";
   useEffect(() => {
-    if (!step || !data.latest || keptSaved) return;
-    const same = (a?: string | null, b?: string | null) => (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
-    const cur = form.getValues("contact.name");
-    const auto = autoPoc.current;
-    const untouched = same(cur, data.latest.contact?.name) || (!!auto && same(cur, auto.name) && same(form.getValues("contact.phone"), auto.phone));
-    if (!untouched) {
-      // Typed by the person (or a kept draft): left alone; the notice still explains a matching new contact.
-      if (pocName && same(cur, pocName)) setPocNotice(true);
-      return;
-    }
-    if (pocName) {
-      if (!same(cur, pocName) || !same(form.getValues("contact.phone"), pocPhone)) {
-        setValue("contact.name", pocName, { shouldDirty: true });
-        setValue("contact.phone", pocPhone ?? "", { shouldDirty: true });
-      }
-      autoPoc.current = { name: pocName, phone: pocPhone ?? "" };
-      setPocNotice(true);
-    } else if (auto) {
-      // The point of contact is the saved one again: back to the saved contact.
-      setValue("contact.name", data.latest.contact?.name ?? "", { shouldDirty: true });
-      setValue("contact.phone", toMobile10(data.latest.contact?.phone), { shouldDirty: true });
-      autoPoc.current = null;
-      setPocNotice(false);
-    }
-  }, [step, pocName, pocPhone, data.latest, keptSaved, form, setValue]);
-  const keepSavedContact = () => {
-    setKeptSaved(true);
-    setValue("contact.name", data.latest?.contact?.name ?? "", { shouldDirty: true });
-    setValue("contact.phone", toMobile10(data.latest?.contact?.phone), { shouldDirty: true });
-    setPocNotice(false);
-  };
+    if (!lockedClient || !data.latest) return;
+    const name = pocName ?? data.latest.contact?.name ?? "";
+    const phone = pocName ? (pocPhone ?? "") : toMobile10(data.latest.contact?.phone);
+    if (form.getValues("contact.name") !== name) setValue("contact.name", name, { shouldDirty: true });
+    if (form.getValues("contact.phone") !== phone) setValue("contact.phone", phone, { shouldDirty: true });
+    if (billToNow && form.getValues("clientAddress") !== billToNow) setValue("clientAddress", billToNow, { shouldDirty: true });
+  }, [lockedClient, pocName, pocPhone, billToNow, data.latest, form, setValue]);
 
   // Rate Card step, new rate card: every master rate (Rate Card Management) is loaded once as the starting lines, as
   // the form's defaults. A saved rate card keeps its own lines and rates (never reloaded from the master).
@@ -408,8 +387,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
           <fieldset disabled={!editable} className="min-w-0 space-y-6">
             <section>
               <SectionTitle icon={ClipboardList} title="Client & Quotation Details" />
-              {pocNotice && poc && (
-                <div role="status" className="mb-4 flex flex-wrap items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/60 px-4 py-3 text-sm">
+              {poc && (
+                <div role="status" className="mb-4 flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft/60 px-4 py-3 text-sm">
                   <UserRound className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
                   <p className="min-w-0 flex-1">
                     <span className="font-semibold text-foreground">Point of contact changed in Assign Type &amp; Details</span>
@@ -417,9 +396,6 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                       {poc.previousName || "(none)"} → <b className="text-foreground">{poc.name}</b>. Contact Person and Contact Phone are updated (not saved yet). Save &amp; Continue to create the next version; {data.latest?.label} stays in the history.
                     </span>
                   </p>
-                  <Button type="button" variant="outline" size="sm" onClick={keepSavedContact}>
-                    Keep {poc.previousName || "saved contact"}
-                  </Button>
                 </div>
               )}
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
@@ -430,19 +406,32 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     setValue("clientAddress", d?.address ?? "", { shouldDirty: true });
                   })
                 ) : (
-                <Field label={step ? "Company Name" : "Client Name"} htmlFor="rc-client" hint="Auto-filled">
+                <Field label={step ? "Company Name" : "Client Name"} htmlFor="rc-client" hint={lockedClient ? "From the client details" : "Auto-filled"}>
                   <div className="relative">
                     <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                    <Input id="rc-client" value={data.clientName} readOnly className="pl-9" />
+                    <Input id="rc-client" value={data.clientName} readOnly className={cn("pl-9", lockedClient && LOCKED)} />
                   </div>
                 </Field>
                 )}
-                <Field label="Contact Person" htmlFor="rc-contact" required={!step} hint={step ? "Optional: shown as Kind Attn on the PDF" : undefined} error={e("contact.name")}>
+                <Field
+                  label="Contact Person"
+                  htmlFor="rc-contact"
+                  required={!step}
+                  hint={lockedClient ? "Primary POC from Assign Type & Details (change it there); Kind Attn on the PDF" : step ? "Optional: shown as Kind Attn on the PDF" : undefined}
+                  error={e("contact.name")}
+                >
                   <div className="relative">
                     <UserRound className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                    {/* Rate Card step: typed (saved with this rate card for "Kind Attn"; not a Zoho contact). */}
+                    {/* Rate Card step: saved with this rate card for "Kind Attn" (Recce step: the primary POC, not typed). */}
                     {step ? (
-                      <Input id="rc-contact" className="pl-9" placeholder="Contact person's name (optional)" aria-invalid={!!e("contact.name")} {...register("contact.name")} />
+                      <Input
+                        id="rc-contact"
+                        className={cn("pl-9", lockedClient && LOCKED)}
+                        readOnly={lockedClient}
+                        placeholder={lockedClient ? "No point of contact" : "Contact person's name (optional)"}
+                        aria-invalid={!!e("contact.name")}
+                        {...register("contact.name")}
+                      />
                     ) : (
                     <Select
                       id="rc-contact"
@@ -468,9 +457,16 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                 </Field>
                 {/* Rate Card step: the contact person's phone (auto-filled; shown after the name in Kind Attn on the PDF). */}
                 {step && (
-                  <Field label="Contact Phone" htmlFor="rc-contact-phone" hint="Optional: shown after the contact person on the PDF" error={e("contact.phone")}>
+                  <Field label="Contact Phone" htmlFor="rc-contact-phone" hint={lockedClient ? "Primary POC's phone; shown after the contact person on the PDF" : "Optional: shown after the contact person on the PDF"} error={e("contact.phone")}>
                     {/* Fixed +91; only the 10 digits are typed and saved (a pasted "+91 …" keeps its 10 digits). */}
-                    <PhoneInput id="rc-contact-phone" placeholder="10-digit number (optional)" aria-invalid={!!e("contact.phone")} {...register("contact.phone")} />
+                    <PhoneInput
+                      id="rc-contact-phone"
+                      readOnly={lockedClient}
+                      className={cn(lockedClient && LOCKED)}
+                      placeholder={lockedClient ? "No phone number" : "10-digit number (optional)"}
+                      aria-invalid={!!e("contact.phone")}
+                      {...register("contact.phone")}
+                    />
                   </Field>
                 )}
                 {/* Rate Card step: no date input; each new version is dated today (IST) when it is saved. */}
@@ -482,12 +478,12 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                   </div>
                 </Field>
                 )}
-                <Field label="Bill To (City / Address)" htmlFor="rc-address" error={e("clientAddress")} className={step ? "md:col-span-2" : undefined}>
+                <Field label="Bill To (City / Address)" htmlFor="rc-address" hint={lockedClient ? "From the client details" : undefined} error={e("clientAddress")} className={step ? "md:col-span-2" : undefined}>
                   <div className="relative">
                     <MapPin className={cn("pointer-events-none absolute left-3 size-4 text-muted-foreground", step ? "top-3" : "top-1/2 -translate-y-1/2")} aria-hidden />
                     {/* Rate Card step: the full address, wrapping. */}
                     {step ? (
-                      <Textarea id="rc-address" rows={3} maxLength={500} className="min-h-20 pl-9" aria-invalid={!!e("clientAddress")} {...register("clientAddress")} />
+                      <Textarea id="rc-address" rows={3} maxLength={500} readOnly={lockedClient} className={cn("min-h-20 pl-9", lockedClient && LOCKED)} aria-invalid={!!e("clientAddress")} {...register("clientAddress")} />
                     ) : (
                       <Input id="rc-address" className="pl-9" {...register("clientAddress")} />
                     )}
