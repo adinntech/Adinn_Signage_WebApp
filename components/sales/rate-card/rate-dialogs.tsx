@@ -114,7 +114,7 @@ export function CompareRatesDialog({ open, onOpenChange, items }: { open: boolea
                 <th className="px-3 py-2.5 text-right">Master (today)</th>
                 <th className="px-3 py-2.5 text-right">Quoted</th>
                 <th className="px-3 py-2.5 text-right">Difference</th>
-                <th className="px-3 py-2.5">Override Reason</th>
+                <th className="px-3 py-2.5">Reason for Amount Override</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

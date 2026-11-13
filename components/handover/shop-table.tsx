@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Camera, Columns3, FileSpreadsheet, FileText, History, ImagePlus, Loader2, Pencil, Plus, RotateCcw, Ruler, Store, Trash2, Upload, X } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
+import { ShopVersionsDialog } from "./shop-versions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -586,6 +587,8 @@ export function ShopTable({
   const [editing, setEditing] = useState<HandoverShop | null | "new">(null);
   const [images, setImages] = useState<HandoverShop | null>(null);
   const [history, setHistory] = useState<HandoverShop | null | "all">(null);
+  /** History button: the version history (V1, V2...); its Change Log opens the cell-level log. */
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [deleting, setDeleting] = useState<HandoverShop | null>(null);
   const [clearing, setClearing] = useState(false);
   const upload = useUploadShopList(orderId);
@@ -702,7 +705,7 @@ export function ShopTable({
                 </>
               )}
               {!projectId && !hideHistory && (
-                <Button variant="outline" size="sm" onClick={() => setHistory("all")}>
+                <Button variant="outline" size="sm" onClick={() => setVersionsOpen(true)}>
                   <History className="size-4" aria-hidden /> History
                 </Button>
               )}
@@ -911,6 +914,14 @@ export function ShopTable({
           <RowDialog key={editing === "new" ? "new" : editing.rowId} orderId={orderId} measurement={measurement} row={editing === "new" ? null : editing} open onClose={() => setEditing(null)} />
         ))}
       {images && <ImagesDialog orderId={orderId} source={source} row={images} editable={editable} canAdd={canAddImages} onClose={() => setImages(null)} />}
+      {versionsOpen && !history && (
+        <ShopVersionsDialog
+          orderId={orderId}
+          type={type}
+          onClose={() => setVersionsOpen(false)}
+          onChangeLog={() => setHistory("all")}
+        />
+      )}
       {history && <HistoryDialog orderId={orderId} row={history === "all" ? null : history} onClose={() => setHistory(null)} />}
       <ConfirmDialog
         open={!!deleting}
@@ -934,7 +945,7 @@ export function ShopTable({
         open={clearing}
         onOpenChange={setClearing}
         title="Clear the whole shop list?"
-        description={`All ${total} shops${measurement ? " and their images" : ""} are removed. The history keeps a record of it.`}
+        description={`All ${total} shops${measurement ? " and their images" : ""} are removed from the current list. Saved versions stay in History; an empty version is saved.`}
         confirmLabel="Clear All"
         destructive
         loading={clear.isPending}

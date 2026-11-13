@@ -624,6 +624,54 @@ export function useShopHistory(id: string, rowId: string | undefined, enabled = 
   });
 }
 
+/* ------------------------- Shop list version history (V1, V2...) ------------------------- */
+
+export type ShopVersionKind = "LEGACY" | "UPLOAD" | "ADD" | "EDIT" | "DELETE" | "CLEAR";
+export interface ShopVersionItem {
+  version: number;
+  kind: ShopVersionKind;
+  fileName: string | null;
+  by: { _id: string; name: string } | null;
+  at: string;
+  total: number;
+  summary: { added: number; modified: number; removed: number };
+  status: "CURRENT" | "PREVIOUS" | "FIRST";
+  /** False for the first version (nothing earlier to compare with). */
+  hasPrevious: boolean;
+}
+export interface ShopVersionTable {
+  columns: { id: string; header: string }[];
+  rows: { rowId: string; cells: Record<string, string> }[];
+}
+export type ShopVersion = ShopVersionTable & { version: number; kind: ShopVersionKind; fileName: string | null; at: string; total: number };
+export type ShopDiffStatus = "ADDED" | "REMOVED" | "MODIFIED" | "UNCHANGED";
+export interface ShopVersionCompare {
+  from: number;
+  to: number;
+  columns: { id: string; header: string }[];
+  rows: { rowId: string; status: ShopDiffStatus; cells: Record<string, string>; before?: Record<string, string>; changed: string[] }[];
+  counts: { added: number; removed: number; modified: number; unchanged: number };
+}
+// Under the handover "history" key, so every shop change (which refreshes the history) refreshes the versions too.
+const versionsKey = (id: string, type?: HandoverType | null) => [...handoverKey(id), "history", "versions", type ?? null] as const;
+/** Versions of the current assign type, newest first. */
+export function useShopVersions(id: string, type: HandoverType | null | undefined, enabled = true) {
+  return useQuery({ queryKey: versionsKey(id, type), queryFn: () => api<ShopVersionItem[]>(`/sales/orders/${id}/handover/shop-versions`), enabled });
+}
+/** One saved version, exactly as saved (read-only). */
+export function useShopVersion(id: string, type: HandoverType | null | undefined, version: number | null) {
+  return useQuery({ queryKey: [...versionsKey(id, type), version, "table"], queryFn: () => api<ShopVersion>(`/sales/orders/${id}/handover/shop-versions/${version}`), enabled: !!version });
+}
+/** The version compared with the version before it. */
+export function useShopVersionCompare(id: string, type: HandoverType | null | undefined, version: number | null) {
+  return useQuery({ queryKey: [...versionsKey(id, type), version, "compare"], queryFn: () => api<ShopVersionCompare>(`/sales/orders/${id}/handover/shop-versions/${version}/compare`), enabled: !!version });
+}
+/** Excel of one saved version (not the current table): S.No first, Row ID hidden. */
+export async function downloadShopVersion(id: string, version: number) {
+  const { blob, fileName } = await apiBlob(`/sales/orders/${id}/handover/shop-versions/${version}/export`);
+  saveBlob(blob, fileName ?? `shop-list-V${version}.xlsx`);
+}
+
 /** The shop table as it is now (Excel with a Row ID column, so it can be edited and uploaded again). */
 export async function downloadShopExcel(id: string) {
   const { blob, fileName } = await apiBlob(`/sales/orders/${id}/handover/shops/export`);
