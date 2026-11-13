@@ -14,7 +14,10 @@ export function TagInput({
   disabled,
   invalid,
   onDraftChange,
+  name,
 }: {
+  /** Form field name of the typing box (a neutral one keeps browsers from treating it as a saved-contact field). */
+  name?: string;
   id?: string;
   value: string[];
   onChange: (v: string[]) => void;
@@ -71,6 +74,17 @@ export function TagInput({
       ))}
       <input
         id={id}
+        name={name}
+        // Tags are typed and chosen here only: no browser autofill / saved-entry dropdown over the chips. Browsers
+        // treat this as a strong hint, not a guarantee. Password-manager ignore hints are added for the same reason.
+        type="text"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        data-lpignore="true"
+        data-1p-ignore="true"
+        data-form-type="other"
         aria-invalid={invalid || undefined}
         value={draft}
         disabled={disabled}

@@ -10,10 +10,20 @@ import { RichTextView } from "@/components/ui/rich-text-editor";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { useOrderEmails, useResendEmail, type DeliveryStatus, type SentEmail } from "@/lib/api/sales";
+import { useOrderEmails, useResendEmail, type DeliveryStatus, type SentAttachmentCategory, type SentEmail } from "@/lib/api/sales";
 import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { AttachmentChip } from "./order-comments";
+
+/** Project code request: what each sent file was (from the order's records, by file id). */
+export const ATTACHMENT_CATEGORY: Record<SentAttachmentCategory, string> = {
+  RATE_CARD: "Rate Card PDF",
+  SHOP_LIST: "Shop List Excel",
+  SO_DOCUMENT: "SO document",
+  COMMUNICATION: "Handover communication file",
+  GST_CERTIFICATE: "GST certificate",
+  ADDED: "Added to this email",
+};
 
 const STATUS: Record<DeliveryStatus, { tone: Tone; label: string }> = {
   SENT: { tone: "success", label: "Sent" },
@@ -80,7 +90,7 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
               <th className="px-4 py-3">Sent By</th>
               <th className="px-4 py-3">Recipients</th>
               <th className="px-4 py-3">Subject</th>
-              <th className="px-4 py-3">{kind === "RATE_CARD" ? "PDF Revision" : "PDF Attachment"}</th>
+              <th className="px-4 py-3">{kind === "RATE_CARD" ? "PDF Revision" : kind === "PROJECT_CODE_REQUEST" ? "Attachments" : "PDF Attachment"}</th>
               <th className="px-4 py-3">Sent Date &amp; Time</th>
               <th className="px-4 py-3">Delivery Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
@@ -112,9 +122,15 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
                       {kind === "RATE_CARD" ? e.revisionLabel : `Rate Card ${e.revisionLabel}`}
                     </Badge>
                   )}
+                  {kind === "PROJECT_CODE_REQUEST" && e.attachments.length > 0 && (
+                    <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+                      {e.attachments.length} file{e.attachments.length === 1 ? "" : "s"}
+                    </span>
+                  )}
                   {e.attachments.map((a) => (
-                    <div key={a.fileId}>
+                    <div key={a.fileId} className="mb-1">
                       <AttachmentChip file={a} source={{ orderId }} />
+                      {e.attachmentInfo?.[a.fileId] && <span className="block pl-1 text-[11px] text-muted-foreground">{ATTACHMENT_CATEGORY[e.attachmentInfo[a.fileId]!.category]}</span>}
                     </div>
                   ))}
                 </td>
@@ -159,6 +175,12 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
               <dd>{view.to.join(", ")}</dd>
               <dt className="text-muted-foreground">CC</dt>
               <dd>{view.cc.join(", ") || "-"}</dd>
+              {!!view.bcc?.length && (
+                <>
+                  <dt className="text-muted-foreground">BCC</dt>
+                  <dd>{view.bcc.join(", ")}</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">Status</dt>
               <dd>
                 <DeliveryBadge e={view} />
@@ -167,9 +189,15 @@ export function EmailHistory({ orderId, kind, allowResend = true }: { orderId: s
             <div className="rounded-lg border border-border bg-background p-4">
               <RichTextView html={view.body} />
             </div>
+            {view.attachments.length > 0 && (
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attachments ({view.attachments.length})</p>
+            )}
             <div className="flex flex-wrap gap-2">
               {view.attachments.map((a) => (
-                <AttachmentChip key={a.fileId} file={a} source={{ orderId }} />
+                <span key={a.fileId} className="inline-flex flex-col">
+                  <AttachmentChip file={a} source={{ orderId }} />
+                  {view.attachmentInfo?.[a.fileId] && <span className="pl-1 text-[11px] text-muted-foreground">{ATTACHMENT_CATEGORY[view.attachmentInfo[a.fileId]!.category]}</span>}
+                </span>
               ))}
             </div>
           </div>

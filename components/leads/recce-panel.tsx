@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Search, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { CONTACT_PERSON_GAP, HandoverTab, hasUnsavedContacts, saveOrderContactsBeforeLeaving, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
-import { DeliveryBadge, EmailHistory, emailTypes } from "@/components/sales/email-history";
+import { ATTACHMENT_CATEGORY, DeliveryBadge, EmailHistory, emailTypes } from "@/components/sales/email-history";
 import { RateCardStage } from "@/components/sales/rate-card/rate-card-stage";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -32,6 +32,7 @@ import type { LeadDetail } from "@/lib/api/leads";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useRecceZohoEstimates, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState, type ZohoEstimateOption } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 import { formatCurrency, formatDate, formatDateTimeIST } from "@/lib/format";
 import { clearStepDraft, useStepDraft } from "@/lib/step-drafts";
 import { flagHandoverGaps, RouteNotice, StepFooter } from "./assign-panels";
@@ -42,7 +43,24 @@ const TEAL = ASSIGN_META.RECCE.color;
 const DOC_ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv";
 
 /** One attachment line: icon, file name, what it is, Preview (images / PDF; others download) and Download. */
-function AttachmentRow({ icon: Icon, name, meta, onPreview, previewLabel = "Preview", onDownload }: { icon: typeof FileText; name: string; meta?: string; onPreview?: () => void; previewLabel?: string; onDownload: () => void }) {
+function AttachmentRow({
+  icon: Icon,
+  name,
+  meta,
+  onPreview,
+  previewLabel = "Preview",
+  onDownload,
+  unavailable = false,
+}: {
+  icon: typeof FileText;
+  name: string;
+  meta?: string;
+  onPreview?: () => void;
+  previewLabel?: string;
+  onDownload: () => void;
+  /** The file is recorded but its stored copy cannot be opened: shown with a status instead of the buttons. */
+  unavailable?: boolean;
+}) {
   return (
     <li className="flex flex-wrap items-center gap-3 px-3 py-2.5">
       <Icon className="size-4 shrink-0 text-[#0891b2]" aria-hidden />
@@ -52,6 +70,11 @@ function AttachmentRow({ icon: Icon, name, meta, onPreview, previewLabel = "Prev
         </span>
         {meta && <span className="block text-xs text-muted-foreground">{meta}</span>}
       </span>
+      {unavailable ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-soft px-2.5 py-1 text-xs font-semibold text-warning">
+          <CircleAlert className="size-3.5" aria-hidden /> File unavailable
+        </span>
+      ) : (
       <span className="flex shrink-0 gap-1.5">
         {onPreview && (
           <Button variant="outline" size="sm" onClick={onPreview} aria-label={`${previewLabel} ${name}`}>
@@ -62,6 +85,7 @@ function AttachmentRow({ icon: Icon, name, meta, onPreview, previewLabel = "Prev
           <Download className="size-4" aria-hidden /> Download
         </Button>
       </span>
+      )}
     </li>
   );
 }
@@ -200,19 +224,26 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
       />
       <TabPanel k={tab}>
         <div id="recce-mail-tabs-panel" className="space-y-4">
-          {!!sends?.sent && tab === "email" && (
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-success-soft/70 px-3 py-2 text-sm text-success">
-              <Check className="size-4 shrink-0" aria-hidden /> Initial email sent
-              {sends.sent > 1 && ` · Resent ${sends.sent - 1} time${sends.sent === 2 ? "" : "s"}`}
-              {sends.lastSentAt && ` · Last sent on ${formatDateTimeIST(sends.lastSentAt)}`}
-              <button type="button" className="font-semibold underline underline-offset-2 hover:no-underline" onClick={() => setTab("history")}>
-                View Email History
-              </button>
-            </p>
+          {/* Read-only (codes saved): the preview shows its own success banner instead. */}
+          {!!sends?.sent && tab === "email" && !readOnly && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-success/25 bg-success-soft/60 px-4 py-3">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-success text-white">
+                <Check className="size-4" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-semibold text-success">
+                  Initial email sent{sends.sent > 1 && ` · Resent ${sends.sent - 1} time${sends.sent === 2 ? "" : "s"}`}
+                </p>
+                {sends.lastSentAt && <p className="text-xs text-muted-foreground">Last sent on {formatDateTimeIST(sends.lastSentAt)} · Resend sends a new email with the current details and files.</p>}
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setTab("history")}>
+                <History className="size-4" aria-hidden /> View Email History
+              </Button>
+            </div>
           )}
           {/* Resend stays with the composer flow: hidden here once the codes are saved (the server refuses it too). */}
           {tab === "history" && <EmailHistory orderId={r.orderId} kind="PROJECT_CODE_REQUEST" allowResend={false} />}
-          {tab === "email" && readOnly && <LatestRequestPreview r={r} />}
+          {tab === "email" && readOnly && <LatestRequestPreview r={r} onHistory={() => setTab("history")} />}
           {tab === "email" && !readOnly && <CodeRequestComposer r={r} files={files} setFiles={setFiles} send={send} onSent={onSent} resend={!!sends?.sent} />}
         </div>
       </TabPanel>
@@ -221,7 +252,17 @@ function CodeRequestStep({ r, locked, onSent }: { r: RecceState; locked: boolean
 }
 
 /** Codes saved (or branch locked): the latest recorded request email, read-only, with attachment preview / download. */
-function LatestRequestPreview({ r }: { r: RecceState }) {
+/** Files the preview opens in place (PDF and images); the others are downloaded. */
+const previewable = (a: { name?: string | null; mimeType?: string | null }) => /^(application\/pdf|image\/)/i.test(a.mimeType ?? "") || /\.(pdf|png|jpe?g|webp|gif)$/i.test(a.name ?? "");
+
+/** Email body tables / headings as structured cards (the stored HTML is sanitized, attribute-free, so classes apply). */
+const MAIL_BODY =
+  "[&_h3]:mt-6 [&_h3]:mb-2.5 [&_h3]:border-0 [&_h3]:pb-0 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:uppercase [&_h3]:tracking-wide [&_h3]:text-navy " +
+  "[&_table]:mb-3 [&_table]:border-separate [&_table]:border-spacing-0 [&_table]:overflow-hidden [&_table]:rounded-[10px] [&_table]:border [&_table]:border-border " +
+  "[&_th]:border-b [&_th]:bg-muted/60 [&_th]:px-3 [&_th]:py-2 [&_td]:px-3 [&_td]:py-2 [&_tr:last-child_td]:border-b-0 [&_tr:last-child_th]:border-b-0 [&_tbody_tr:nth-child(even)]:bg-muted/25";
+
+/** Codes saved (or branch locked): the latest recorded request email, read-only, with attachment preview / download. */
+function LatestRequestPreview({ r, onHistory }: { r: RecceState; onHistory: () => void }) {
   const q = useOrderEmails(r.orderId, "PROJECT_CODE_REQUEST");
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const toast = useToast();
@@ -230,52 +271,109 @@ function LatestRequestPreview({ r }: { r: RecceState }) {
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const e = q.data[0];
   if (!e) return <EmptyState icon={Inbox} title="No request email recorded" description="Email History shows every project code request sent for this project." />;
+  const sent = e.status === "SENT";
+  // The files this email actually carried (its own record), one per file id.
+  const sentFiles = e.attachments.filter((a, i, all) => a.fileId && all.findIndex((x) => x.fileId === a.fileId) === i);
+  const summary: { label: string; value: ReactNode; icon: typeof Mail }[] = [
+    { label: "Email Status", value: <DeliveryBadge e={e} />, icon: Mail },
+    { label: "Sent On", value: formatDateTimeIST(e.sentAt), icon: History },
+    { label: "Sent By", value: e.sentBy?.name ?? "-", icon: UserRound },
+    { label: "Reference", value: e.requestId ? <span className="font-mono">{e.requestId}</span> : "-", icon: BadgeCheck },
+  ];
   return (
-    <div className="space-y-3 text-sm">
-      <p className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-muted-foreground">
-        <Lock className="size-4 shrink-0" aria-hidden /> {r.codes ? "Codes saved: the request email is read-only." : "Read-only: the latest request email."}
-      </p>
-      <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-border bg-card p-4">
-        <dt className="text-muted-foreground">From</dt>
-        <dd>{e.from || "-"}</dd>
-        <dt className="text-muted-foreground">To</dt>
-        <dd>{e.to.join(", ")}</dd>
-        <dt className="text-muted-foreground">CC</dt>
-        <dd>{e.cc.join(", ") || "-"}</dd>
-        <dt className="text-muted-foreground">Subject</dt>
-        <dd className="font-medium">
-          {e.subject}
-          {e.requestId && <span className="ml-2 font-mono text-xs text-muted-foreground">{e.requestId}</span>}
-        </dd>
-        <dt className="text-muted-foreground">Sent</dt>
-        <dd>
-          {formatDateTimeIST(e.sentAt)} by {e.sentBy?.name ?? "-"}
-        </dd>
-        <dt className="text-muted-foreground">Status</dt>
-        <dd>
-          <DeliveryBadge e={e} />
-          {e.error && <span className="ml-2 text-xs text-muted-foreground">{e.error}</span>}
-        </dd>
-      </dl>
-      <div className="rounded-lg border border-border bg-background p-4">
-        <RichTextView html={e.body} />
+    <div className="space-y-4 text-sm">
+      {/* Success banner (the latest email's own status, time and sender), then the read-only note. */}
+      <div className={cn("flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3", sent ? "border-success/25 bg-success-soft/60" : "border-warning/30 bg-warning-soft/60")}>
+        <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", sent ? "bg-success text-white" : "bg-warning text-white")}>
+          {sent ? <Check className="size-5" aria-hidden /> : <CircleAlert className="size-5" aria-hidden />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn("font-semibold", sent ? "text-success" : "text-warning")}>{sent ? "Email Sent Successfully" : "Latest request email was not delivered"}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatDateTimeIST(e.sentAt)} · by {e.sentBy?.name ?? "-"}
+            {e.error && ` · ${e.error}`}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onHistory}>
+          <History className="size-4" aria-hidden /> View Email History
+        </Button>
       </div>
-      {e.attachments.length > 0 && (
+      <p className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+        <Lock className="size-3.5 shrink-0" aria-hidden /> {r.codes ? "Codes saved: the request email is read-only." : "Read-only: the latest request email."}
+      </p>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {summary.map((s) => (
+          <div key={s.label} className="flex items-start gap-3 rounded-xl border border-border bg-surface p-3 shadow-soft">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+              <s.icon className="size-4" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{s.label}</p>
+              <div className="mt-0.5 truncate text-sm font-semibold text-navy">{s.value}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <section className="overflow-hidden rounded-xl border border-border bg-surface">
+        <h3 className="border-b border-border bg-muted/40 px-4 py-2.5 text-sm font-semibold text-navy">Email Details</h3>
+        <dl className="divide-y divide-border">
+          {[
+            ["From", e.from || "-"],
+            ["To", e.to.join(", ") || "-"],
+            ["CC", e.cc.join(", ") || "-"],
+          ].map(([k, v]) => (
+            <div key={k} className="grid grid-cols-[88px_1fr] gap-3 px-4 py-2.5">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className="break-words">{v}</dd>
+            </div>
+          ))}
+          <div className="grid grid-cols-[88px_1fr] gap-3 px-4 py-2.5">
+            <dt className="text-muted-foreground">Subject</dt>
+            <dd className="flex flex-wrap items-center gap-2 font-medium text-navy">
+              {e.subject}
+              {e.requestId && <span className="rounded-full bg-brand-soft px-2 py-0.5 font-mono text-[11px] font-semibold text-brand">{e.requestId}</span>}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      {/* The email as sent: Adinn header, then the stored body (greeting, message, client / contact / shop sections). */}
+      <section className="overflow-hidden rounded-xl border border-border bg-white shadow-soft">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-[#F1F3FA] px-5 py-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/AdinnLogo.svg" alt="Adinn" className="h-7 w-auto" />
+          <p className="text-sm font-semibold text-navy">Project Code &amp; Estimation Code Request</p>
+        </div>
+        <div className="overflow-x-auto px-5 py-5">
+          <RichTextView html={e.body} className={MAIL_BODY} />
+        </div>
+      </section>
+
+      {sentFiles.length > 0 && (
         <section>
           <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <Paperclip className="size-3.5" aria-hidden /> Attachments ({e.attachments.length})
+            <Paperclip className="size-3.5" aria-hidden /> Attachments ({sentFiles.length})
             {e.revisionLabel && <span className="normal-case">· Rate Card {e.revisionLabel}</span>}
           </p>
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {e.attachments.map((a) => (
-              <AttachmentRow
-                key={a.fileId}
-                icon={/.(xlsx?|csv)$/i.test(a.name ?? "") ? FileSpreadsheet : FileText}
-                name={a.name ?? "file"}
-                onPreview={() => setPreview({ saved: a, source })}
-                onDownload={() => void downloadFile(a.fileId, source, a.name ?? "file").catch((err) => toast(errorMessage(err), "error"))}
-              />
-            ))}
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
+            {sentFiles.map((a) => {
+              const info = e.attachmentInfo?.[a.fileId];
+              const unavailable = info?.available === false;
+              const type = (a.name ?? "").split(".").pop()?.toUpperCase();
+              return (
+                <AttachmentRow
+                  key={a.fileId}
+                  icon={/\.(xlsx?|csv)$/i.test(a.name ?? "") ? FileSpreadsheet : FileText}
+                  name={a.name ?? "file"}
+                  meta={[info ? ATTACHMENT_CATEGORY[info.category] : null, type && type !== (a.name ?? "").toUpperCase() ? type : null].filter(Boolean).join(" · ") || undefined}
+                  unavailable={unavailable}
+                  onPreview={previewable(a) ? () => setPreview({ saved: a, source }) : undefined}
+                  onDownload={() => void downloadFile(a.fileId, source, a.name ?? "file").catch((err) => toast(errorMessage(err), "error"))}
+                />
+              );
+            })}
           </ul>
         </section>
       )}
@@ -303,9 +401,15 @@ function CodeRequestComposer({
 }) {
   return (
     <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold text-navy">{resend ? "Resend Project Code Request" : "Compose Project Code Request"}</h3>
+        <p className="text-xs text-muted-foreground">Recipients, subject and the message to the accounts team. Client details, contacts and the files below go with it.</p>
+      </div>
       <EmailComposer
-        idPrefix="recce-mail"
+        // A neutral prefix: ids such as "recce-mail-to" made Chrome treat To / Cc / Bcc as saved email fields.
+        idPrefix="recce-request"
         compact
+        allowBcc
         persistKey={`${r.orderId}:email`}
         sendLabel={resend ? "Resend Email" : "Send Email"}
         notConfigured={'The signage email API is not configured on the server (SIGNAGE_MAIL_API_URL / SIGNAGE_MAIL_API_KEY). Sending will be recorded as "Not sent" until it is set up.'}

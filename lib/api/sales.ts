@@ -117,6 +117,7 @@ export interface SentEmail {
   from: string;
   to: string[];
   cc: string[];
+  bcc?: string[];
   subject: string;
   body: string;
   attachments: FileRef[];
@@ -129,10 +130,15 @@ export interface SentEmail {
   resentFrom?: string;
   sentBy: UserRef;
   sentAt: string;
+  /** Project code request: per sent file id, what it was and whether its stored file can still be opened. */
+  attachmentInfo?: Record<string, { category: SentAttachmentCategory; available: boolean }>;
 }
+export type SentAttachmentCategory = "RATE_CARD" | "SHOP_LIST" | "SO_DOCUMENT" | "COMMUNICATION" | "GST_CERTIFICATE" | "ADDED";
 export interface EmailInput {
   to: string[];
   cc: string[];
+  /** Blind copies (Project Code Request Email only). */
+  bcc?: string[];
   subject: string;
   body: string;
   requestKey?: string;
