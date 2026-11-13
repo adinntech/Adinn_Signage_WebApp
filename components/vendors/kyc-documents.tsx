@@ -21,7 +21,7 @@ const ICON: Record<KycDocKey, typeof IdCard> = { pan: IdCard, gst: Receipt, bank
 const HINT: Record<KycDocKey, string> = { pan: "PAN card scan", gst: "GST registration certificate", bank: "Cancelled cheque leaf, name and account number visible", aadhaar: "Aadhaar card, front and back", address: "Electricity bill or rent agreement", other: "Vendor agreement or any other document" };
 const LABEL: Record<KycDocKey, string> = { pan: "PAN card", gst: "GST certificate", bank: "Cancelled cheque", aadhaar: "Aadhaar card", address: "Address proof", other: "Vendor agreement / other documents" };
 /** The tiles shown: a GST vendor uploads the GST certificate, one without GST the Aadhaar. A vendor from before the GST question keeps the old set (with address proof). */
-const tilesFor = (hasGst?: boolean | null): KycDocKey[] => (hasGst === true ? ["pan", "gst", "bank", "other"] : hasGst === false ? ["pan", "aadhaar", "bank", "other"] : ["pan", "gst", "bank", "address", "other"]);
+const tilesFor = (hasGst?: boolean | null): KycDocKey[] => (hasGst === true ? ["gst", "pan", "bank", "other"] : hasGst === false ? ["pan", "aadhaar", "bank", "other"] : ["pan", "gst", "bank", "address", "other"]);
 
 /** Documents still to be uploaded before the registration mail can go (the same rule as the server: see requiredDocKeys). */
 export function missingDocs(rules: { type?: VendorType | undefined; hasGst?: boolean | null | undefined }, saved: KycFile[] = [], pending: PendingKyc = {}) {

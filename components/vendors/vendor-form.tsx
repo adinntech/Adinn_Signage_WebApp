@@ -7,7 +7,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { TagInput } from "@/components/ui/tag-input";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { useAddVendorType, useGstCheck, useKycFiles, usePincode, useSaveVendor, useVendorTypes, type KycDocKey, type KycFile, type Vendor, type VendorInput, type VendorType } from "@/lib/api/vendors";
@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
 
 // The same three data steps for a new vendor and for editing one (a new vendor adds the mail step). Documents: a new vendor's files are uploaded right after it is saved; an existing vendor's files are uploaded as soon as they are picked.
 const STEPS = [
-  { key: "business", title: "Business details", icon: Building2, fields: ["typeName", "name", "contactPerson", "mobile", "mobileAlt", "email", "address", "district"] },
+  { key: "business", title: "Business details", icon: Building2, fields: ["typeName", "name", "contactPerson", "mobile", "mobileAlt", "email", "district"] },
   { key: "kyc", title: "KYC & documents", icon: FileUp, fields: ["pan", "gstin", "bank.accountName", "bank.accountNo", "bank.ifsc", "documents"] },
-  { key: "rates", title: "Service area & rates", icon: IndianRupee, fields: ["serviceAreas", "skills", "ratePerShop", "farRatePerShop", "shopsPerDay", "notes"] },
+  { key: "rates", title: "Service area & rates", icon: IndianRupee, fields: ["serviceAreas", "address", "skills", "ratePerShop", "farRatePerShop", "shopsPerDay", "notes"] },
   // New vendor only: after the vendor is saved, the registration request mail is written and sent in the same form.
   { key: "mail", title: "Registration mail", icon: Mail, fields: [] },
 ] as const;
@@ -30,11 +30,11 @@ const BUILT_IN: Record<VendorType, string> = { ORGANIZATION: "Organization", ONE
 const NEW_TYPE = "__new__";
 type StepKey = (typeof STEPS)[number]["key"];
 
-type Form = { typeName: string; typed: Record<"pan" | "gst" | "bank" | "aadhaar", boolean>; /** null until the person answers "Does the vendor have GST?"; then an organization defaults to yes. */ hasGst: boolean | null; name: string; contactPerson: string; designation: string; mobile: string; mobileAlt: string; email: string; address: string; pincode: string; state: string; district: string; aadhaar: string; pan: string; gstin: string; accountName: string; accountNo: string; ifsc: string; serviceAreas: string; ratePerShop: string; farRatePerShop: string; skills: string; shopsPerDay: string; availability: string; notes: string };
+type Form = { typeName: string; typed: Record<"pan" | "gst" | "bank" | "aadhaar", boolean>; /** null until the person answers "Does the vendor have GST?"; then an organization defaults to yes. */ hasGst: boolean | null; name: string; contactPerson: string; designation: string; mobile: string; mobileAlt: string; email: string; address: string; pincode: string; state: string; district: string; aadhaar: string; pan: string; gstin: string; accountName: string; accountNo: string; ifsc: string; serviceAreas: string[]; ratePerShop: string; farRatePerShop: string; skills: string; shopsPerDay: string; availability: string; notes: string };
 const fromVendor = (v?: Vendor): Form => ({
   typeName: v?.typeName ?? BUILT_IN[v?.type ?? "ONE_MAN"], typed: { pan: !!v?.pan, gst: !!v?.gstin, bank: !!v?.bank?.accountNo, aadhaar: !!v?.aadhaar }, hasGst: v ? (v.hasGst ?? !!v.gstin) : null, name: v?.name ?? "", contactPerson: v?.contactPerson ?? "", designation: v?.designation ?? "", mobile: v?.mobile ?? "", mobileAlt: v?.mobileAlt ?? "", email: v?.email ?? "", address: v?.address ?? "", pincode: v?.pincode ?? "", state: v?.state ?? "", district: v?.district ?? "", aadhaar: v?.aadhaar ?? "",
   pan: v?.pan ?? "", gstin: v?.gstin ?? "", accountName: v?.bank?.accountName ?? "", accountNo: v?.bank?.accountNo ?? "", ifsc: v?.bank?.ifsc ?? "",
-  serviceAreas: (v?.serviceAreas ?? []).join(", "), ratePerShop: v?.ratePerShop != null ? String(v.ratePerShop) : "", farRatePerShop: v?.farRatePerShop != null ? String(v.farRatePerShop) : "", skills: (v?.skills ?? []).join(", "), shopsPerDay: v?.shopsPerDay != null ? String(v.shopsPerDay) : "", availability: v?.availability ?? "AVAILABLE", notes: v?.notes ?? "",
+  serviceAreas: v?.serviceAreas ?? [], ratePerShop: v?.ratePerShop != null ? String(v.ratePerShop) : "", farRatePerShop: v?.farRatePerShop != null ? String(v.farRatePerShop) : "", skills: (v?.skills ?? []).join(", "), shopsPerDay: v?.shopsPerDay != null ? String(v.shopsPerDay) : "", availability: v?.availability ?? "AVAILABLE", notes: v?.notes ?? "",
 });
 
 /**
@@ -76,10 +76,13 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
   const typedOpen = { pan: !quick && (strict || f.typed.pan), gst: hasGst, aadhaar: !quick && !hasGst && (strict || f.typed.aadhaar), bank: !quick && f.typed.bank };
   // The pincode fills the state and city. Only after the person typed a pincode, so an existing vendor's own values are never overwritten.
   const pinTyped = useRef(false);
+  /** The PAN last filled from the GST number (so a later correction of the GST number can replace it, but a PAN typed by hand is kept). */
+  const autoPan = useRef("");
   const pin = usePincode(f.pincode);
   useEffect(() => {
     const d = pin.data;
-    if (pinTyped.current && d && d.pincode === f.pincode) setF((s) => ({ ...s, state: d.state, district: d.district }));
+    // A partial answer (only the state is known) never wipes a city that was typed.
+    if (pinTyped.current && d && d.pincode === f.pincode) setF((s) => ({ ...s, state: d.state, district: d.district || (d.partial ? s.district : "") }));
   }, [pin.data, f.pincode]);
   const pickType = (v: string) => (v === NEW_TYPE ? setNewType({ name: "", rules: "ONE_MAN", error: "" }) : setF((s) => ({ ...s, typeName: v })));
 
@@ -116,7 +119,6 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
         else if (!isValidFormat("pincode", f.pincode)) e.pincode = "Enter a 6-digit pincode";
         if (!f.state.trim()) e.state = "Choose the state";
         if (!f.district.trim()) e.district = "Enter the city / district";
-        if (!f.address.trim()) e.address = "Enter the address";
       }
     }
     if (k === "kyc") {
@@ -153,7 +155,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
       ...(!quick && t(f.address) ? { address: t(f.address) as string } : {}), ...(!quick && t(f.pincode) ? { pincode: t(f.pincode) as string } : {}), ...(!quick && t(f.state) ? { state: t(f.state) as string } : {}), ...(!quick && t(f.district) ? { district: t(f.district) as string } : {}),
       ...(typedOpen.pan && t(f.pan) ? { pan: t(f.pan) as string } : {}), ...(typedOpen.gst && t(f.gstin) ? { gstin: t(f.gstin) as string } : {}), ...(typedOpen.aadhaar && t(f.aadhaar) ? { aadhaar: t(f.aadhaar) as string } : {}),
       ...(typedOpen.bank && (f.accountName.trim() || f.accountNo.trim() || f.ifsc.trim()) ? { bank: { ...(t(f.accountName) ? { accountName: t(f.accountName) as string } : {}), ...(t(f.accountNo) ? { accountNo: t(f.accountNo) as string } : {}), ...(t(f.ifsc) ? { ifsc: t(f.ifsc) as string } : {}) } } : {}),
-      ...(quick ? {} : { serviceAreas: f.serviceAreas.split(/[,;]/).map((x) => x.trim()).filter(Boolean), skills: f.skills.split(/[,;]/).map((x) => x.trim()).filter(Boolean), availability: f.availability === "BUSY" ? ("BUSY" as const) : ("AVAILABLE" as const) }),
+      ...(quick ? {} : { serviceAreas: f.serviceAreas, skills: f.skills.split(/[,;]/).map((x) => x.trim()).filter(Boolean), availability: f.availability === "BUSY" ? ("BUSY" as const) : ("AVAILABLE" as const) }),
       ...(!quick && t(f.shopsPerDay) ? { shopsPerDay: Number(f.shopsPerDay) } : {}),
       ...(!quick && t(f.ratePerShop) ? { ratePerShop: Number(f.ratePerShop) } : {}), ...(!quick && t(f.farRatePerShop) ? { farRatePerShop: Number(f.farRatePerShop) } : {}), ...(!quick && t(f.notes) ? { notes: t(f.notes) as string } : {}),
     };
@@ -187,7 +189,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
   }
 
   const err = (k: string) => errors[k];
-  const panField = <Field label="PAN number" htmlFor="v-pan" required={strict} error={err("pan")} hint="e.g. ABCDE1234F"><Input id="v-pan" format="pan" value={f.pan} onChange={set("pan")} /></Field>;
+  const panField = <Field label="PAN number" htmlFor="v-pan" required={strict} error={err("pan")} hint={hasGst ? "Filled from the GST number" : "e.g. ABCDE1234F"}><Input id="v-pan" format="pan" value={f.pan} onChange={set("pan")} /></Field>;
   const gst = gstinInfo(f.gstin);
   const gstCheck = useGstCheck(gst ? f.gstin.trim().toUpperCase() : "", !!gst);
   const known = gstCheck.data?.zoho ?? gstCheck.data?.registered ?? null;
@@ -205,8 +207,12 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
   const onGst = (e: { target: { value: string } }) => {
     const v = e.target.value;
     const info = gstinInfo(v);
-    // The PAN is inside the GST number: fill it (and show it) unless one was typed already.
-    setF((s) => ({ ...s, gstin: v, ...(info && !s.pan ? { pan: info.pan, typed: { ...s.typed, pan: true } } : {}) }));
+    // The PAN is inside the GST number: it is filled from it (and follows a corrected GST number), unless the person typed a different PAN.
+    setF((s) => {
+      const fromGst = !s.pan || s.pan === autoPan.current;
+      if (info && fromGst) autoPan.current = info.pan;
+      return { ...s, gstin: v, ...(info && fromGst ? { pan: info.pan, typed: { ...s.typed, pan: true } } : {}) };
+    });
   };
   const gstField = (
     <Field label="GST number" htmlFor="v-gst" required error={err("gstin")} hint="Required: the vendor has GST">
@@ -328,7 +334,7 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
           {!quick && <Field label="Email" htmlFor="v-email" required={strict} error={err("email")}><Input id="v-email" format="email" value={f.email} onChange={set("email")} aria-invalid={!!err("email")} /></Field>}
           {!quick && (
             <>
-              <Field label="Pincode" htmlFor="v-pin" required={strict} error={err("pincode")} hint={pin.isFetching ? "Fetching the state and city…" : pin.isError && /^\d{6}$/.test(f.pincode) ? "Could not fetch the state and city. Choose them yourself." : pin.data ? "State and city filled from the pincode" : "6 digits: the state and city are filled from it"}>
+              <Field label="Pincode" htmlFor="v-pin" required={strict} error={err("pincode")} hint={pin.isFetching ? "Fetching the state and city…" : pin.isError && /^\d{6}$/.test(f.pincode) ? "Could not fetch the state and city. Choose them yourself." : pin.data?.partial && !pin.data.district ? "State filled from the pincode. Type the city yourself" : pin.data ? "State and city filled from the pincode" : "6 digits: the state and city are filled from it"}>
                 <Input id="v-pin" format="pincode" value={f.pincode} onChange={(e) => { pinTyped.current = true; set("pincode")(e); }} aria-invalid={!!err("pincode")} />
               </Field>
               <Field label="State" htmlFor="v-state" required={strict} error={err("state")}>
@@ -339,7 +345,6 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
                 </Select>
               </Field>
               <Field label="City / district" htmlFor="v-district" required={strict} error={err("district")}><Input id="v-district" value={f.district} onChange={set("district")} aria-invalid={!!err("district")} /></Field>
-              <Field label="Address" htmlFor="v-address" required={strict} error={err("address")} hint="Door number, street, area"><Input id="v-address" value={f.address} onChange={set("address")} aria-invalid={!!err("address")} /></Field>
             </>
           )}
         </div>
@@ -359,10 +364,10 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
             typed={quick
               ? (hasGst ? { gst: { label: "GST number", open: true, locked: true, onToggle: toggle("gst"), children: gstField } } : {})
               : {
+                  // GST number first: the PAN below is filled from it.
+                  ...(hasGst ? { gst: { label: "GST number", open: true, locked: true, onToggle: toggle("gst"), children: gstField } } : {}),
                   pan: { label: strict ? "PAN number" : "Type the PAN number too", open: typedOpen.pan, locked: strict, onToggle: toggle("pan"), children: panField },
-                  ...(hasGst
-                    ? { gst: { label: "GST number", open: true, locked: true, onToggle: toggle("gst"), children: gstField } }
-                    : { aadhaar: { label: strict ? "Aadhaar number" : "Type the Aadhaar number too", open: typedOpen.aadhaar, locked: strict, onToggle: toggle("aadhaar"), children: aadhaarField } }),
+                  ...(hasGst ? {} : { aadhaar: { label: strict ? "Aadhaar number" : "Type the Aadhaar number too", open: typedOpen.aadhaar, locked: strict, onToggle: toggle("aadhaar"), children: aadhaarField } }),
                   bank: { label: "Type the account number and IFSC too", open: typedOpen.bank, onToggle: toggle("bank"), children: bankFields },
                 }}
             onAdd={addDocs}
@@ -376,13 +381,13 @@ export function VendorForm({ open, vendor, onClose }: { open: boolean; vendor?: 
 
       {key === "rates" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Service areas" htmlFor="v-areas" error={err("serviceAreas")} hint="Districts / areas, comma separated" className="sm:col-span-2"><Input id="v-areas" value={f.serviceAreas} onChange={set("serviceAreas")} placeholder="Madurai, Theni, Dindigul" /></Field>
+          <Field label="Service areas" htmlFor="v-areas" error={err("serviceAreas")} hint="Places the vendor is willing to work in. Type a place and press Enter; remove it with ×" className="sm:col-span-2"><TagInput id="v-areas" value={f.serviceAreas} onChange={(serviceAreas) => setF((s) => ({ ...s, serviceAreas }))} placeholder="e.g. Madurai, Theni, Chennai" max={60} /></Field>
+          <Field label="Address (optional)" htmlFor="v-address" error={err("address")} hint="Door number, street, area" className="sm:col-span-2"><Input id="v-address" value={f.address} onChange={set("address")} /></Field>
           <Field label="Skills" htmlFor="v-skills" error={err("skills")} hint="What the vendor can do, comma separated. The smart planner matches these" className="sm:col-span-2"><Input id="v-skills" value={f.skills} onChange={set("skills")} placeholder="Measurement, Photos, Night work" /></Field>
           <Field label="Rate per shop (₹)" htmlFor="v-rate" error={err("ratePerShop")} hint="Blank = company rate"><Input id="v-rate" format="decimal" value={f.ratePerShop} onChange={set("ratePerShop")} /></Field>
           <Field label="Travelling cost per shop (₹)" htmlFor="v-far" error={err("farRatePerShop")} hint="Blank = company travelling cost"><Input id="v-far" format="decimal" value={f.farRatePerShop} onChange={set("farRatePerShop")} /></Field>
           <Field label="Shops per day" htmlFor="v-spd" error={err("shopsPerDay")} hint="How many shops the vendor can recce in a day. Used to estimate days"><Input id="v-spd" format="digits" maxLength={3} value={f.shopsPerDay} onChange={set("shopsPerDay")} /></Field>
-          <Field label="Availability" htmlFor="v-avail" hint="Busy vendors are left out of the smart plan"><Select id="v-avail" value={f.availability} onChange={set("availability")}><option value="AVAILABLE">Available</option><option value="BUSY">Busy</option></Select></Field>
-          <Field label="Notes" htmlFor="v-notes" className="sm:col-span-2"><Textarea id="v-notes" rows={2} value={f.notes} onChange={set("notes")} /></Field>
+          <Field label="Notes" htmlFor="v-notes"><Input id="v-notes" maxLength={200} value={f.notes} onChange={set("notes")} /></Field>
         </div>
       )}
     </Modal>

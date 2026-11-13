@@ -8,7 +8,8 @@ export const USERS = {
   bd: { email: "bd@e2e.test", card: "BD", home: "/bd/dashboard" },
   ops: { email: "ops@e2e.test", card: "OPERATIONS", home: "/operations/dashboard" },
   ops2: { email: "ops2@e2e.test", card: "OPERATIONS", home: "/operations/dashboard" },
-  fin: { email: "fin@e2e.test", card: "CLIENT_SERVICING", home: "/client-servicing/dashboard" },
+  fin: { email: "fin@e2e.test", card: "CLIENT_SERVICING", home: "/(create-project|client-servicing/dashboard)" },
+  admin: { email: "admin@e2e.test", card: "ADMIN", home: "/admin/dashboard" },
 } as const;
 
 export async function login(page: Page, who: keyof typeof USERS) {
@@ -16,7 +17,10 @@ export async function login(page: Page, who: keyof typeof USERS) {
   await page.goto("/login");
   await page.locator(`input[type=radio][value="${u.card}"]`).check({ force: true });
   await page.locator("#identifier").fill(u.email);
-  await page.locator("input[type=password]").first().fill(PASSWORD);
+  // The sign-in screen starts with the 4-digit MPIN; the test accounts use passwords.
+  const usePassword = page.getByRole("button", { name: /Use password instead/i });
+  if (await usePassword.isVisible().catch(() => false)) await usePassword.click();
+  await page.getByPlaceholder("Enter your password").fill(PASSWORD);
   await page.getByRole("button", { name: /^Login/ }).click();
   await expect(page).toHaveURL(new RegExp(`${u.home}`));
 }

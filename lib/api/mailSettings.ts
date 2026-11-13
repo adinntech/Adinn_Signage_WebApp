@@ -21,15 +21,20 @@ export type MailRoutingInput = Pick<MailRouting, "to" | "cc" | "bcc" | "replyTo"
 export interface ReplyStatus { enabled: boolean; mailbox: string | null; everySeconds: number }
 export interface ReplyCheck { checked: number; outcomes: Partial<Record<"unknown" | "rejected" | "saved" | "confirmed" | "duplicate", number>> }
 
+/** When the reply mailbox was last read to the end (the timer or Get reply), and whether a read is running right now. */
+export interface ReplyCheckState { lastCheckedAt: string | null; running: boolean }
+/** Polled, so the button shows "checking" while the timer reads the mailbox and the last time stays current. */
+export const useReplyCheckState = () => useQuery({ queryKey: ["mail-replies", "check-state"], queryFn: () => api<ReplyCheckState>("/mail-replies/status"), refetchInterval: (q) => (q.state.data?.running ? 2000 : 20000), staleTime: 0 });
+
 const KEY = ["mail-routing"];
 export const useMailRouting = () => useQuery({ queryKey: KEY, queryFn: () => api<MailRouting[]>("/mail-settings/routing") });
 export const useReplyStatus = () => useQuery({ queryKey: ["mail-replies", "status"], queryFn: () => api<ReplyStatus>("/mail-settings/replies/status") });
-/** Reads the reply mailbox now instead of waiting for the next automatic check. */
+/** "Get reply": reads the reply mailbox now instead of waiting for the next automatic check (any signed-in user). Every screen showing a reply is refreshed. */
 export function useCheckReplies() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api<ReplyCheck>("/mail-settings/replies/check", { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales", "codes"] }),
+    mutationFn: () => api<ReplyCheck>("/mail-replies/check", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries(),
   });
 }
 export function useSaveMailRouting() {

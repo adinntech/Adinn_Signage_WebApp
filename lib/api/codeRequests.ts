@@ -36,6 +36,9 @@ export interface CodeReply {
   /** Estimate numbers (EST-20234) sent with a project code. */
   estimates?: string[];
   autoConfirmError?: string;
+  /** What reading the reply gave (EXTRACTED, REVIEW_REQUIRED, INVALID, PENDING, NOT_FOUND) and why. */
+  status?: string;
+  reason?: string;
 }
 /** One reply read for a request (the latest overwrites the one shown, every one is kept). */
 export interface CodeReplyEntry {
@@ -45,6 +48,8 @@ export interface CodeReplyEntry {
   snippet?: string;
   detectedCode?: string;
   estimates?: string[];
+  status?: string;
+  reason?: string;
 }
 /** What a person changed from what the reply gave: who, when, which field. */
 export interface CodeEdit {

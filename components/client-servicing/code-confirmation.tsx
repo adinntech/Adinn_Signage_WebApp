@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
 import { motion, useReducedMotion } from "framer-motion";
 import { BadgeCheck, Check, ExternalLink, FilterX, RefreshCw, Search } from "lucide-react";
 import { CodeStatusBadge, ConfirmCodeDialog, EvidenceLinks, RejectCodeDialog } from "@/components/client-servicing/code-parts";
@@ -101,6 +102,7 @@ export function CodeConfirmation() {
               <option value="PROJECT_CODE">Project Code</option>
             </Select>
           </div>
+          <GetReplyButton />
           <Button variant="outline" disabled={!filtered} onClick={() => (setQ(""), setKind(""), setPage(1))}>
             <FilterX className="size-4" aria-hidden /> Clear
           </Button>

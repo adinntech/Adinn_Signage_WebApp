@@ -13,15 +13,18 @@ import { useCreateVendorLogin, useVendorLogins, type Vendor, type VendorLoginInp
 
 const EMPTY: VendorLoginInput = { name: "", phone: "", employeeId: "", email: "", mpin: "" };
 
-/** Mobile logins of one vendor. A login created here is linked to this vendor, so the app shows only the shops given to it. */
-export function VendorLogins({ vendor, prefill, startOpen }: { vendor: Pick<Vendor, "_id" | "name">; /** Details already known (from the vendor's email / mobile), so only the MPIN and employee ID are typed. */ prefill?: Partial<VendorLoginInput>; startOpen?: boolean }) {
+/** Create-login dialog for one vendor. Shared by the vendor record and the "give shops to a login" step. */
+export function AddVendorLoginModal({ vendor, open, onOpenChange, prefill, onCreated }: {
+  vendor: Pick<Vendor, "_id" | "name">; open: boolean; onOpenChange: (open: boolean) => void;
+  /** Details already known (from the vendor's email / mobile), so only the MPIN and employee ID are typed. */ prefill?: Partial<VendorLoginInput>;
+  onCreated?: () => void;
+}) {
   const toast = useToast();
-  const logins = useVendorLogins(vendor._id);
   const create = useCreateVendorLogin(vendor._id);
-  const [open, setOpen] = useState(!!startOpen);
   const start = { ...EMPTY, ...prefill };
   const [f, setF] = useState(start);
   const [server, setServer] = useState<Record<string, string>>({});
+  const [tried, setTried] = useState(false);
   const set = (k: keyof VendorLoginInput) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const local: Record<string, string | null> = {
@@ -31,7 +34,6 @@ export function VendorLogins({ vendor, prefill, startOpen }: { vendor: Pick<Vend
     email: /^\S+@\S+\.\S+$/.test(f.email) ? null : "Enter a valid email address",
     mpin: mpinError(f.mpin),
   };
-  const [tried, setTried] = useState(false);
   const err = (k: string) => (tried ? local[k] : null) ?? server[k];
   const valid = Object.values(local).every((v) => !v);
 
@@ -39,10 +41,35 @@ export function VendorLogins({ vendor, prefill, startOpen }: { vendor: Pick<Vend
     setTried(true);
     if (!valid) return;
     create.mutate({ ...f, name: f.name.trim(), email: f.email.trim().toLowerCase() }, {
-      onSuccess: () => { toast(`Login created for ${f.name.trim()}`); setOpen(false); setF(start); setTried(false); setServer({}); },
+      onSuccess: () => { toast(`Login created for ${f.name.trim()}`); onOpenChange(false); setF(start); setTried(false); setServer({}); onCreated?.(); },
       onError: (e) => { setServer(fieldErrorsOf(e)); toast(errorMessage(e), "error"); },
     });
   };
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={(o) => { onOpenChange(o); if (!o) { setTried(false); setServer({}); } }}
+      title="Add vendor login"
+      description={`${vendor.name} · signs in on the mobile app with phone or employee ID and MPIN`}
+      className="max-w-md"
+      footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={create.isPending} onClick={submit}>Create login</Button></div>}
+    >
+      <div className="grid gap-3">
+        <Field label="Full name" htmlFor="vl-name" required error={err("name")}><Input id="vl-name" maxLength={80} value={f.name} onChange={set("name")} aria-invalid={!!err("name")} /></Field>
+        <Field label="Mobile" htmlFor="vl-phone" required error={err("phone")}><Input id="vl-phone" format="phone" value={f.phone} onChange={set("phone")} aria-invalid={!!err("phone")} /></Field>
+        <Field label="Employee ID" htmlFor="vl-emp" required error={err("employeeId")}><Input id="vl-emp" maxLength={30} value={f.employeeId} onChange={set("employeeId")} aria-invalid={!!err("employeeId")} /></Field>
+        <Field label="Email" htmlFor="vl-email" required error={err("email")}><Input id="vl-email" format="email" value={f.email} onChange={set("email")} aria-invalid={!!err("email")} /></Field>
+        <Field label="MPIN" htmlFor="vl-mpin" required error={err("mpin")} hint="4 digits"><Input id="vl-mpin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={f.mpin} onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 4); set("mpin")(e); }} aria-invalid={!!err("mpin")} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+/** Mobile logins of one vendor. A login created here is linked to this vendor, so the app shows only the shops given to it. */
+export function VendorLogins({ vendor, prefill, startOpen }: { vendor: Pick<Vendor, "_id" | "name">; prefill?: Partial<VendorLoginInput>; startOpen?: boolean }) {
+  const logins = useVendorLogins(vendor._id);
+  const [open, setOpen] = useState(!!startOpen);
 
   return (
     <section aria-label="Vendor logins" className="rounded-xl border border-border p-3">
@@ -62,23 +89,7 @@ export function VendorLogins({ vendor, prefill, startOpen }: { vendor: Pick<Vend
           ))}
         </ul>
       )}
-
-      <Modal
-        open={open}
-        onOpenChange={(o) => { setOpen(o); if (!o) { setTried(false); setServer({}); } }}
-        title="Add vendor login"
-        description={`${vendor.name} · signs in on the mobile app with phone or employee ID and MPIN`}
-        className="max-w-md"
-        footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button loading={create.isPending} onClick={submit}>Create login</Button></div>}
-      >
-        <div className="grid gap-3">
-          <Field label="Full name" htmlFor="vl-name" required error={err("name")}><Input id="vl-name" maxLength={80} value={f.name} onChange={set("name")} aria-invalid={!!err("name")} /></Field>
-          <Field label="Mobile" htmlFor="vl-phone" required error={err("phone")}><Input id="vl-phone" format="phone" value={f.phone} onChange={set("phone")} aria-invalid={!!err("phone")} /></Field>
-          <Field label="Employee ID" htmlFor="vl-emp" required error={err("employeeId")}><Input id="vl-emp" maxLength={30} value={f.employeeId} onChange={set("employeeId")} aria-invalid={!!err("employeeId")} /></Field>
-          <Field label="Email" htmlFor="vl-email" required error={err("email")}><Input id="vl-email" format="email" value={f.email} onChange={set("email")} aria-invalid={!!err("email")} /></Field>
-          <Field label="MPIN" htmlFor="vl-mpin" required error={err("mpin")} hint="4 digits"><Input id="vl-mpin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={f.mpin} onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 4); set("mpin")(e); }} aria-invalid={!!err("mpin")} /></Field>
-        </div>
-      </Modal>
+      <AddVendorLoginModal vendor={vendor} open={open} onOpenChange={setOpen} prefill={prefill} />
     </section>
   );
 }

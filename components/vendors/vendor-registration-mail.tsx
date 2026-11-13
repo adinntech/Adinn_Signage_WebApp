@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { ReplyBanner } from "@/components/mail/reply-banner";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
 import { RichTextView } from "@/components/ui/rich-text-editor";
 import { ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
@@ -224,13 +226,16 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
 
       {sent && (
         <section aria-label="Vendor ID" className="rounded-xl border border-[#cfe0ff] bg-gradient-to-br from-[#eef4ff] to-[#f7f0ff] p-4">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><KeyRound className="size-4 text-royal" aria-hidden /> Vendor ID from Accounts</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><KeyRound className="size-4 text-royal" aria-hidden /> Vendor ID from Accounts</h3>
+            {!saved && <GetReplyButton size="sm" />}
+          </div>
           {saved ? (
             <p className="mt-2 flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-finance" aria-hidden /> Vendor ID <span className="font-mono font-bold text-navy">{saved}</span> saved. The vendor is now active.</p>
           ) : (
             <>
               {reply ? (
-                <p role="status" className="mt-1 text-sm text-navy">Reply received from {reply.from}. {reply.detectedVendorNo ? <>Vendor ID found: <span className="font-mono font-bold">{reply.detectedVendorNo}</span>. Check it against the reply, then save.</> : "No vendor ID could be read from it. Type it from the mail."}</p>
+                <ReplyBanner from={reply.from} receivedAt={reply.receivedAt} status={reply.status} reason={reply.reason} value={reply.detectedVendorNo} valueLabel="Vendor ID" snippet={reply.snippet} since={d?.registration?.mailSentAt} />
               ) : (
                 <p className="mt-1 text-xs text-muted-foreground">When Accounts reply to the mail with the vendor ID, it appears here on its own. You can also type it.</p>
               )}

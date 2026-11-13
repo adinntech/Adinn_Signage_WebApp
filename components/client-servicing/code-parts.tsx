@@ -9,6 +9,8 @@ import { FileUploader } from "@/components/ui/file-uploader";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
+import { replyStatus } from "@/components/mail/reply-banner";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
@@ -36,8 +38,8 @@ export const codeError = (kind: CodeKind, v: string) =>
 export function ReplyNotice({ reply }: { reply: CodeReply }) {
   return (
     <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
-      <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
-      {reply.detectedCode ? <p className="mt-1">Code found: <span className="font-mono font-bold">{reply.detectedCode}</span>. Check it against the reply, then confirm.</p> : <p className="mt-1 text-muted-foreground">No single code could be read from the reply. Type the code from the mail.</p>}
+      <p className="flex flex-wrap items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Newest reply · {formatDateTime(reply.receivedAt)} · {reply.from} {replyStatus(reply.status) && <Badge tone={replyStatus(reply.status)!.tone}>{replyStatus(reply.status)!.label}</Badge>}</p>
+      {reply.detectedCode ? <p className="mt-1">Code found: <span className="font-mono font-bold">{reply.detectedCode}</span>. Check it against the reply, then confirm.</p> : <p className="mt-1 text-muted-foreground">{reply.reason ?? "No single code could be read from the reply."} Type the code from the mail.</p>}
       {!!reply.estimates?.length && <p className="mt-1">Estimates: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span></p>}
       {reply.snippet && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">&ldquo;{reply.snippet}&rdquo;</p>}
       {reply.autoConfirmError && <p className="mt-1 text-xs text-danger">Not confirmed automatically: {reply.autoConfirmError}</p>}
@@ -126,6 +128,7 @@ export function ConfirmCodeDialog({ orderId, kind, reply, history, onClose }: { 
       className={reply || history?.length ? "max-w-3xl" : undefined}
       footer={
         <>
+          <GetReplyButton className="mr-auto" onDone={(got) => got && onClose()} />
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>

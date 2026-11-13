@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, MailCheck, Paperclip, Save, Send, SkipForward, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { HandoverTab, saveOrderContactsBeforeLeaving } from "@/components/orders/handover-tab";
@@ -389,6 +390,12 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const replies = [...(r.codeReplyHistory ?? [])].reverse();
   return (
     <div className="space-y-4">
+      {!r.codes && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+          <span className="text-muted-foreground">{reply ? "Newer reply not showing? Read the mailbox again." : "Waiting for the project code reply."}</span>
+          <GetReplyButton size="sm" />
+        </div>
+      )}
       {reply && !r.codes && (
         <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
           <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>

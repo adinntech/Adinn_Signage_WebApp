@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BadgeIndianRupee, Check, ChevronDown, CloudDownload, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { downloadZohoVendors, useAddVendorSkill, useCompanyRates, useSetZohoPrice, useVendorSkills, useZohoDirectory, useStartZohoCitySync, useZohoVendorCities, type ZohoVendorRow } from "@/lib/api/vendors";
+import { downloadZohoVendors, useAddVendorSkill, useCompanyRates, useCostHistory, useSetZohoPrice, useVendorSkills, useZohoDirectory, useStartZohoCitySync, useZohoVendorCities, type ZohoVendorRow } from "@/lib/api/vendors";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ExportMenu } from "./export-menu";
@@ -38,6 +38,17 @@ export function VendorMaster({ canWrite, signageOnly, onSignageOnly, costed, con
   const [viewing, setViewing] = useState<ZohoVendorRow | null>(null);
   const [statusFor, setStatusFor] = useState<ZohoVendorRow | null>(null);
   const clear = useSetZohoPrice();
+  // A notification link (?rateFor=<Zoho contact id>&n=<name>) opens that vendor's amount approval status straight away, then the address is cleaned.
+  const [linked, setLinked] = useState<{ id: string; name: string } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    const id = p.get("rateFor");
+    return id && /^[\w-]{1,40}$/.test(id) ? { id, name: (p.get("n") ?? "").slice(0, 120) || "Vendor" } : null;
+  });
+  useEffect(() => { if (linked) window.history.replaceState(null, "", window.location.pathname); }, [linked]);
+  const linkedHistory = useCostHistory(linked?.id ?? "", !!linked);
+  const linkedApproval = linkedHistory.data?.approval ?? null;
+  useEffect(() => { if (linked && linkedHistory.isSuccess && !linkedApproval) { toast("No amount approval request found for this vendor"); setLinked(null); } }, [linked, linkedHistory.isSuccess, linkedApproval, toast]);
 
   return (
     <div className="space-y-5">
@@ -64,7 +75,8 @@ export function VendorMaster({ canWrite, signageOnly, onSignageOnly, costed, con
       </section>
 
       <WithCost canWrite={canWrite} onView={setViewing} onEdit={setCostFor} onRemove={setRemoving} onStatus={setStatusFor} />
-      {statusFor?.price.approval && <RateStatusDialog key={statusFor.price.approval.requestId + statusFor.price.approval.status} name={statusFor.name} approval={statusFor.price.approval} onClose={() => setStatusFor(null)} />}
+      {statusFor?.price.approval && <RateStatusDialog key={statusFor.price.approval.requestId} contactId={statusFor.zohoContactId} name={statusFor.name} approval={statusFor.price.approval} onClose={() => setStatusFor(null)} />}
+      {linked && linkedApproval && !statusFor && <RateStatusDialog key={`linked-${linkedApproval.requestId}`} contactId={linked.id} name={linked.name} approval={linkedApproval} onClose={() => setLinked(null)} />}
       <ZohoVendorDrawer vendor={viewing} canWrite={canWrite} onCost={(v) => { setViewing(null); setCostFor(v); }} onClose={() => setViewing(null)} />
 
       {costFor && <VendorCostDialog key={costFor._id} vendor={costFor} onClose={() => setCostFor(null)} />}
@@ -237,7 +249,7 @@ function WithCost({ canWrite, onView, onEdit, onRemove, onStatus }: { canWrite: 
                   <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#faf6ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums">{v.mobile ?? "–"}</td>
                   <td className="max-w-32 px-3 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
-                  <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.ratePerShop)}</span> : money(v.price.ratePerShop)}{v.price.approval && <div><ApprovalTag a={v.price.approval} /></div>}{canWrite && v.price.approval && <button type="button" className="mt-0.5 block w-full text-right text-xs font-semibold text-royal hover:underline" onClick={(e) => { e.stopPropagation(); onStatus(v); }}>Change status</button>}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.ratePerShop)}</span> : money(v.price.ratePerShop)}{v.price.approval && <div><ApprovalTag a={v.price.approval} /></div>}{canWrite && v.price.approval && <button type="button" className="mt-0.5 block w-full text-right text-xs font-semibold text-royal hover:underline" onClick={(e) => { e.stopPropagation(); onStatus(v); }}>View status</button>}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{v.price.farRatePerShop == null && v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.farRatePerShop)}</span> : money(v.price.farRatePerShop)}</td>
                   <td className="px-3 py-3"><div className="flex max-w-56 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>
                   <td className="whitespace-nowrap px-3 py-3 text-xs">

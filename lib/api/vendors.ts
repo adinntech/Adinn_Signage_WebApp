@@ -31,7 +31,7 @@ export function requiredDocKeys(v: { type?: VendorType | undefined; hasGst?: boo
 }
 
 /** State and district of a pincode (looked up by the backend). Runs only for a complete 6-digit pincode. */
-export interface PincodeInfo { pincode: string; state: string; district: string; areas: string[] }
+export interface PincodeInfo { pincode: string; state: string; district: string; areas: string[]; /** Only the state is known; the person types the city. */ partial?: boolean }
 type RegReply = { receivedAt?: string; at?: string; detectedVendorNo?: string };
 /**
  * The newest reply from Accounts that carries a vendor ID and came AFTER the saved ID (a correction), or null.
@@ -89,7 +89,7 @@ export interface Vendor {
   availability?: "AVAILABLE" | "BUSY";
   /** Set when the vendor was registered from Zoho: only then is it listed in Vendor master with its cost. */
   zohoContactId?: string;
-  registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string }; reply?: { from: string; receivedAt?: string; detectedVendorNo?: string }; idHistory?: { at?: string; byName?: string; from?: string; to?: string }[]; replyHistory?: { from: string; receivedAt?: string; at?: string; snippet?: string; detectedVendorNo?: string; note?: string }[] };
+  registration?: { mailSentAt?: string; vendorIdAt?: string; draft?: { savedAt?: string }; reply?: { from: string; receivedAt?: string; detectedVendorNo?: string; status?: string; reason?: string; snippet?: string }; idHistory?: { at?: string; byName?: string; from?: string; to?: string }[]; replyHistory?: { from: string; receivedAt?: string; at?: string; snippet?: string; detectedVendorNo?: string; note?: string; status?: string; reason?: string }[] };
   createdBy?: { name?: string } | string | null;
   updatedBy?: { name?: string } | string | null;
   updatedAt?: string;
@@ -229,7 +229,7 @@ export function useStartZohoCitySync() {
 
 /** The Zoho vendor list is read from Zoho Books on every call (nothing is stored); "price: set" is read from the stored vendors with a cost. */
 export function useZohoDirectory(params: ZohoDirectoryParams, enabled = true) {
-  return useQuery({ queryKey: ["zoho", "directory", params], queryFn: () => apiPage<ZohoVendorRow>(`/vendors/zoho-directory${qs(params)}`), placeholderData: keepPreviousData, enabled, refetchInterval: params.cities ? (q) => (((q.state.data?.meta as { syncing?: boolean } | undefined)?.syncing) ? 10000 : false) : false });
+  return useQuery({ queryKey: ["zoho", "directory", params], queryFn: () => apiPage<ZohoVendorRow>(`/vendors/zoho-directory${qs(params)}`), placeholderData: keepPreviousData, enabled, refetchInterval: params.cities ? (q) => (((q.state.data?.meta as { syncing?: boolean } | undefined)?.syncing) ? 10000 : false) : params.price === "set" ? (q) => (q.state.data?.data.some((r) => r.price.approval?.status === "PENDING") ? 20000 : false) : false });
 }
 /** signageOnly: true / false picks which Zoho vendors are counted; left out, the backend's setting is used. Polls while Zoho is still being counted. */
 export function useZohoDirectoryStatus(signageOnly?: boolean | null, count = false) {
@@ -271,7 +271,7 @@ export interface RegistrationMailDraft {
   /** Required documents that are not uploaded yet (labels). */
   missing: string[];
   attachments: { fileId: string; name: string; size: number; docType: KycDocKey }[];
-  registration: { mailSentAt?: string; vendorIdAt?: string; reply?: { from: string; receivedAt: string; snippet?: string; detectedVendorNo?: string } } | null;
+  registration: { mailSentAt?: string; vendorIdAt?: string; reply?: { from: string; receivedAt: string; snippet?: string; detectedVendorNo?: string; status?: string; reason?: string } } | null;
   zohoVendorNo: string | null;
   /** The mail being written: who first saved it and who saved it last. Null when there is no draft. */
   draft: { subject: string; createdAt: string; createdBy: string | null; updatedAt: string; updatedBy: string | null } | null;
@@ -349,11 +349,21 @@ export interface RateApproval {
   history: { at?: string; receivedAt?: string; from?: string; snippet?: string; outcome?: string }[];
 }
 export interface ZohoPrice { ratePerShop: number | null; farRatePerShop: number | null; skills: string[]; source: "VENDOR" | "ZOHO" | null; createdAt?: string; updatedAt?: string; pending?: PendingRate; approval?: RateApproval }
+/** Every cost change of a vendor (who, old and new, from the audit log), its amount requests and the latest request with the replies read. */
+export interface CostHistory {
+  changes: { at: string; by: string; ratePerShop: { from: number | null; to: number | null } | null; farRatePerShop: { from: number | null; to: number | null } | null }[];
+  requests: { requestId: string; at: string; status: string; requested: { ratePerShop: number | null; farRatePerShop: number | null }; limit: { ratePerShop: number | null; farRatePerShop: number | null }; decidedAt: string | null }[];
+  /** Every reply read for any amount request of the vendor, newest mail first. */
+  replies: (RateApproval["history"][number] & { requestId: string; requestStatus: string; requested: { ratePerShop: number | null; farRatePerShop: number | null } })[];
+  approval: RateApproval | null;
+}
+/** Live: "Get reply" refreshes every query, so a reply just read shows in the open dialog. */
+export const useCostHistory = (contactId: string, enabled = true, pollMs: number | false = false) => useQuery({ queryKey: ["zoho", "price-history", contactId], queryFn: () => api<CostHistory>(`/vendors/zoho-directory/${contactId}/price-history`), staleTime: 0, enabled: enabled && !!contactId, refetchInterval: pollMs });
 /** Operations changes the status of an amount request by hand. */
 export function useChangeRateStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ requestId, decision }: { requestId: string; decision: "APPROVED" | "NOT_APPROVED" }) => api(`/vendors/rate-approvals/${requestId}/decision`, { method: "PUT", body: JSON.stringify({ decision }) }),
+    mutationFn: ({ requestId, decision, reason }: { requestId: string; decision: "NOT_APPROVED"; reason?: string }) => api(`/vendors/rate-approvals/${requestId}/decision`, { method: "PUT", body: JSON.stringify({ decision, ...(reason ? { reason } : {}) }) }),
     onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ["zoho"] }), qc.invalidateQueries({ queryKey: key })]),
   });
 }

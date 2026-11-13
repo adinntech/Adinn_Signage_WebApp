@@ -14,6 +14,7 @@ import {
   Settings,
   ClipboardList,
   ReceiptIndianRupee,
+  FlaskConical,
   Waypoints,
   CloudDownload,
   MessagesSquare,
@@ -117,6 +118,7 @@ export const NAV: NavItem[] = [
   { label: "Import from Zoho", icon: CloudDownload, href: "/admin/zoho-import", permission: "zoho:sync" },
   { label: "Cost Rates", icon: ReceiptIndianRupee, href: "/admin/cost-rates", permission: "finance:manage" },
   { label: "Mail Contacts", icon: BookUser, href: "/admin/mail-contacts", permission: "mail:manage" },
+  { label: "Reply Test Lab", icon: FlaskConical, href: "/admin/reply-test-lab", permission: "mail:manage" },
   { label: "Recce Price Management", icon: ReceiptIndianRupee, href: "/recce-cost" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];

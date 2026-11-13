@@ -149,7 +149,7 @@ export const useAssignPlan = (pid: string) => usePlanMutation(pid, () => post<Co
 
 /** After the shops are assigned: per area, the mobile logins to choose from and who already holds its shops. */
 export interface LegLogins {
-  key: string; name: string; channel: Channel; vendorName: string | null; shops: number; unassigned: number;
+  key: string; name: string; channel: Channel; vendorName: string | null; vendorId?: string | null; shops: number; unassigned: number;
   logins: { id: string; name: string; phone: string | null; employeeId: string | null }[];
   holders: { userId: string; shops: number; assignedAt: string | null; assignedBy: string | null }[];
 }

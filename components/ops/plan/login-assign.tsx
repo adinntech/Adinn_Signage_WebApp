@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, Home, Loader2, Smartphone } from "lucide-react";
+import { Building2, Home, Loader2, Smartphone, UserPlus } from "lucide-react";
+import { AddVendorLoginModal } from "@/components/vendors/vendor-logins";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -22,6 +23,7 @@ export function LoginAssign({ projectId, canEdit }: { projectId: string; canEdit
   const q = useLegLogins(projectId, true);
   const assign = useAssignLogins(projectId);
   const [pick, setPick] = useState<Record<string, string>>({});
+  const [addFor, setAddFor] = useState<{ _id: string; name: string } | null>(null);
   const rows = q.data ?? [];
   const chosen = rows.map((r) => ({ key: r.key, userId: pick[r.key] || (r.holders.length === 1 && !r.unassigned ? r.holders[0].userId : "") })).filter((x) => x.userId);
   const changed = rows.flatMap((r) => { const u = pick[r.key]; return u && !(r.holders.length === 1 && !r.unassigned && r.holders[0].userId === u) ? [{ key: r.key, userId: u }] : []; });
@@ -53,7 +55,12 @@ export function LoginAssign({ projectId, canEdit }: { projectId: string; canEdit
                     <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1.5">{r.channel === "IN_HOUSE" ? <Home className="size-4 text-finance" aria-hidden /> : <Building2 className="size-4 text-vendor" aria-hidden />}{r.channel === "IN_HOUSE" ? "In-house team" : (r.vendorName ?? "Vendor")}</span></td>
                     <td className="px-4 py-2.5">
                       {r.logins.length === 0 ? (
-                        <span className="text-xs font-medium text-approval">No login yet. {r.channel === "VENDOR" ? "Add one in the vendor record." : "Create a Recce Executive user."}</span>
+                        <div className="flex flex-col items-start gap-1.5">
+                          <span className="text-xs font-medium text-approval">No login yet.{r.channel === "VENDOR" && r.vendorId ? "" : r.channel === "VENDOR" ? " Add one in the vendor record." : " Create a Recce Executive user."}</span>
+                          {canEdit && r.channel === "VENDOR" && r.vendorId && (
+                            <Button size="sm" variant="outline" onClick={() => setAddFor({ _id: r.vendorId!, name: r.vendorName ?? "Vendor" })}><UserPlus className="size-3.5" aria-hidden /> Add login</Button>
+                          )}
+                        </div>
                       ) : (
                         <Select aria-label={`Mobile login for ${r.name}`} disabled={!canEdit} value={pick[r.key] ?? holder?.userId ?? ""} onChange={(e) => setPick((p) => ({ ...p, [r.key]: e.target.value }))}>
                           <option value="">Select a login…</option>
@@ -83,6 +90,7 @@ export function LoginAssign({ projectId, canEdit }: { projectId: string; canEdit
           </Button>
         </div>
       )}
+      {addFor && <AddVendorLoginModal key={addFor._id} vendor={addFor} open onOpenChange={(o) => { if (!o) setAddFor(null); }} onCreated={() => q.refetch()} />}
     </section>
   );
 }
