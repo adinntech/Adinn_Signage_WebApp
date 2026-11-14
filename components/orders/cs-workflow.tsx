@@ -48,7 +48,8 @@ export function CsWorkflow({ order, basePath }: { order: Order; /** Page the ste
     const r = await q.refetch();
     const next = r.data ? nextStepOf(csRecceAssign(r.data), "RECCE", from) : null;
     openStep(openNext && next ? next.step : null);
-    if (next) toast(`Next: ${next.label}`);
+    // The next step opening is the feedback; a toast only when it closes instead.
+    if (next && !openNext) toast(`Next: ${next.label}`);
   };
 
   return (

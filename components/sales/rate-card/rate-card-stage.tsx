@@ -265,7 +265,8 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
       try {
         const r = step?.save ? await step.save(toApi(v)) : await save.mutateAsync(toApi(v));
         if (r.saved) toast(`Rate card saved as ${r.revision.label}. PDF generated.`);
-        else toast("No changes since the last saved revision.", "info");
+        // Recce Rate Card step: nothing changed, so it just moves on to the next step (no toast).
+        else if (!(lockedClient && step?.onContinue)) toast("No changes since the last saved revision.", "info");
         savedRef.current = true;
         if (draftKey) clearStepDraft(draftKey);
         step?.onContinue?.();

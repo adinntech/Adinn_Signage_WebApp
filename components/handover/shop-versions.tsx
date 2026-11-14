@@ -94,7 +94,8 @@ export function ShopVersionsDialog({ orderId, type, onClose, onChangeLog }: { or
                   <th className="px-3 py-2.5 text-right">Shops</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">Changes</th>
-                  <th className="px-3 py-2.5 text-right">Actions</th>
+                  {/* Sticky: on a narrower screen the table scrolls sideways and the actions stay in view. */}
+                  <th className="sticky right-0 bg-muted px-3 py-2.5 text-right shadow-[-6px_0_6px_-6px_rgb(0_0_0/0.15)]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -111,7 +112,7 @@ export function ShopVersionsDialog({ orderId, type, onClose, onChangeLog }: { or
                     <td className="px-3 py-2.5">{v.by?.name || "-"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{v.total}</td>
                     <td className="px-3 py-2.5">
-                      <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", STATUS[v.status].className)}>{STATUS[v.status].label}</span>
+                      <span className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold", STATUS[v.status].className)}>{STATUS[v.status].label}</span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-xs">
                       {v.kind === "LEGACY" ? (
@@ -123,8 +124,8 @@ export function ShopVersionsDialog({ orderId, type, onClose, onChangeLog }: { or
                         </>
                       )}
                     </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex justify-end gap-1">
+                    <td className={cn("sticky right-0 px-3 py-2.5 shadow-[-6px_0_6px_-6px_rgb(0_0_0/0.15)]", v.status === "CURRENT" ? "bg-[color-mix(in_oklab,var(--color-brand-soft)_30%,var(--color-surface))]" : "bg-surface")}>
+                      <div className="flex justify-end gap-1 whitespace-nowrap">
                         <Button variant="ghost" size="sm" onClick={() => setView(v.version)} aria-label={`View V${v.version}`}>
                           <Eye className="size-4" aria-hidden /> View
                         </Button>

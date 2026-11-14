@@ -822,7 +822,8 @@ export function LeadWorkspace() {
     const r = await q.refetch();
     const next = r.data ? nextStepOf(assignOf(r.data), k, from) : null;
     openNode(openNext && next ? k : null, openNext && next ? next.step : undefined);
-    if (next) toast(`Next: ${next.label}`);
+    // The next step opening is the feedback; a toast only when the drawer closes instead.
+    if (next && !openNext) toast(`Next: ${next.label}`);
   };
   const assigned = () => {
     // Assigning completes the lead: close the drawer and run the branch into Lead Completed.

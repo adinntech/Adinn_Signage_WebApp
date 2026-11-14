@@ -135,7 +135,9 @@ export interface ZohoEstimates {
 export function useRecceZohoEstimates(id: string, clientId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: [...recceKey(id), "zoho-estimates", clientId ?? ""],
-    queryFn: ({ signal }) => api<ZohoEstimates>(`/sales/orders/${id}/recce/zoho-estimates${qs({ clientId })}`, { signal }),
+    // No abort signal: a slow Zoho call (seconds) is not cancelled when the step remounts (React StrictMode in dev, a
+    // step switch); the remounted step reuses the request in flight instead of calling Zoho a second time.
+    queryFn: () => api<ZohoEstimates>(`/sales/orders/${id}/recce/zoho-estimates${qs({ clientId })}`),
     enabled,
     staleTime: 60_000,
     retry: false,
