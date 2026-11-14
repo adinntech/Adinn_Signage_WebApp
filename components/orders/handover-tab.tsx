@@ -1317,6 +1317,15 @@ export function HandoverTab({
   return (
     <div className="space-y-4">
       {!recce && <StatusBanner data={data} />}
+      {/* Same client as an earlier order: its saved contacts were copied in; edit, add or remove them here. */}
+      {data.contactsFrom && (data.soContacts.length > 0 || (data.orderContacts?.length ?? 0) > 0) && (
+        <p role="status" className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm text-muted-foreground">
+          <Users className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+          <span>
+            Contacts loaded from this client&apos;s saved contacts{data.contactsFrom.orderNo ? <> (last updated in <b className="text-foreground">{data.contactsFrom.orderNo}</b>)</> : null}. Added or edited contacts and the primary are kept for this client&apos;s next order; a contact removed here is removed from this order only.
+          </span>
+        </p>
+      )}
       <ClientSection
         order={order}
         // Recce route: no Add Contact Person (the contact person comes from Zoho, or one row for this order).

@@ -444,6 +444,8 @@ export interface HandoverState {
   primaryContact?: PrimaryContact | null;
   /** Contact persons saved for this order only (Zoho client without contact persons). */
   orderContacts?: OrderContact[];
+  /** The contacts above started as a copy of this client's saved contacts (from its earlier orders). */
+  contactsFrom?: { orderNo: string | null; at: string } | null;
   /** SO (ASO): Additional Documents, kept apart from the chat files (empty for the other types; kept on the order). */
   soDocuments?: (FileRef & { addedAt?: string | null })[];
   /** Last save of any handover detail. */
