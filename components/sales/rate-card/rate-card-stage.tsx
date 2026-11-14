@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { BarChart3, Building2, CalendarDays, ClipboardList, Copy, Download, Eye, History, ListChecks, Lock, Mail, MailCheck, MapPin, Plus, Save, ScrollText, Send, SkipForward, Trash2, UserRound } from "lucide-react";
@@ -77,7 +77,11 @@ const csSchema = schema.extend({
 /** Recce Rate Card step: the contact is not typed (the point of contact's, set by the server), so it is not validated here. */
 const lockedSchema = csSchema.extend({ contact: csSchema.shape.contact.extend({ phone: z.string() }) });
 /** A field that is shown but never typed (Recce Rate Card step: client details and point of contact). */
-const LOCKED = "cursor-default bg-muted/60 text-foreground focus-visible:ring-0";
+const LOCKED = "cursor-not-allowed select-none bg-muted/60 text-foreground focus-visible:ring-0";
+/** Locked field: not focusable by click or Tab (the value is still read by screen readers). */
+// data-locked: the global text-cursor rule (globals.css) is unlayered and beats the cursor utility, so the
+// not-allowed cursor comes from a matching global rule.
+const LOCKED_PROPS = { readOnly: true, tabIndex: -1, "data-locked": "", onMouseDown: (e: ReactMouseEvent) => e.preventDefault() };
 
 /**
  * `typedContact` (Rate Card step): the contact is typed; a new rate card starts with the name of the order's primary
@@ -409,7 +413,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                 <Field label={step ? "Company Name" : "Client Name"} htmlFor="rc-client" hint={lockedClient ? "From the client details" : "Auto-filled"}>
                   <div className="relative">
                     <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                    <Input id="rc-client" value={data.clientName} readOnly className={cn("pl-9", lockedClient && LOCKED)} />
+                    <Input id="rc-client" value={data.clientName} readOnly {...(lockedClient ? LOCKED_PROPS : {})} className={cn("pl-9", lockedClient && LOCKED)} />
                   </div>
                 </Field>
                 )}
@@ -427,7 +431,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                       <Input
                         id="rc-contact"
                         className={cn("pl-9", lockedClient && LOCKED)}
-                        readOnly={lockedClient}
+                        {...(lockedClient ? LOCKED_PROPS : {})}
                         placeholder={lockedClient ? "No point of contact" : "Contact person's name (optional)"}
                         aria-invalid={!!e("contact.name")}
                         {...register("contact.name")}
@@ -461,7 +465,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     {/* Fixed +91; only the 10 digits are typed and saved (a pasted "+91 …" keeps its 10 digits). */}
                     <PhoneInput
                       id="rc-contact-phone"
-                      readOnly={lockedClient}
+                      {...(lockedClient ? LOCKED_PROPS : {})}
                       className={cn(lockedClient && LOCKED)}
                       placeholder={lockedClient ? "No phone number" : "10-digit number (optional)"}
                       aria-invalid={!!e("contact.phone")}
@@ -483,7 +487,7 @@ function Editor({ data, orderId, withEmail, step }: { data: QuotationState; orde
                     <MapPin className={cn("pointer-events-none absolute left-3 size-4 text-muted-foreground", step ? "top-3" : "top-1/2 -translate-y-1/2")} aria-hidden />
                     {/* Rate Card step: the full address, wrapping. */}
                     {step ? (
-                      <Textarea id="rc-address" rows={3} maxLength={500} readOnly={lockedClient} className={cn("min-h-20 pl-9", lockedClient && LOCKED)} aria-invalid={!!e("clientAddress")} {...register("clientAddress")} />
+                      <Textarea id="rc-address" rows={3} maxLength={500} {...(lockedClient ? LOCKED_PROPS : {})} className={cn("min-h-20 pl-9", lockedClient && LOCKED)} aria-invalid={!!e("clientAddress")} {...register("clientAddress")} />
                     ) : (
                       <Input id="rc-address" className="pl-9" {...register("clientAddress")} />
                     )}

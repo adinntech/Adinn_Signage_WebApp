@@ -89,7 +89,7 @@ export function OrderClientForm({
   const opts: SearchOption[] =
     flag === "NEW"
       ? (crm.data?.data ?? []).map((c) => ({ value: c._id, label: c.name, sublabel: [c.clientNo, c.clientName, c.phone].filter(Boolean).join(" · ") }))
-      : zohoRows.map((z) => ({ value: z.zohoId, label: z.name, sublabel: [z.clientNo ? `In CRM as ${z.clientNo}` : null, z.clientName, z.gstin, z.city].filter(Boolean).join(" · ") }));
+      : zohoRows.map((z) => ({ value: z.zohoId, label: z.name, sublabel: [z.clientName, z.gstin, z.city].filter(Boolean).join(" · ") }));
 
   const zohoPick = flag === "EXISTING" ? (zoho.data?.items ?? []).find((z) => z.zohoId === picked?.value) : undefined;
   const crmPick = flag === "NEW" && details.data?._id === picked?.value ? details.data : undefined;

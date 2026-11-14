@@ -190,6 +190,11 @@ textarea,
 input:is([type="text"], [type="search"], [type="email"], [type="tel"], [type="url"], [type="password"], [type="number"]) {
   cursor: text;
 }
+/* A shown-but-locked field (e.g. Recce Rate Card client details): not typed, so no text cursor. After the rule above. */
+input[data-locked],
+textarea[data-locked] {
+  cursor: not-allowed;
+}
 
 /* A message box that sits inside its own focus-ringed card does not also draw a box around the text. */
 .bare-field:focus,

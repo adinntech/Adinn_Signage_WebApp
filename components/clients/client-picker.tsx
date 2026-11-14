@@ -120,7 +120,8 @@ export function ZohoClientCard({ zoho: z, loadingContacts }: { zoho: ZohoClientO
       <div className="flex items-start justify-between gap-2">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <CloudDownload className="size-3.5" aria-hidden />
-          {z.clientNo ? `Zoho customer · in CRM as ${z.clientNo}` : "Zoho customer · added to the CRM with this order"}
+          {/* The client is read from Zoho and kept on the order (no CRM client record is used). */}
+          Zoho customer
         </p>
         <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
           <Lock className="size-3" aria-hidden /> Read-only
