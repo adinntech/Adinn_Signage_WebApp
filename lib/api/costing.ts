@@ -249,4 +249,4 @@ export function useAddBase() {
 export const useChoosePlan = (pid: string) => usePlanMutation(pid, (b: { areaKey: string; channel: Channel; vendorId?: string }) => post(`/projects/${pid}/cost/choose`, b));
 export const useEditPlanShops = (pid: string) => usePlanMutation(pid, (b: { areaKey: string; add: string[]; remove: string[]; reason: string }) => post(`/projects/${pid}/cost/edit-shops`, b));
 export const useSuggestPlan = (pid: string) =>
-  usePlanMutation(pid, (b: { skills: string[]; requireSkills: boolean; apply: boolean; groupBy: "area" | "district"; mode?: PlannerMode }) => post<SuggestResult>(`/projects/${pid}/cost/suggest`, b));
+  usePlanMutation(pid, (b: { skills: string[]; requireSkills: boolean; apply: boolean; groupBy: "area" | "district"; mode?: PlannerMode; overrides?: Record<string, string> }) => post<SuggestResult>(`/projects/${pid}/cost/suggest`, b));

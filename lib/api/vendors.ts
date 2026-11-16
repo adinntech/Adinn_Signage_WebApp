@@ -416,10 +416,29 @@ export async function downloadZohoVendors(format: ExportFormat, filters: { q?: s
 }
 
 /** A mobile-app login that belongs to a vendor company; it sees only that vendor's shops. */
-export interface VendorLogin { id: string; name: string; email: string; phone: string | null; employeeId: string | null; isActive: boolean }
+export interface VendorLogin { id: string; name: string; email: string | null; hasEmail: boolean; mustChangeMpin: boolean; phone: string | null; employeeId: string | null; isActive: boolean }
 export interface VendorLoginInput { name: string; phone: string; employeeId: string; email: string; mpin: string }
-export const useVendorLogins = (vendorId?: string) =>
+/** Live Zoho Books details of a registered vendor, used to fill the Add login form. */
+export const useVendorZohoDetails = (vendorId?: string, enabled = true) =>
+  useQuery({ queryKey: ["zoho", "vendor-details", vendorId], queryFn: () => api<ZohoVendorLookup>(`/vendors/${vendorId}/zoho-details`), enabled: enabled && !!vendorId, staleTime: 60_000, retry: false });
+export const useVendorLogins =(vendorId?: string) =>
   useQuery({ queryKey: [...key, "logins", vendorId], queryFn: () => api<VendorLogin[]>(`/vendors/${vendorId}/logins`), enabled: !!vendorId });
+/** Default login (username = name letters + last 4 of vendor ID, MPIN = last 4 of vendor ID). Does nothing when the vendor already has one. */
+export function useEnsureVendorLogin(vendorId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ created: boolean; skipped?: "NO_VENDOR_ID"; username?: string; user: VendorLogin | null }>(`/vendors/${vendorId}/logins/ensure`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...key, "logins", vendorId] }),
+  });
+}
+/** Recce Operations puts the default MPIN back (last 4 digits of the vendor ID); the vendor must change it at next sign-in. */
+export function useResetVendorMpin(vendorId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => api<{ user: VendorLogin }>(`/vendors/${vendorId}/logins/${userId}/reset-mpin`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...key, "logins", vendorId] }),
+  });
+}
 export function useCreateVendorLogin(vendorId: string) {
   const qc = useQueryClient();
   return useMutation({

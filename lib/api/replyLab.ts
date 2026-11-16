@@ -57,7 +57,7 @@ export interface LabRow {
   flags: string[];
 }
 export interface LabRun { total: number; passed: number; failed: number; rows: LabRow[] }
-export interface LabRules { vendorMinDigits: number; vendorMaxDigits: number; projectMinDigits: number; estDigits: number; estSeparators: string; extraProjectPatterns: string[] }
+export interface LabRules { vendorMinDigits: number; vendorMaxDigits: number; projectMinDigits: number; estDigits: number; estMaxDigits: number; unrelatedPrefixes: string[]; estSeparators: string; extraProjectPatterns: string[] }
 export interface LabCase { id: string; group: LabGroup; workflow: LabWorkflow; title: string; input: Omit<LabInput, "workflow" | "request"> & { html?: string; request?: Partial<LabRequest> }; expectStatus: LabStatus; expectValue: string | null }
 
 const BASE = "/mail-settings/reply-lab";

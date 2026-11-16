@@ -98,7 +98,7 @@ export function ReplyTestLab() {
       <header>
         <h1 className="flex items-center gap-2 text-xl font-bold text-navy"><FlaskConical className="size-5 text-royal" aria-hidden /> Email reply test lab</h1>
         <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground"><ShieldCheck className="size-4 text-success" aria-hidden /> Test only: nothing here reads the mailbox, sends a mail or changes a vendor, project or request.</p>
-        {rules.data && <p className="mt-1 text-xs text-muted-foreground" data-testid="lab-rules">Rules in force: vendor ID {rules.data.vendorMinDigits}+ digits in a row · project code {rules.data.projectMinDigits}+ digits in a row, or EST-{rules.data.estDigits} digits{rules.data.extraProjectPatterns.length ? ` · ${rules.data.extraProjectPatterns.length} extra pattern(s)` : ""}</p>}
+        {rules.data && <p className="mt-1 text-xs text-muted-foreground" data-testid="lab-rules">Rules in force: vendor ID {rules.data.vendorMinDigits}+ digits · project code {rules.data.projectMinDigits}+ digits · estimate EST-{rules.data.estDigits}+ digits (letters / symbols inside one word are dropped, order kept){rules.data.extraProjectPatterns.length ? ` · ${rules.data.extraProjectPatterns.length} extra pattern(s)` : ""}</p>}
       </header>
 
       <div className="grid items-start gap-5 lg:grid-cols-2">

@@ -165,7 +165,7 @@ interface AreaCard {
   channel: Channel | null; vendorId: string | null; vendorName: string | null;
   inHouse: Option; vendor: Option | null; reasons: string[]; warnings: string[];
   /** The vendors offered for this route (works in the area / nearest / lowest cost), with their saved price. */
-  candidates: { name: string; rate: number; total: number; km: number | null; tags: string[]; place: string | null; skills: string[] }[];
+  candidates: { vendorId?: string; name: string; rate: number; total: number; km: number | null; tags: string[]; place: string | null; skills: string[] }[];
 }
 const costOf = (c: AreaCard) => (c.channel === "VENDOR" && c.vendor ? c.vendor.total : c.inHouse.total);
 
@@ -328,10 +328,12 @@ function VendorPicker({ label, vendors, disabled, onPick }: { label: string; ven
   );
 }
 
-function Card({ c, color, hot, onHot, selected, onSelect, shopNames, shopList, focusId, placingId, onFocusShop, onMap, canEdit, vendors, onChoose, onEdit, busy }: {
+function Card({ c, color, hot, onHot, selected, onSelect, shopNames, shopList, focusId, placingId, onFocusShop, onMap, canEdit, vendors, onChoose, onPreview, onEdit, busy }: {
   c: AreaCard; color: string; hot: boolean; onHot: (on: boolean) => void; selected: boolean; onSelect: () => void; shopNames: string[]; shopList: { id: string; name: string; pinned: boolean }[]; focusId: string | null; placingId: string | null; onFocusShop: (id: string) => void; onMap: number; canEdit: boolean; vendors: Vendor[];
-  onChoose: (channel: Channel, vendorId?: string) => void; onEdit: () => void; busy: boolean;
+  onChoose: (channel: Channel, vendorId?: string) => void; onPreview: (channel: Channel, vendorId?: string) => void; onEdit: () => void; busy: boolean;
 }) {
+  /** A saved plan changes at once; on the unsaved suggestion the pick is kept until "Use this plan". */
+  const pick = (channel: Channel, vendorId?: string) => (c.saved ? onChoose(channel, vendorId) : onPreview(channel, vendorId));
   const inCheaper = !c.vendor || c.inHouse.total <= c.vendor.total;
   return (
     <article onClick={onSelect} onMouseEnter={() => onHot(true)} onMouseLeave={() => onHot(false)} className={cn("min-w-0 rounded-2xl border bg-surface p-4 shadow-soft transition-shadow 2xl:p-5", selected ? "border-navy ring-2 ring-navy/20" : hot ? "border-navy/50 shadow-card" : "border-border")}>
@@ -359,8 +361,8 @@ function Card({ c, color, hot, onHot, selected, onSelect, shopNames, shopList, f
       </details>
 
       <div className="mt-3 grid grid-cols-1 items-stretch gap-3 2xl:grid-cols-2" onClick={(e) => e.stopPropagation()}>
-        <OptionPanel title="In-house team" sub={c.inHouse.note} color={IN_COLOR} opt={c.inHouse} cheapest={inCheaper && !!c.vendor} tag={c.channel === "IN_HOUSE" ? (c.saved ? "Selected" : "Suggested") : undefined} active={c.channel === "IN_HOUSE"} onPick={c.saved && canEdit && !busy ? () => onChoose("IN_HOUSE") : undefined} />
-        <OptionPanel title={c.vendorName ?? "Vendor"} sub={c.vendor?.note} color={VENDOR_COLOR} opt={c.vendor} cheapest={!!c.vendor && !inCheaper} tag={c.channel === "VENDOR" ? (c.saved ? "Selected" : "Suggested") : undefined} active={c.channel === "VENDOR"} onPick={c.saved && canEdit && !busy && c.vendorId ? () => onChoose("VENDOR", c.vendorId!) : undefined}>
+        <OptionPanel title="In-house team" sub={c.inHouse.note} color={IN_COLOR} opt={c.inHouse} cheapest={inCheaper && !!c.vendor} tag={c.channel === "IN_HOUSE" ? (c.saved ? "Selected" : "Suggested") : undefined} active={c.channel === "IN_HOUSE"} onPick={canEdit && !busy ? () => pick("IN_HOUSE") : undefined} />
+        <OptionPanel title={c.vendorName ?? "Vendor"} sub={c.vendor?.note} color={VENDOR_COLOR} opt={c.vendor} cheapest={!!c.vendor && !inCheaper} tag={c.channel === "VENDOR" ? (c.saved ? "Selected" : "Suggested") : undefined} active={c.channel === "VENDOR"} onPick={canEdit && !busy && c.vendorId ? () => pick("VENDOR", c.vendorId!) : undefined}>
           {c.saved && canEdit && (
             <VendorPicker label={`Vendor for ${c.name}`} disabled={busy} vendors={vendors} onPick={(id) => onChoose("VENDOR", id)} />
           )}
@@ -370,11 +372,11 @@ function Card({ c, color, hot, onHot, selected, onSelect, shopNames, shopList, f
 
       {c.candidates.some((v) => v.name !== c.vendorName) && (
         <details className={cn("mt-3 rounded-xl border border-border", F.small)} open onClick={(e) => e.stopPropagation()}>
-          <summary className="cursor-pointer select-none px-3 py-2 font-semibold text-navy">Next lowest-cost vendors from Vendor master</summary>
-          <ul className="divide-y divide-border border-t border-border">
-            {[...c.candidates].filter((v) => v.name !== c.vendorName).sort((a, b) => a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9)).slice(0, 2).map((v, i) => (
-              <li key={v.name} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-                <span className={cn("flex min-w-32 flex-1 items-center gap-2 font-medium text-navy", F.body)}><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white" title={`Next lowest cost, number ${i + 1}`}>{i + 1}</span>{v.name}</span>
+          <summary className="cursor-pointer select-none px-3 py-2 font-semibold text-navy">Vendors with cost ({c.candidates.filter((v) => v.name !== c.vendorName).length}), nearest first{canEdit && <span className="ml-2 font-normal text-muted-foreground">· click one to use it for this route</span>}</summary>
+          <ul className="max-h-72 divide-y divide-border overflow-y-auto border-t border-border">
+            {[...c.candidates].filter((v) => v.name !== c.vendorName).sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || a.total - b.total).map((v, i) => (
+              <li key={v.name} {...(canEdit && !busy && v.vendorId ? { role: "button" as const, tabIndex: 0, title: "Use this vendor for this route", onClick: () => pick("VENDOR", v.vendorId!), onKeyDown: (e: React.KeyboardEvent) => (e.key === "Enter" || e.key === " ") && pick("VENDOR", v.vendorId!) } : {})} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2", canEdit && !busy && v.vendorId && "cursor-pointer hover:bg-muted/60")}>
+                <span className={cn("flex min-w-32 flex-1 items-center gap-2 font-medium text-navy", F.body)}><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white" title={`Number ${i + 1} nearest`}>{i + 1}</span>{v.name}</span>
                 <span className="tabular-nums text-navy">₹{v.rate}/shop <span className="text-muted-foreground">· {inr(v.total)}</span></span>
                 <span className="text-muted-foreground">{[v.place, v.km != null ? `${v.km} km` : "distance unknown", v.skills.length ? v.skills.join(", ") : "no skills saved"].filter(Boolean).join(" · ")}</span>
                 <span className="flex gap-1">{v.tags.filter((t) => t !== "Lowest cost").map((t) => <span key={t} className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", t === "Not registered" || t.startsWith("Waiting") ? "bg-amber-100 text-amber-800" : t.startsWith("Rejected") ? "bg-red-100 text-red-800" : t === "Approved" ? "bg-emerald-100 text-emerald-800" : "bg-muted text-navy")}>{t === "Not registered" ? "Zoho vendor, not onboarded in CRM" : t}</span>)}</span>
@@ -434,11 +436,13 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
   const addBase = useAddBase();
   const saved = useMemo(() => (cost.data?.saved ? cost.data.plan.legs : []), [cost.data]);
   const first = useRef(false);
+  /** Operations' own pick per route on the unsaved suggestion (area key -> vendor id or IN_HOUSE); sent with "Use this plan". */
+  const [picks, setPicks] = useState<Record<string, string>>({});
   const byId = useMemo(() => new Map((shops.data ?? []).map((s) => [s.id, s])), [shops.data]);
 
   const run = (apply: boolean, over?: { mode?: PlannerMode; skills?: string[]; require?: boolean }) =>
-    suggest.mutate({ skills: over?.skills ?? picked, requireSkills: over?.require ?? require, apply, groupBy: "area", mode: over?.mode ?? mode }, {
-      onSuccess: (r) => { setResult(apply ? null : r); if (apply) toast("Plan saved. Now you can change who does a route or edit its shops"); },
+    suggest.mutate({ skills: over?.skills ?? picked, requireSkills: over?.require ?? require, apply, groupBy: "area", mode: over?.mode ?? mode, ...(apply && Object.keys(picks).length ? { overrides: picks } : {}) }, {
+      onSuccess: (r) => { setPicks({}); setResult(apply ? null : r); if (apply) toast("Plan saved. Now you can change who does a route or edit its shops"); },
       onError: (e) => toast(errorMessage(e), "error"),
     });
   // The suggestion appears by itself as soon as verified shops exist; changing the mode or a skill refreshes it.
@@ -465,14 +469,15 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
       return result.proposals.map((p) => {
         // The vendor shown is the one chosen by the suggestion, else the lowest cost (a vendor only in Vendor master counts, to compare with the team).
         const lowest = [...p.vendors].sort((a, b) => a.total - b.total || (a.nearKm ?? 1e9) - (b.nearKm ?? 1e9))[0];
-        const v = p.vendors.find((x) => x.vendorId === p.recommended.vendorId) ?? lowest;
+        const pick = picks[p.key];
+        const v = (pick && pick !== "IN_HOUSE" ? p.vendors.find((x) => x.vendorId === pick) : undefined) ?? p.vendors.find((x) => x.vendorId === p.recommended.vendorId) ?? lowest;
         return {
           key: p.key, name: p.name, district: p.district, shops: p.siteIds, routeKm: p.routeKm, saved: false,
-          channel: p.recommended.channel, vendorId: v?.vendorId ?? null, vendorName: v?.name ?? null,
+          channel: pick ? (pick === "IN_HOUSE" ? "IN_HOUSE" as const : "VENDOR" as const) : p.recommended.channel, vendorId: v?.vendorId ?? null, vendorName: v?.name ?? null,
           inHouse: { total: p.inHouse.total, perShop: p.inHouse.perShop, note: `${p.inHouse.days} day${p.inHouse.days > 1 ? "s" : ""}, ${p.inHouse.nights} night${p.inHouse.nights === 1 ? "" : "s"}`, lines: inHouseLines(p.inHouse.days, p.inHouse.nights, p.routeKm, p.inHouse.travel, p.inHouse.food, p.inHouse.stay, p.inHouse.local) },
           vendor: v ? { total: v.total, perShop: v.perShop, note: vendorNote(p.shops, v.perShopRate, v.rateSource, [...(v.nearKm != null ? [`nearest, about ${v.nearKm} km away`] : []), ...(v.pendingRate != null ? [`₹${v.pendingRate} waiting for approval`] : []), ...(v.days ? [`about ${v.days} day${v.days > 1 ? "s" : ""}`] : []), ...(v.skills.length ? [v.skills.join(", ")] : [])]), lines: [] } : null,
           reasons: p.reasons, warnings: p.warnings,
-          candidates: p.vendors.map((x) => ({ name: x.name, rate: x.perShopRate, total: x.total, km: x.nearKm ?? null, tags: x.tags ?? [], place: x.place ?? null, skills: x.skills })),
+          candidates: p.vendors.map((x) => ({ vendorId: x.vendorId, name: x.name, rate: x.perShopRate, total: x.total, km: x.nearKm ?? null, tags: x.tags ?? [], place: x.place ?? null, skills: x.skills })),
         };
       });
     }
@@ -484,7 +489,7 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
       reasons: l.calc.reasons, warnings: [], candidates: [],
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, saved, shops.data, rates]);
+  }, [result, saved, shops.data, rates, picks]);
 
   const chosen = cards.reduce((a, c) => a + costOf(c), 0);
   const allIn = cards.reduce((a, c) => a + c.inHouse.total, 0);
@@ -660,6 +665,7 @@ export function PreSetup({ projectId, canEdit }: { projectId: string; canEdit: b
                   shopNames={(orderOf.get(c.key) ?? c.shops).map((id) => byId.get(id)?.name ?? "").filter(Boolean)}
                   shopList={(orderOf.get(c.key) ?? c.shops).flatMap((id) => { const s = byId.get(id); return s ? [{ id, name: s.name, pinned: s.lat != null && s.lng != null }] : []; })}
                   focusId={focusShop} placingId={placing} onFocusShop={onShopClick}
+                  onPreview={(channel, vendorId) => setPicks((p) => ({ ...p, [c.key]: channel === "IN_HOUSE" ? "IN_HOUSE" : vendorId! }))}
                   onChoose={(channel, vendorId) => choose.mutate({ areaKey: c.key, channel, ...(vendorId ? { vendorId } : {}) }, { onSuccess: () => toast("Saved in the planning history"), onError: (e) => toast(errorMessage(e), "error") })}
                   onEdit={() => setEditing({ key: c.key, name: c.name })} />
               ))}
