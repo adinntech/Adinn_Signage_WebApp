@@ -61,7 +61,7 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg bg-[#f6f0ff] p-3"><p className="text-xs text-muted-foreground">Rate per shop</p><p className="font-bold text-vendor">{v.ratePerShop != null ? `₹${v.ratePerShop}` : "Company rate"}</p></div>
-            <div className="rounded-lg bg-[#f6f0ff] p-3"><p className="text-xs text-muted-foreground">Far-distance rate</p><p className="font-bold text-vendor">{v.farRatePerShop != null ? `₹${v.farRatePerShop}` : "Company rate"}</p></div>
+            <div className="rounded-lg bg-[#f6f0ff] p-3"><p className="text-xs text-muted-foreground">Travelling cost</p><p className="font-bold text-vendor">{v.farRatePerShop != null ? `₹${v.farRatePerShop}` : "Company rate"}</p></div>
             <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">PAN</p><p className="font-medium">{v.pan ?? "-"}</p></div>
             <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">GST</p><p className="break-all font-medium">{v.gstin ?? (v.hasGst === false ? "Not registered" : "-")}</p></div>
             {v.aadhaar && <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Aadhaar</p><p className="font-mono font-medium">XXXX XXXX {v.aadhaar.slice(-4)}</p></div>}

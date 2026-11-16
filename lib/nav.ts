@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   FolderKanban,
   MapPin,
-  Route,
   ScanSearch,
   Store,
   Wallet,
@@ -15,11 +14,13 @@ import {
   Settings,
   ClipboardList,
   ReceiptIndianRupee,
+  FlaskConical,
   Waypoints,
   CloudDownload,
   MessagesSquare,
   FileCheck2,
   BadgeCheck,
+  BookUser,
   type LucideIcon,
 } from "lucide-react";
 
@@ -46,7 +47,8 @@ export type Permission =
   | "ratecards:create"
   | "approvals:client"
   | "zoho:sync"
-  | "connect:use";
+  | "connect:use"
+  | "mail:manage";
 
 export interface NavLeaf {
   label: string;
@@ -115,6 +117,8 @@ export const NAV: NavItem[] = [
   { label: "Master Data", icon: Database, href: "/master-data", permission: "users:manage" },
   { label: "Import from Zoho", icon: CloudDownload, href: "/admin/zoho-import", permission: "zoho:sync" },
   { label: "Cost Rates", icon: ReceiptIndianRupee, href: "/admin/cost-rates", permission: "finance:manage" },
+  { label: "Mail Contacts", icon: BookUser, href: "/admin/mail-contacts", permission: "mail:manage" },
+  { label: "Reply Test Lab", icon: FlaskConical, href: "/admin/reply-test-lab", permission: "mail:manage" },
   { label: "Recce Price Management", icon: ReceiptIndianRupee, href: "/recce-cost" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
@@ -208,9 +212,10 @@ export function navFor(role: string | undefined, can: (p?: string) => boolean): 
 const OPERATIONS_NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/operations/dashboard", permission: "dashboard:view" },
   { label: "Projects", icon: FolderKanban, href: "/operations/projects", permission: "projects:read" },
-  { label: "Cost Comparison", icon: BarChart3, href: "/operations/cost", permission: "sites:read" },
-  { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
-  { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
+  // Hidden for now (screens and routes still exist): Cost Comparison, Shop Allocation, Movement.
+  // { label: "Cost Comparison", icon: BarChart3, href: "/operations/cost", permission: "sites:read" },
+  // { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
+  // { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
   { label: "Vendors", icon: Store, href: "/operations/vendors", permission: "vendors:manage" },
   { label: "Approvals", icon: AlertTriangle, href: "/operations/approvals", permission: "verification:manage" },
   { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },

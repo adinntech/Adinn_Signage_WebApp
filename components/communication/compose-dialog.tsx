@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { TagInput } from "@/components/ui/tag-input";
+import { EmailTagInput } from "@/components/mail/email-tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
@@ -176,10 +176,10 @@ export function ComposeDialog({
         {isMail && (
           <>
             <Field label="To" htmlFor="cm-to" error={errors.to} hint="Press Enter or comma after each address." required={mode !== "log"}>
-              <TagInput id="cm-to" value={to} onChange={setTo} placeholder="name@company.com" />
+              <EmailTagInput id="cm-to" value={to} onChange={setTo} placeholder="name@company.com" />
             </Field>
             <Field label="CC" htmlFor="cm-cc" error={errors.cc}>
-              <TagInput id="cm-cc" value={cc} onChange={setCc} placeholder="name@company.com" />
+              <EmailTagInput id="cm-cc" value={cc} onChange={setCc} placeholder="name@company.com" />
             </Field>
             <Field label="Subject" htmlFor="cm-subject" required={!isReply} error={errors.subject}>
               <Input id="cm-subject" value={subject} aria-invalid={!!errors.subject} onChange={(e) => setSubject(e.target.value)} />

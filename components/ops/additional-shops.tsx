@@ -26,23 +26,23 @@ export function AdditionalShops({ project, canEdit }: { project: Project; canEdi
   const shown = valid ? n : saved;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#f9c6dd] bg-[#fdf2f8]">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface">
       <button
         type="button"
         aria-expanded={open}
         aria-controls="addl-shops-body"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#fce7f3] focus-visible:outline-2 focus-visible:outline-ring"
+        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#ec4899] text-white"><PlusCircle className="size-4" aria-hidden /></span>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-royal text-white"><PlusCircle className="size-4" aria-hidden /></span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-[#be185d]">Additional Shop Count Support</span>
+          <span className="block text-sm font-bold text-navy">Additional Shop Count Support</span>
           <span className="block text-xs text-muted-foreground">If more shops are identified during the recce, add them here.</span>
         </span>
         <span className="flex items-center gap-1.5 rounded-full border border-[#bbf0d3] bg-[#e7f9ef] px-3 py-1 text-xs font-medium text-finance">
           <CheckCircle2 className="size-3.5" aria-hidden /> Total expected <strong>{base + saved}</strong> ({base} + {saved})
         </span>
-        <ChevronDown className={cn("size-5 shrink-0 text-[#be185d] transition-transform", open && "rotate-180")} aria-hidden />
+        <ChevronDown className={cn("size-5 shrink-0 text-navy transition-transform", open && "rotate-180")} aria-hidden />
       </button>
 
       {open && (
@@ -63,7 +63,7 @@ export function AdditionalShops({ project, canEdit }: { project: Project; canEdi
               {canEdit && (
                 <div className="flex justify-end">
                   <Button
-                    className="bg-[#be185d] hover:bg-[#9d174d]"
+                    className="bg-navy hover:bg-navy/90"
                     loading={save.isPending}
                     disabled={!valid || (n === saved && note.trim() === (project.additionalShopsNote ?? ""))}
                     onClick={() => save.mutate({ count: n, note: note.trim() || undefined }, { onSuccess: () => { toast(`Total expected shops: ${base + n}`); setOpen(false); }, onError: (e) => toast(errorMessage(e), "error") })}

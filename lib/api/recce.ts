@@ -15,13 +15,25 @@ interface UserRef {
 }
 
 /** Project Assign > Assign to Recce Team for one order (from the server). */
+/** One reply read to the project code request mail: who, when, and the project code and estimate numbers found in it. */
+export interface RecceCodeReply {
+  messageId?: string;
+  from: string;
+  receivedAt?: string;
+  at?: string;
+  snippet?: string;
+  detectedCode?: string;
+  estimates?: string[];
+}
 export interface RecceState {
   orderId: string;
   orderNo: string;
   /** The lead is open at Project Assign and Client Servicing has not been assigned. */
   unlocked: boolean;
-  /** `estimate`: the Zoho estimate as it was when the codes were saved (null for codes saved before it was kept). */
   codes: { projectCode: string; estimationCode: string; clientId?: string | null; savedAt: string | null; savedBy: string | null; estimate?: { date: string | null; total: number | null; status: string | null; salesperson: string | null; location: string | null } | null } | null;
+  /** The reply read to the project code request mail (the latest), and every reply read. A person still checks and saves the codes. */
+  codeReply?: RecceCodeReply | null;
+  codeReplyHistory?: RecceCodeReply[];
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
   /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
@@ -61,7 +73,14 @@ export interface RecceState {
   project: { _id: string; code: string; status: string; startDate?: string | null; targetDate?: string | null; priority?: string | null } | null;
   missing: string[];
   mail: { enabled: boolean; from: string | null };
-  draft: { to: string[]; cc: string[]; subject: string; body: string };
+  draft: { to: string[]; cc: string[]; subject: string; body: string; facts?: RecceMailFacts };
+}
+
+/** What the request email prints on its own (client, project, contacts); the editor only holds the note. */
+export interface RecceMailFacts {
+  existing: boolean;
+  clientId: string;
+  sections: { title: string; rows: { label: string; value: string }[]; table: { columns: string[]; rows: string[][] } | null }[];
 }
 
 export const PRIORITIES = { LOW: "Low", MEDIUM: "Medium", HIGH: "High", URGENT: "Urgent" } as const;

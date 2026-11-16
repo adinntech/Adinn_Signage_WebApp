@@ -3,7 +3,8 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, BadgeCheck, CalendarCheck, CalendarDays, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Flag, FolderKanban, History, IndianRupee, Inbox, KeyRound, Lock, Mail, MapPin, Paperclip, Phone, Save, Search, Send, SkipForward, StickyNote, UserRound } from "lucide-react";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
+import { ArrowLeft, ArrowRight, BadgeCheck, CalendarCheck, CalendarDays, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Flag, FolderKanban, History, IndianRupee, Inbox, KeyRound, Lock, Mail,  MailCheck, MapPin, Paperclip, Phone, Save, Search, Send, SkipForward, StickyNote, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { CONTACT_PERSON_GAP, HandoverTab, hasUnsavedContacts, saveOrderContactsBeforeLeaving, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
@@ -32,8 +33,8 @@ import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { PRIORITIES, useAssignRecce, useRecce, useRecceUsers, useConfirmRecceHandover, useRecceZohoEstimates, useSaveRecceCodes, useSendCodeRequest, useSkipRecceRateCard, type Priority, type RecceState, type ZohoEstimateOption } from "@/lib/api/recce";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatDate, formatDateTimeIST } from "@/lib/format";
 import { clearStepDraft, useStepDraft } from "@/lib/step-drafts";
+import { formatDateTime, formatCurrency, formatDate, formatDateTimeIST } from "@/lib/format";
 import { flagHandoverGaps, RouteNotice, StepFooter } from "./assign-panels";
 import { branchSteps, canOpen, csRecceAssign } from "./assign-steps";
 import { ASSIGN_META } from "./stage-meta";
@@ -408,18 +409,41 @@ function CodeRequestComposer({
   /** An email already went (successfully): the button reads Resend Email. */
   resend: boolean;
 }) {
+  const facts = r.mail.enabled ? r.draft.facts : undefined;
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold text-navy">{resend ? "Resend Project Code Request" : "Compose Project Code Request"}</h3>
-        <p className="text-xs text-muted-foreground">Recipients, subject and the message to the accounts team. Client details, contacts and the files below go with it.</p>
-      </div>
+      {facts && facts.sections.length > 0 && (
+        <section className="rounded-xl border border-border bg-[#f8fafd] p-4" aria-label="Details the email prints">
+          <h3 className="text-sm font-bold text-navy">Printed in the email automatically</h3>
+          <p className="mb-3 text-xs text-muted-foreground">{facts.existing ? `Existing client, Client ID ${facts.clientId || "-"}.` : "New client: the Client ID is requested with the codes."} These details are not typed. Write only extra instructions in the Email Body below.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {facts.sections.map((s) => (
+              <div key={s.title} className="min-w-0 rounded-lg border border-border bg-surface p-3">
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-royal">{s.title}</p>
+                {s.rows.length > 0 && (
+                  <dl className="space-y-1 text-xs">
+                    {s.rows.map((x) => <div key={x.label} className="flex gap-2"><dt className="w-32 shrink-0 text-muted-foreground">{x.label}</dt><dd className="min-w-0 break-words font-semibold text-navy">{x.value}</dd></div>)}
+                  </dl>
+                )}
+                {s.table && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead><tr>{s.table.columns.map((c) => <th key={c} className="pr-3 pb-1 font-semibold text-muted-foreground">{c}</th>)}</tr></thead>
+                      <tbody>{s.table.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j} className="pr-3 py-0.5 font-semibold text-navy">{cell}</td>)}</tr>)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <EmailComposer
         // A neutral prefix: ids such as "recce-mail-to" made Chrome treat To / Cc / Bcc as saved email fields.
         idPrefix="recce-request"
         compact
-        allowBcc
-        persistKey={`${r.orderId}:email`}
+allowBcc
+        persistKey={`${r.orderId}:email-note`}
         sendLabel={resend ? "Resend Email" : "Send Email"}
         notConfigured={'The signage email API is not configured on the server (SIGNAGE_MAIL_API_URL / SIGNAGE_MAIL_API_KEY). Sending will be recorded as "Not sent" until it is set up.'}
         orderId={r.orderId}
@@ -523,6 +547,14 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
     setEstimateId("");
     setLookupId(clientId.trim());
   };
+  // Latest reply read from the mailbox (a later mail without a code keeps the code / estimates an earlier reply gave). A hint only:
+  // the codes themselves are chosen from the Zoho estimates below.
+  const past = [...(r.codeReplyHistory ?? [])].sort((a, b) => +new Date(b.receivedAt ?? b.at ?? 0) - +new Date(a.receivedAt ?? a.at ?? 0));
+  const reply = r.codeReply && {
+    ...r.codeReply,
+    detectedCode: r.codeReply.detectedCode ?? past.find((h) => h.detectedCode)?.detectedCode,
+    estimates: r.codeReply.estimates?.length ? r.codeReply.estimates : past.find((h) => h.estimates?.length)?.estimates,
+  };
   const submit = async () => {
     const e: Record<string, string> = {};
     if (!fromZoho && !clientIdOk) e.clientId = "Enter the Client ID created in Zoho (2-20 letters, digits or -)";
@@ -547,9 +579,26 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
     (estimate.projectCode !== (r.codes?.projectCode ?? "") || estimate.estimationCode !== (r.codes?.estimationCode ?? "") || (!fromZoho && clientId.trim() !== (r.codes?.clientId ?? "")));
   const searching = fromZoho || !!lookupId;
   const emptyText = estimates.data && !estimates.data.items.length ? `No estimates in Zoho for Client ID ${estimates.data.clientId ?? "-"}` : "No matching project code";
-
+  const replies = [...(r.codeReplyHistory ?? [])].reverse();
   return (
     <div className="space-y-4">
+      {!r.codes && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+          <span className="text-muted-foreground">{reply ? "Newer reply not showing? Read the mailbox again." : "Waiting for the project code reply."}</span>
+          <GetReplyButton size="sm" />
+        </div>
+      )}
+      {reply && !r.codes && (
+        <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
+          <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
+          <p className="mt-1">{reply.detectedCode ? <>Project code <span className="font-mono font-bold">{reply.detectedCode}</span> was read from the reply. Choose it below.</> : "No single project code could be read from the reply."}{!!reply.estimates?.length && <> Estimates in the reply: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span>.</>}</p>
+          {replies.length > 1 && (
+            <details className="mt-1 text-xs"><summary className="cursor-pointer font-semibold">Replies read ({replies.length})</summary>
+              <ul className="mt-1 space-y-1">{replies.map((h, i) => <li key={i}><span className="font-mono font-semibold">{h.detectedCode ?? "No code found"}</span>{!!h.estimates?.length && <span className="font-mono text-muted-foreground"> · {h.estimates.join(", ")}</span>}<span className="text-muted-foreground"> · {h.from} · {formatDateTime(h.receivedAt ?? h.at)}{i === 0 ? " · latest" : ""}</span></li>)}</ul>
+            </details>
+          )}
+        </div>
+      )}
       <div className={fromZoho ? "grid gap-4 sm:grid-cols-2" : "grid gap-4 sm:grid-cols-3"}>
         {/* New client: the Client ID created in Zoho finds its estimates. Existing client: kept automatically (no input). */}
         {!fromZoho && (
@@ -868,7 +917,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
         }}
       >
         <p className="text-sm text-muted-foreground">
-          Project <b className="font-mono text-foreground">{r.codes?.projectCode}</b> ({r.codes?.estimationCode}) is created in Operations with the handover, and {person?.label} gets a
+          Project <b className="font-mono text-foreground">{r.codes?.projectCode}</b>{r.codes?.estimationCode ? ` (${r.codes.estimationCode})` : ""} is created in Operations with the handover, and {person?.label} gets a
           notification. The lead is completed; the codes and handover can no longer be changed.
         </p>
       </ConfirmDialog>
@@ -888,7 +937,7 @@ export function AssignedBanner({ r, projectLink = false }: { r: RecceState; proj
           {r.assignedBy ? ` by ${r.assignedBy}` : ""}.
         </p>
         <p className="text-muted-foreground">
-          Project <span className="font-mono font-semibold text-foreground">{r.project?.code ?? r.codes?.projectCode}</span> · {r.codes?.estimationCode}
+          Project <span className="font-mono font-semibold text-foreground">{r.project?.code ?? r.codes?.projectCode}</span>{r.codes?.estimationCode ? ` · ${r.codes.estimationCode}` : ""}
           {r.note ? ` · “${r.note}”` : ""}
         </p>
       </div>

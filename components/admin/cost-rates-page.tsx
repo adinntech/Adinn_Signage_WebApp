@@ -19,6 +19,7 @@ const GROUPS: { title: string; icon: LucideIcon; tone: string; items: Item[] }[]
       { key: "stayPerNight", label: "Stay per night", hint: "Hotel / room rent. Usually ₹400 to ₹500", unit: "₹ / night" },
       { key: "foodPerDay", label: "Food per day", hint: "Three meals together. Each meal is a third, counted from the trip's start and end time", unit: "₹ / day" },
       { key: "fuelRatePerKm", label: "Fuel", hint: "For every km of the route", unit: "₹ / km" },
+      { key: "localPerDay", label: "Local expenses per day", hint: "Auto / bus / parking in the shop area, for every field day", unit: "₹ / day" },
     ],
   },
   {

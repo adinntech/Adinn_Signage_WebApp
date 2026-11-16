@@ -64,7 +64,7 @@ function ApprovalCard({ cfg, s, mayAct, projectId, readOnly }: { cfg: (typeof LE
  * "Client shop with board measurements": shop list + width/height/board type, approved by Operations AND BD
  * (each independently) before the recce, then the boards that fit each shop and the client's decision.
  */
-export function MeasurementStage({ project, canEdit, readOnly }: { project: Project; canEdit: boolean; readOnly: boolean }) {
+export function MeasurementStage({ project, canEdit, readOnly, hideAttachments }: { project: Project; canEdit: boolean; readOnly: boolean; hideAttachments?: boolean }) {
   const { user, can } = useAuth();
   const summary = useApprovalSummary(project._id);
   const mine = levelsFor(user?.role, can);
@@ -76,7 +76,7 @@ export function MeasurementStage({ project, canEdit, readOnly }: { project: Proj
       tag="Detailed Measurement"
       description="Client provides the shop list and board measurements (width & height). Operations and BD both approve before the recce can start."
     >
-      <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />
+      {!hideAttachments && <BdAttachments project={project} canEdit={canEdit} readOnly={readOnly} />}
       <p className="rounded-lg bg-[#eef4ff] px-3 py-2 text-xs text-navy">Expected columns: <strong>Customer Name, District, Size (e.g. 10*4), Remarks, Address 1-3, Pin, PH, GST</strong>. The area is taken from the brackets in the name (e.g. “… (COLACHAL)”) or from Address 3, and is used for the map and distances.</p>
       <SitesTab project={project} readOnly={readOnly} />
       <AdditionalShops project={project} canEdit={canEdit} />

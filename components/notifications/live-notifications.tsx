@@ -11,7 +11,7 @@ import { notificationHref, useMarkNotificationRead, type NotificationItem } from
 import { useAuth } from "@/lib/auth";
 import { ensureSubscribed } from "@/lib/push";
 import { cn } from "@/lib/utils";
-import { KIND_META } from "./kind-meta";
+import { kindMeta } from "./kind-meta";
 
 const POPUP_MS = 15_000;
 
@@ -33,7 +33,7 @@ export function LiveNotifications() {
     (n: NotificationItem) => {
       markRead.mutate(n.id);
       dismiss(n.id);
-      router.push(notificationHref(role, n.projectId, n.kind));
+      router.push(notificationHref(role, n.projectId, n.kind, n.orderId, n.path));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [role, router, dismiss],
@@ -70,7 +70,7 @@ export function LiveNotifications() {
 }
 
 function Popup({ n, onOpen, onDismiss }: { n: NotificationItem; onOpen: () => void; onDismiss: () => void }) {
-  const k = KIND_META[n.kind];
+  const k = kindMeta(n.kind);
   useEffect(() => {
     const t = setTimeout(onDismiss, POPUP_MS);
     return () => clearTimeout(t);

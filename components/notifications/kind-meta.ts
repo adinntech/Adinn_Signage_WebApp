@@ -12,3 +12,6 @@ export const KIND_META: Record<NotificationKindKey, { icon: LucideIcon; tone: st
   activity: { icon: Activity, tone: "bg-[#eef1f6] text-navy", tab: "updates" },
   order: { icon: ClipboardList, tone: "bg-[#e8f0ff] text-royal", tab: "projects" },
 };
+
+/** The meta of a notification kind; a kind this screen does not know yet (a newer backend) shows as a plain update instead of crashing the bell. */
+export const kindMeta = (kind: string) => (KIND_META as Record<string, (typeof KIND_META)[NotificationKindKey] | undefined>)[kind] ?? KIND_META.activity;

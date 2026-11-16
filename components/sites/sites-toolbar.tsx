@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Columns3, Download, FileSpreadsheet, History, Plus, Search, Upload, X } from "lucide-react";
+import * as React from "react";
+import { Check, Columns3, Download, FileSpreadsheet, History, Plus, Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -122,61 +123,88 @@ export function SitesToolbar({
   hasBatchFilter: boolean;
 }) {
   const districts = (stats?.districts ?? []).filter((d) => d.district !== "(none)");
+  const [open, setOpen] = React.useState(false);
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const clusterName = (stats?.clusters ?? []).find((c) => c.key === filter.planArea)?.name ?? filter.planArea;
+  const chips = ([
+    ["district", filter.district && `District: ${filter.district}`],
+    ["location", filter.location && `Area: ${filter.location}`],
+    ["planArea", filter.planArea && `Cluster: ${clusterName}`],
+    ["missing", filter.missing && MISSING_LABEL[filter.missing as MissingKey]],
+    ["scenario", filter.scenario && SCENARIO_LABEL[filter.scenario as Scenario]],
+  ] as [keyof FilterState, string][]).filter(([, label]) => !!label).map(([key, label]) => ({ key, label }));
+  const activeCount = chips.length;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-52 flex-1 sm:max-w-xs">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input aria-label="Search sites" placeholder="Search shop, dealer, code, mobile" className="pl-9" value={q} onChange={(e) => onQ(e.target.value)} />
       </div>
-      <div className="w-40">
-        <Select aria-label="Filter by district" value={filter.district} onChange={(e) => onFilter({ district: e.target.value })}>
-          <option value="">All districts</option>
-          {districts.map((d) => (
-            <option key={d.district} value={d.district}>
-              {d.district} ({d.count})
-            </option>
-          ))}
-        </Select>
+      <div ref={boxRef} className="relative">
+        <Button variant="outline" size="sm" aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)}>
+          <SlidersHorizontal className="size-4" aria-hidden /> Filters
+          {activeCount > 0 && <span className="ml-1 grid size-5 place-items-center rounded-full bg-navy text-[11px] font-semibold text-white">{activeCount}</span>}
+        </Button>
+        {open && (
+          <div role="dialog" aria-label="Filters" className="absolute left-0 top-full z-30 mt-2 w-[min(92vw,34rem)] rounded-xl border border-border bg-surface p-4 shadow-card">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs font-medium text-muted-foreground">District
+                <Select aria-label="Filter by district" value={filter.district} onChange={(e) => onFilter({ district: e.target.value })}>
+                  <option value="">All districts</option>
+                  {districts.map((d) => <option key={d.district} value={d.district}>{d.district} ({d.count})</option>)}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-muted-foreground">Area
+                <Select aria-label="Filter by area" value={filter.location} onChange={(e) => onFilter({ location: e.target.value })}>
+                  <option value="">All areas</option>
+                  {districts.map((d) => {
+                    const areas = (stats?.locations ?? []).filter((l) => l.district.toLowerCase() === d.district.toLowerCase() && (!filter.district || filter.district.toLowerCase() === d.district.toLowerCase()));
+                    return areas.length ? (
+                      <optgroup key={d.district} label={`${d.district} (${d.count})`}>
+                        {areas.map((l) => <option key={`${l.district}-${l.location}`} value={l.location}>{l.location} ({l.count})</option>)}
+                      </optgroup>
+                    ) : null;
+                  })}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-muted-foreground">Cluster
+                <Select aria-label="Filter by smart-plan cluster" value={filter.planArea} onChange={(e) => onFilter({ planArea: e.target.value })} title="Nearby-shop groups from the Smart plan (Cost Comparison > Use this plan)">
+                  <option value="">{(stats?.clusters.length ?? 0) > 0 ? "All clusters" : "No clusters yet (run Smart plan)"}</option>
+                  {(stats?.clusters ?? []).map((c) => <option key={c.key} value={c.key}>{c.name} ({c.count})</option>)}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-muted-foreground">Data state
+                <Select aria-label="Filter by missing data" value={filter.missing} onChange={(e) => onFilter({ missing: e.target.value as MissingKey | "" })}>
+                  <option value="">Any data state</option>
+                  {(Object.keys(MISSING_LABEL) as MissingKey[]).map((k) => <option key={k} value={k}>{MISSING_LABEL[k]}</option>)}
+                </Select>
+              </label>
+              <label className="space-y-1 text-xs font-medium text-muted-foreground sm:col-span-2">Scenario
+                <Select aria-label="Filter by scenario" value={filter.scenario} onChange={(e) => onFilter({ scenario: e.target.value as Scenario | "" })}>
+                  <option value="">All scenarios</option>
+                  {SCENARIOS.map((s) => <option key={s} value={s}>{SCENARIO_LABEL[s]}</option>)}
+                </Select>
+              </label>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <button type="button" disabled={!activeCount} onClick={() => { onFilter({ district: "", location: "", planArea: "", scenario: "", missing: "" }); }} className="text-xs font-medium text-royal hover:underline disabled:text-muted-foreground disabled:no-underline">Clear all</button>
+              <Button size="sm" onClick={() => setOpen(false)}>Apply</Button>
+            </div>
+          </div>
+        )}
       </div>
-      <div className="w-52">
-        <Select aria-label="Filter by area" value={filter.location} onChange={(e) => onFilter({ location: e.target.value })}>
-          <option value="">All areas</option>
-          {districts.map((d) => {
-            const areas = (stats?.locations ?? []).filter((l) => l.district.toLowerCase() === d.district.toLowerCase() && (!filter.district || filter.district.toLowerCase() === d.district.toLowerCase()));
-            return areas.length ? (
-              <optgroup key={d.district} label={`${d.district} (${d.count})`}>
-                {areas.map((l) => <option key={`${l.district}-${l.location}`} value={l.location}>{l.location} ({l.count})</option>)}
-              </optgroup>
-            ) : null;
-          })}
-        </Select>
-      </div>
-      <div className="w-60">
-        <Select aria-label="Filter by smart-plan cluster" value={filter.planArea} onChange={(e) => onFilter({ planArea: e.target.value })} title="Nearby-shop groups from the Smart plan (Cost Comparison > Use this plan)">
-          <option value="">{(stats?.clusters.length ?? 0) > 0 ? "All clusters" : "Clusters (run Smart plan)"}</option>
-          {(stats?.clusters ?? []).map((c) => <option key={c.key} value={c.key}>{c.name} ({c.count})</option>)}
-        </Select>
-      </div>
-      <div className="w-44">
-        <Select aria-label="Filter by missing data" value={filter.missing} onChange={(e) => onFilter({ missing: e.target.value as MissingKey | "" })}>
-          <option value="">Any data state</option>
-          {(Object.keys(MISSING_LABEL) as MissingKey[]).map((k) => (
-            <option key={k} value={k}>
-              {MISSING_LABEL[k]}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <div className="w-44">
-        <Select aria-label="Filter by scenario" value={filter.scenario} onChange={(e) => onFilter({ scenario: e.target.value as Scenario | "" })}>
-          <option value="">All scenarios</option>
-          {SCENARIOS.map((s) => (
-            <option key={s} value={s}>
-              {SCENARIO_LABEL[s]}
-            </option>
-          ))}
-        </Select>
-      </div>
+      {chips.map((c) => (
+        <button key={c.key} type="button" onClick={() => onFilter({ [c.key]: "" } as Partial<FilterState>)} className="inline-flex items-center gap-1 rounded-full bg-royal/10 px-3 py-1.5 text-xs font-medium text-royal hover:bg-royal/20">
+          {c.label}<X className="size-3" aria-hidden /><span className="sr-only">Remove filter</span>
+        </button>
+      ))}
       {hasBatchFilter && (
         <button
           type="button"

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { BadgeIndianRupee, Check, CloudDownload, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BadgeIndianRupee, Check, ChevronDown, CloudDownload, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -14,42 +14,41 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { downloadZohoVendors, useAddVendorSkill, useSetZohoPrice, useStartZohoSync, useVendorSkills, useZohoDirectory, useZohoSyncStatus, type ZohoVendorRow } from "@/lib/api/vendors";
+import { downloadZohoVendors, useAddVendorSkill, useCompanyRates, useCostHistory, useSetZohoPrice, useVendorSkills, useZohoDirectory, useStartZohoCitySync, useZohoVendorCities, type ZohoVendorRow } from "@/lib/api/vendors";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ExportMenu } from "./export-menu";
 import { ZohoToggle } from "./zoho-toggle";
+import { ApprovalTag, RateStatusDialog } from "./rate-status-dialog";
 import { ZohoVendorDrawer } from "./zoho-vendor-drawer";
 
 const money = (n: number | null) => (n == null ? "–" : `₹${n}`);
 
 /**
- * Vendor master. Search the vendors fetched from Zoho (by vendor ID, name, GST, PAN, phone or anything else known), add
- * the cost of the vendor you found (price per shop, far-distance price, skills), and only vendors with a cost are listed
- * below. A registered vendor keeps its cost on the vendor (used by allocation and costing); a Zoho vendor not registered
- * yet keeps it here and it carries over when it is registered.
+ * Vendor master. Search the vendors in Zoho (read live from Zoho Books, nothing of Zoho's list is stored: by vendor name, phone or e-mail), add
+ * the cost of the vendor you found (price per shop, travelling cost, skills), and only vendors with a cost are listed
+ * below. Only those vendors are stored. A registered vendor keeps its cost on the vendor (used by allocation and costing); a Zoho
+ * vendor not registered yet keeps it here and it carries over when it is registered.
  */
-export function VendorMaster({ canWrite }: { canWrite: boolean }) {
+export function VendorMaster({ canWrite, signageOnly, onSignageOnly, costed, contactCode, browse, onBrowse }: { canWrite: boolean; signageOnly: boolean; onSignageOnly: (v: boolean) => void; browse: boolean; onBrowse: (v: boolean) => void; costed: number; contactCode?: string }) {
   const toast = useToast();
-  const qc = useQueryClient();
-  const status = useZohoSyncStatus();
-  const start = useStartZohoSync();
-  const s = status.data;
-  const running = !!s?.sync.running;
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    if (running) { wasRunning.current = true; return; }
-    if (!wasRunning.current) return;
-    wasRunning.current = false;
-    void qc.invalidateQueries({ queryKey: ["zoho", "directory"] });
-    if (s?.sync.error) toast(s.sync.error, "error");
-    else toast(`Zoho sync complete: ${s?.total ?? 0} vendors stored`);
-  }, [running, s?.sync.error, s?.total, qc, toast]);
 
   const [costFor, setCostFor] = useState<ZohoVendorRow | null>(null);
   const [removing, setRemoving] = useState<ZohoVendorRow | null>(null);
   const [viewing, setViewing] = useState<ZohoVendorRow | null>(null);
+  const [statusFor, setStatusFor] = useState<ZohoVendorRow | null>(null);
   const clear = useSetZohoPrice();
+  // A notification link (?rateFor=<Zoho contact id>&n=<name>) opens that vendor's amount approval status straight away, then the address is cleaned.
+  const [linked, setLinked] = useState<{ id: string; name: string } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    const id = p.get("rateFor");
+    return id && /^[\w-]{1,40}$/.test(id) ? { id, name: (p.get("n") ?? "").slice(0, 120) || "Vendor" } : null;
+  });
+  useEffect(() => { if (linked) window.history.replaceState(null, "", window.location.pathname); }, [linked]);
+  const linkedHistory = useCostHistory(linked?.id ?? "", !!linked);
+  const linkedApproval = linkedHistory.data?.approval ?? null;
+  useEffect(() => { if (linked && linkedHistory.isSuccess && !linkedApproval) { toast("No amount approval request found for this vendor"); setLinked(null); } }, [linked, linkedHistory.isSuccess, linkedApproval, toast]);
 
   return (
     <div className="space-y-5">
@@ -58,23 +57,26 @@ export function VendorMaster({ canWrite }: { canWrite: boolean }) {
           <span className="flex size-10 items-center justify-center rounded-xl bg-royal text-white"><CloudDownload className="size-5" aria-hidden /></span>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-bold text-navy">Find a vendor in Zoho</h2>
-            <p className="text-xs text-muted-foreground">{s?.lastSyncedAt ? `Zoho list synced ${formatDateTime(s.lastSyncedAt)}` : "Zoho list not synced yet"} · {s?.total ?? 0} Signage creditors</p>
+            <p className="text-xs text-muted-foreground">Read live from Zoho Books. Only vendors you add a cost to are saved here ({costed} so far).</p>
           </div>
-          {canWrite && (
-            <Button size="sm" className="bg-royal hover:bg-royal/90" disabled={running} loading={start.isPending} onClick={() => start.mutate(undefined, { onError: (e) => toast(errorMessage(e), "error") })}>
-              <RefreshCw className={cn("size-4", running && "animate-spin")} aria-hidden /> {running ? "Syncing…" : "Sync from Zoho"}
-            </Button>
-          )}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={signageOnly}
+            onClick={() => onSignageOnly(!signageOnly)}
+            title={signageOnly ? `Showing only ${contactCode ?? "Signage"} vendors. Click to show every Zoho vendor.` : "Showing every vendor in Zoho. Click to show only the Signage creditors."}
+            className="flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1.5 text-xs font-semibold text-navy shadow-soft focus-visible:outline-2 focus-visible:outline-royal"
+          >
+            <span className={cn("relative h-5 w-9 rounded-full transition-colors", signageOnly ? "bg-vendor" : "bg-[#cbd5e1]")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-all", signageOnly ? "left-[18px]" : "left-0.5")} /></span>
+            {signageOnly ? "Signage creditors only" : "All Zoho vendors"}
+          </button>
         </div>
-        {running && (
-          <p role="status" className="border-b border-border px-4 py-2.5 text-xs font-medium text-navy">
-            {s?.sync.phase === "details" ? `Reading city, address and created-by… ${s.sync.detailsDone} of ${s.sync.detailsTotal}` : `Reading the vendor list from Zoho… ${s?.sync.fetched ?? 0} so far`}. You can keep working.
-          </p>
-        )}
-        <SearchResults canWrite={canWrite} onCost={setCostFor} onView={setViewing} syncing={running} empty={s?.total === 0} />
+        <SearchResults canWrite={canWrite} onCost={setCostFor} onView={setViewing} signageOnly={signageOnly} all={browse} onAll={onBrowse} />
       </section>
 
-      <WithCost canWrite={canWrite} onView={setViewing} onEdit={setCostFor} onRemove={setRemoving} />
+      <WithCost canWrite={canWrite} onView={setViewing} onEdit={setCostFor} onRemove={setRemoving} onStatus={setStatusFor} />
+      {statusFor?.price.approval && <RateStatusDialog key={statusFor.price.approval.requestId} contactId={statusFor.zohoContactId} name={statusFor.name} approval={statusFor.price.approval} onClose={() => setStatusFor(null)} />}
+      {linked && linkedApproval && !statusFor && <RateStatusDialog key={`linked-${linkedApproval.requestId}`} contactId={linked.id} name={linked.name} approval={linkedApproval} onClose={() => setLinked(null)} />}
       <ZohoVendorDrawer vendor={viewing} canWrite={canWrite} onCost={(v) => { setViewing(null); setCostFor(v); }} onClose={() => setViewing(null)} />
 
       {costFor && <VendorCostDialog key={costFor._id} vendor={costFor} onClose={() => setCostFor(null)} />}
@@ -93,49 +95,106 @@ export function VendorMaster({ canWrite }: { canWrite: boolean }) {
 }
 
 /** The search box and what it finds. Nothing is listed until something is typed, so the 500+ vendors never fill the screen. */
-function SearchResults({ canWrite, onCost, onView, syncing, empty }: { canWrite: boolean; onCost: (v: ZohoVendorRow) => void; onView: (v: ZohoVendorRow) => void; syncing: boolean; empty: boolean }) {
+function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { canWrite: boolean; onCost: (v: ZohoVendorRow) => void; onView: (v: ZohoVendorRow) => void; signageOnly: boolean; all: boolean; onAll: (v: boolean) => void }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim());
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-  /** Off: nothing is fetched until something is typed. On: the whole Zoho list is fetched (page by page) and the search narrows it. */
-  const [all, setAll] = useState(false);
-  const searching = all || dq.length >= 2;
-  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active" }, searching);
+  /** Off (the default): Zoho is not called until the toggle is switched on or something is typed. On: the list is read page by page; the search narrows it. */
+  const [cities, setCities] = useState<string[]>([]);
+  const cityChoices = useZohoVendorCities();
+  const startSync = useStartZohoCitySync();
+  const sync = cityChoices.data?.sync;
+  /** Cost filter: every vendor, only those with a cost added, or only those without one. */
+  const [cost, setCost] = useState<"" | "set" | "missing">("");
+  const costLabel = { "": "Cost", set: "Cost added", missing: "Cost not added" }[cost];
+  const searching = all || dq.length >= 2 || cities.length > 0 || cost !== "";
+  const list = useZohoDirectory({ page, limit, q: dq.length >= 2 ? dq : undefined, status: "active", signageOnly: signageOnly ? "true" : "false", ...(cities.length ? { cities: cities.join(",") } : {}), ...(cost ? { price: cost } : {}) }, searching);
+  const toggleCity = (c: string) => { setCities((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c])); setPage(1); };
   const rows = list.data?.data ?? [];
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 p-3">
         <div className="relative min-w-52 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search by vendor ID, name, GST, PAN, phone, email, city…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
+          <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search Zoho by vendor ID, name, phone, GST / PAN, city or address…" className="pl-9" aria-label="Search Zoho vendors" autoComplete="off" />
         </div>
-        <ZohoToggle on={all} onChange={(v) => { setAll(v); setPage(1); }} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" aria-label="Filter by cost" className={cn(cost && "border-vendor text-vendor")}>
+              <BadgeIndianRupee className="size-4" aria-hidden /> {costLabel} <ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Show vendors with</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {([["", "All vendors"], ["set", "Cost added"], ["missing", "Cost not added"]] as const).map(([v, label]) => (
+              <DropdownMenuItem key={v || "all"} onSelect={() => { setCost(v); setPage(1); }}>
+                <span className={cn("flex size-4 items-center justify-center rounded-full border", cost === v ? "border-vendor bg-vendor text-white" : "border-border bg-white")}>{cost === v && <Check className="size-3" aria-hidden />}</span>
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" aria-label="Filter by city" className={cn(cities.length > 0 && "border-vendor text-vendor")}>
+              <MapPin className="size-4" aria-hidden />
+              {cities.length === 0 ? "City" : cities.length === 1 ? cities[0] : `${cities.length} cities`}
+              <ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-80 min-w-56 overflow-y-auto">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Tick the cities to show</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {sync?.running && <p className="px-3 py-2 text-xs text-muted-foreground">{sync.signageLeft > 0 ? `Reading Signage vendors first… ${sync.signageTotal - sync.signageLeft} / ${sync.signageTotal}` : `Signage vendors ready. Reading the other vendors… ${sync.done} / ${sync.total || "…"}`} More cities appear as it goes.</p>}
+            {!sync?.running && !cityChoices.data?.cities.length && <p className="px-3 py-2 text-xs text-muted-foreground">No city read yet.</p>}
+            {!sync?.running && (
+              <DropdownMenuItem onSelect={(e) => { e.preventDefault(); startSync.mutate(); }}>Read addresses from Zoho again</DropdownMenuItem>
+            )}
+            {cityChoices.data?.cities.map(({ name: c, count }) => {
+              const on = cities.includes(c);
+              return (
+                <DropdownMenuItem key={c} onSelect={(e) => { e.preventDefault(); toggleCity(c); }}>
+                  <span className={cn("flex size-4 items-center justify-center rounded border", on ? "border-vendor bg-vendor text-white" : "border-border bg-white")}>{on && <Check className="size-3" aria-hidden />}</span>
+                  <span className="flex-1">{c}</span><span className="text-xs text-muted-foreground">{count}</span>
+                </DropdownMenuItem>
+              );
+            })}
+            {cities.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setCities([]); setPage(1); }}>Clear cities</DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <ZohoToggle on={all} onChange={(v) => { onAll(v); setPage(1); }} />
       </div>
       {!searching ? (
-        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">{empty && !syncing ? "No Zoho vendors stored yet. Press “Sync from Zoho” first." : ""}</p>
+        <p className="border-t border-border px-4 py-6 text-center text-sm text-muted-foreground">Type at least 2 letters or digits of a vendor name, vendor ID, phone, GST / PAN, city or address to search every vendor in Zoho, pick a City or Cost filter, or switch on “Zoho vendors” to browse the list (read live from Zoho, page by page; nothing is saved until you add a cost).</p>
       ) : list.isPending ? (
         <RowsSkeleton rows={4} className="p-4" />
       ) : list.isError ? (
         <ErrorState error={list.error} onRetry={() => list.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState title="No vendor found" description="Check the spelling, or try the vendor ID, GST, PAN or phone number." />
+        <EmptyState title="No vendor found" description="Check the spelling, or try the vendor number, phone number or e-mail. GST and PAN are not searchable in Zoho." />
       ) : (
         <>
           <div className={cn("overflow-x-auto border-t border-border transition-opacity", list.isFetching && "opacity-60")}>
             <table className="w-full min-w-[820px] text-sm">
               <thead className="bg-[#eef4ff] text-left text-xs uppercase tracking-wide text-navy">
-                <tr><th className="px-4 py-3">Vendor ID</th><th className="px-4 py-3">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">GST / PAN</th><th className="px-4 py-3">City</th><th className="px-4 py-3">Cost</th><th className="px-4 py-3 text-right">Action</th></tr>
+                <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#eef4ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#eef4ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">GST / PAN</th><th className="px-4 py-3">City</th><th className="px-4 py-3">Cost</th><th className="px-4 py-3 text-right">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.map((v) => (
-                  <tr key={v._id} className="cursor-pointer hover:bg-[#f4f8ff]" onClick={() => onView(v)} title="Click to see all details">
-                    <td className="px-4 py-3 font-mono font-semibold text-navy">{v.vendorNo ?? "–"}</td>
-                    <td className="max-w-60 px-4 py-3 font-semibold text-navy"><span className="block truncate" title={v.name}>{v.name}</span></td>
+                  <tr key={v._id} className="group cursor-pointer hover:bg-[#f4f8ff]" onClick={() => onView(v)} title="Click to see all details">
+                    <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#f4f8ff]`}>{v.vendorNo ?? "–"}</td>
+                    <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#f4f8ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span></td>
                     <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
                     <td className="px-4 py-3 text-xs">{v.gstin ?? "–"}<span className="block text-muted-foreground">{v.pan ?? ""}</span></td>
                     <td className="max-w-36 truncate px-4 py-3">{v.city || "–"}</td>
-                    <td className="px-4 py-3">{v.price.ratePerShop != null ? <Badge tone="success"><Check className="mr-1 size-3" aria-hidden />{money(v.price.ratePerShop)}</Badge> : <span className="text-xs text-muted-foreground">Not added</span>}</td>
+                    <td className="px-4 py-3">{v.price.ratePerShop != null ? <Badge tone="success"><Check className="mr-1 size-3" aria-hidden />{money(v.price.ratePerShop)}</Badge> : <span className="text-xs text-muted-foreground">Not added</span>}{v.price.pending && <span className="mt-1 block text-xs font-semibold text-approval" title={`Company rate ${money(v.price.pending.limitRate)} / travelling cost ${money(v.price.pending.limitFar)}. Waiting for the approver's reply (${v.price.pending.requestId}).`}>Waiting for approval: {money(v.price.pending.ratePerShop)}{v.price.pending.farRatePerShop != null ? ` / travelling ${money(v.price.pending.farRatePerShop)}` : ""}</span>}</td>
                     <td className="px-4 py-3 text-right">{canWrite && <Button size="sm" {...(v.price.ratePerShop != null ? { variant: "outline" as const } : { className: "bg-vendor hover:bg-vendor/90" })} onClick={(e) => { e.stopPropagation(); onCost(v); }}><BadgeIndianRupee className="size-4" aria-hidden /> {v.price.ratePerShop != null ? "Edit cost" : "Add cost"}</Button>}</td>
                   </tr>
                 ))}
@@ -149,8 +208,8 @@ function SearchResults({ canWrite, onCost, onView, syncing, empty }: { canWrite:
   );
 }
 
-/** Only vendors whose cost was added. */
-function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; onView: (v: ZohoVendorRow) => void; onEdit: (v: ZohoVendorRow) => void; onRemove: (v: ZohoVendorRow) => void }) {
+/** Only vendors whose cost was added, or is waiting for approval. */
+function WithCost({ canWrite, onView, onEdit, onRemove, onStatus }: { canWrite: boolean; onView: (v: ZohoVendorRow) => void; onEdit: (v: ZohoVendorRow) => void; onRemove: (v: ZohoVendorRow) => void; onStatus: (v: ZohoVendorRow) => void }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim());
   const [page, setPage] = useState(1);
@@ -163,7 +222,7 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
         <span className="flex size-10 items-center justify-center rounded-xl bg-[#f1e6ff] text-vendor"><BadgeIndianRupee className="size-5" aria-hidden /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-bold text-navy">Vendors with cost <span className="font-normal text-muted-foreground">({list.data?.meta.total ?? 0})</span></h2>
-          <p className="text-xs text-muted-foreground">Price per shop, far-distance price and skills of the vendors you added.</p>
+          <p className="text-xs text-muted-foreground">Price per shop, travelling cost and skills of the vendors you added.</p>
         </div>
         <div className="relative min-w-52">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -177,21 +236,26 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
         ) : list.isError ? (
           <ErrorState error={list.error} onRetry={() => list.refetch()} />
         ) : rows.length === 0 ? (
-          <EmptyState title="No vendor has a cost yet" description="Search a vendor above and press “Add cost”. It will be listed here." />
+          <EmptyState title="No vendor has a cost yet" description="Search a vendor above and press “Add cost”. It will be listed here, also while its cost waits for approval." />
         ) : (
-          <table className="w-full min-w-[860px] text-sm">
+          <table className="w-full min-w-[1050px] text-sm">
             <thead className="bg-[#f6f0ff] text-left text-xs uppercase tracking-wide text-navy">
-              <tr><th className="px-4 py-3">Vendor ID</th><th className="px-4 py-3">Vendor name</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3 text-right">Price / shop</th><th className="px-4 py-3 text-right">Far price</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              <tr><th className="sticky left-0 z-20 w-32 min-w-32 bg-[#f6f0ff] px-4 py-3">Vendor ID</th><th className="sticky left-32 z-20 bg-[#f6f0ff] px-4 py-3 shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]">Vendor name</th><th className="px-3 py-3">Phone</th><th className="px-3 py-3">City</th><th className="px-3 py-3 text-right">Price / shop</th><th className="px-3 py-3 text-right">Travelling cost</th><th className="px-3 py-3">Skills</th><th className="px-3 py-3">Cost added / updated</th><th className="px-4 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((v) => (
-                <tr key={v._id} className="cursor-pointer hover:bg-[#faf6ff]" onClick={() => onView(v)} title="Click to see all details">
-                  <td className="px-4 py-3 font-mono font-semibold text-navy">{v.vendorNo ?? "–"}</td>
-                  <td className="max-w-60 px-4 py-3 font-semibold text-navy"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
-                  <td className="px-4 py-3 text-right font-semibold tabular-nums">{money(v.price.ratePerShop)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{money(v.price.farRatePerShop)}</td>
-                  <td className="px-4 py-3"><div className="flex max-w-60 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>
+                <tr key={v._id} className="group cursor-pointer hover:bg-[#faf6ff]" onClick={() => onView(v)} title="Click to see all details">
+                  <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#faf6ff]`}>{v.vendorNo ?? "–"}</td>
+                  <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#faf6ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums">{v.mobile ?? "–"}</td>
+                  <td className="max-w-32 px-3 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.ratePerShop)}</span> : money(v.price.ratePerShop)}{v.price.approval && <div><ApprovalTag a={v.price.approval} /></div>}{canWrite && v.price.approval && <button type="button" className="mt-0.5 block w-full text-right text-xs font-semibold text-royal hover:underline" onClick={(e) => { e.stopPropagation(); onStatus(v); }}>View status</button>}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{v.price.farRatePerShop == null && v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.farRatePerShop)}</span> : money(v.price.farRatePerShop)}</td>
+                  <td className="px-3 py-3"><div className="flex max-w-56 flex-wrap gap-1">{v.price.skills?.length ? v.price.skills.map((k) => <span key={k} className="rounded-full bg-[#f1e6ff] px-2 py-0.5 text-xs font-medium text-vendor">{k}</span>) : <span className="text-xs text-muted-foreground">–</span>}</div></td>
+                  <td className="whitespace-nowrap px-3 py-3 text-xs">
+                    <span className="block text-muted-foreground">Added {v.price.createdAt ? formatDateTime(v.price.createdAt) : "–"}</span>
+                    <span className="block">Updated {v.price.updatedAt ? formatDateTime(v.price.updatedAt) : "–"}</span>
+                  </td>
                   <td className="px-4 py-3">
                     {canWrite && (
                       <div className="flex justify-end gap-1">
@@ -211,14 +275,19 @@ function WithCost({ canWrite, onView, onEdit, onRemove }: { canWrite: boolean; o
   );
 }
 
-/** Add or change the cost of one vendor: price per shop, far-distance price, skills (pick from the list or add a new one). */
+/** Add or change the cost of one vendor: price per shop, travelling cost, skills (pick from the list or add a new one). */
 function VendorCostDialog({ vendor, onClose }: { vendor: ZohoVendorRow; onClose: () => void }) {
   const toast = useToast();
   const save = useSetZohoPrice();
   const skills = useVendorSkills();
   const addSkill = useAddVendorSkill();
-  const [rate, setRate] = useState(vendor.price.ratePerShop != null ? String(vendor.price.ratePerShop) : "");
-  const [far, setFar] = useState(vendor.price.farRatePerShop != null ? String(vendor.price.farRatePerShop) : "");
+  const company = useCompanyRates().data;
+  // Untouched boxes show the vendor's own cost, else the company rate set by the Super Admin.
+  const [typedRate, setRate] = useState<string | null>(vendor.price.ratePerShop != null ? String(vendor.price.ratePerShop) : null);
+  const [typedFar, setFar] = useState<string | null>(vendor.price.farRatePerShop != null ? String(vendor.price.farRatePerShop) : null);
+  const rate = typedRate ?? (company ? String(company.ratePerShop) : "");
+  const far = typedFar ?? (company && vendor.price.ratePerShop == null ? String(company.farRatePerShop) : "");
+  const over = !!company && ((rate.trim() !== "" && Number(rate) > company.ratePerShop) || (far.trim() !== "" && Number(far) > company.farRatePerShop));
   const [picked, setPicked] = useState<string[]>(vendor.price.skills ?? []);
   const [newSkill, setNewSkill] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -230,10 +299,10 @@ function VendorCostDialog({ vendor, onClose }: { vendor: ZohoVendorRow; onClose:
     if (r == null) e.rate = "Enter the price per shop";
     else if (!(r >= 0)) e.rate = "Enter an amount";
     if (f != null && !(f >= 0)) e.far = "Enter an amount";
-    else if (r != null && f != null && f < r) e.far = "Far price cannot be lower than the normal price";
+    else if (r != null && f != null && f < r) e.far = "Travelling cost cannot be lower than the price per shop";
     setErrors(e);
     if (Object.keys(e).length) return;
-    save.mutate({ contactId: vendor.zohoContactId, ratePerShop: r, farRatePerShop: f, skills: picked }, { onSuccess: () => { toast(`${vendor.name}: cost saved`); onClose(); }, onError: (err) => toast(errorMessage(err), "error") });
+    save.mutate({ contactId: vendor.zohoContactId, ratePerShop: r, farRatePerShop: f, skills: picked }, { onSuccess: (p) => { toast(p.pending ? `${vendor.name}: ${money(p.pending.ratePerShop)} is above the company rate ${money(p.pending.limitRate)}. Sent for approval; the current cost stays until the reply.` : `${vendor.name}: cost saved`); onClose(); }, onError: (err) => toast(errorMessage(err), "error") });
   }
   function createSkill() {
     const name = newSkill.trim();
@@ -254,13 +323,18 @@ function VendorCostDialog({ vendor, onClose }: { vendor: ZohoVendorRow; onClose:
       title={vendor.price.ratePerShop != null ? "Edit cost" : "Add cost"}
       description={`${vendor.vendorNo ? `${vendor.vendorNo} · ` : ""}${vendor.name}`}
       className="max-w-xl"
-      footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button className="bg-vendor hover:bg-vendor/90" loading={save.isPending} onClick={submit}>Save cost</Button></div>}
+      footer={<div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancel</Button><Button className="bg-vendor hover:bg-vendor/90" loading={save.isPending} onClick={submit}>{over ? "Send for approval" : "Save cost"}</Button></div>}
     >
       <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); submit(); }}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Price per shop (₹)" htmlFor="c-rate" required error={errors.rate}><Input id="c-rate" format="decimal" maxLength={7} value={rate} onChange={(e) => { setRate(e.target.value); setErrors((x) => ({ ...x, rate: "" })); }} aria-invalid={!!errors.rate} autoFocus /></Field>
-          <Field label="Far distance price (₹)" htmlFor="c-far" error={errors.far} hint="Optional. Not lower than the price per shop"><Input id="c-far" format="decimal" maxLength={7} value={far} onChange={(e) => { setFar(e.target.value); setErrors((x) => ({ ...x, far: "" })); }} aria-invalid={!!errors.far} /></Field>
+          <Field label="Price per shop (₹)" htmlFor="c-rate" required error={errors.rate} hint={company ? `Company rate ₹${company.ratePerShop}` : undefined}><Input id="c-rate" format="decimal" maxLength={7} value={rate} onChange={(e) => { setRate(e.target.value); setErrors((x) => ({ ...x, rate: "" })); }} aria-invalid={!!errors.rate} autoFocus /></Field>
+          <Field label="Travelling cost (₹)" htmlFor="c-far" error={errors.far} hint={company ? `Company rate ₹${company.farRatePerShop}. Optional, not lower than the price per shop` : "Optional. Not lower than the price per shop"}><Input id="c-far" format="decimal" maxLength={7} value={far} onChange={(e) => { setFar(e.target.value); setErrors((x) => ({ ...x, far: "" })); }} aria-invalid={!!errors.far} /></Field>
         </div>
+        {over && company && (
+          <p role="status" className="rounded-lg border border-[#fbd9b5] bg-[#fff4e6] px-3 py-2 text-sm text-[#9a3412]">
+            This is above the company rate (₹{company.ratePerShop} / travelling cost ₹{company.farRatePerShop}). Saving sends an approval email. The current cost stays until the approver replies: APPROVED applies this amount, NOT APPROVED applies the company rate.
+          </p>
+        )}
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium text-navy">Skills</legend>
           {all.length === 0 ? (

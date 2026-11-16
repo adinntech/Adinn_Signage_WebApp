@@ -19,7 +19,10 @@ export function Modal({
   titleClassName,
   dismissible = true,
   persistent,
+  headerAction,
 }: {
+  /** A button beside the close icon (for example "History"). */
+  headerAction?: React.ReactNode;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   title: string;
@@ -77,12 +80,15 @@ export function Modal({
                         {description ?? title}
                       </Dialog.Description>
                     </div>
-                    <Dialog.Close
-                      aria-label="Close"
-                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <X className="size-5" aria-hidden />
-                    </Dialog.Close>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {headerAction}
+                      <Dialog.Close
+                        aria-label="Close"
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="size-5" aria-hidden />
+                      </Dialog.Close>
+                    </div>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
                   {footer && (

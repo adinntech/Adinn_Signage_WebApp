@@ -37,7 +37,14 @@ export interface Requirement {
   updatedAt?: string;
 }
 
-export interface Project {
+const HANDOVER_ROLE: Record<string, string> = { CLIENT_SERVICING: "CS", BD: "BD" };
+/** Who handed the project to Operations: the person who assigned it (else who created it, else the BD owner), with CS / BD. */
+export function handedOverBy(p: { assignedBy?: { name: string; role?: string } | null; createdBy?: { name: string; role?: string }; owner?: { name?: string; role?: string } | null }) {
+  const who = p.assignedBy ?? p.createdBy ?? (p.owner?.name ? { name: p.owner.name, role: p.owner.role } : null);
+  return { name: who?.name ?? "-", role: HANDOVER_ROLE[who?.role ?? ""] ?? "" };
+}
+
+export interface Project{
   _id: string;
   code: string;
   name: string;
@@ -63,9 +70,11 @@ export interface Project {
   contacts?: ProjectContact[];
   assignedTo?: (Ref & { email?: string; phone?: string }) | null;
   assignedAt?: string;
+  /** Who handed the project to Operations (Client Servicing or BD). */
+  assignedBy?: { name: string; role?: string } | null;
   createdAt: string;
   updatedAt: string;
-  createdBy?: { name: string };
+  createdBy?: { name: string; role?: string };
   requirement?: Requirement | null;
 }
 

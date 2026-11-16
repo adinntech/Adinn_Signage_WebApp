@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { notificationHref, useMarkNotificationRead, useMarkNotificationsRead, useNotifications } from "@/lib/api/pipeline";
 import { cn } from "@/lib/utils";
-import { KIND_META } from "./kind-meta";
+import { kindMeta } from "./kind-meta";
 
 const TABS = [
   { key: "all", label: "All" },
@@ -34,7 +34,7 @@ export function NotificationBell() {
   const unread = q.data?.unread ?? 0;
   const [tab, setTab] = useState("all");
   const all = q.data?.items ?? [];
-  const inTab = (t: string) => (t === "all" ? all : all.filter((n) => KIND_META[n.kind].tab === t));
+  const inTab = (t: string) => (t === "all" ? all : all.filter((n) => kindMeta(n.kind).tab === t));
   const items = inTab(tab).slice(0, 30);
 
   return (
@@ -77,14 +77,14 @@ export function NotificationBell() {
         ) : (
           <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto">
             {items.map((n) => {
-              const k = KIND_META[n.kind];
+              const k = kindMeta(n.kind);
               return (
                 <li key={n.id}>
                   <button
                     type="button"
                     onClick={() => {
                       if (!n.read) markOne.mutate(n.id);
-                      router.push(notificationHref(user?.role, n.projectId, n.kind, n.orderId));
+                      router.push(notificationHref(user?.role, n.projectId, n.kind, n.orderId, n.path));
                     }}
                     className={cn("flex w-full gap-3 px-3 py-2.5 text-left hover:bg-muted", !n.read && "bg-[#f4f8ff]")}
                   >

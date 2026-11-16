@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { RichTextEditor, RichTextView } from "@/components/ui/rich-text-editor";
 import { Select } from "@/components/ui/select";
-import { TagInput } from "@/components/ui/tag-input";
+import { EmailTagInput } from "@/components/mail/email-tag-input";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -192,16 +192,16 @@ export function MailCompose({
                 )
               }
             >
-              <TagInput id="cm-to" value={v.to} onChange={(to) => setV({ ...v, to })} placeholder="Type an email and press Enter" max={20} />
+              <EmailTagInput id="cm-to" value={v.to} onChange={(to) => setV({ ...v, to })} placeholder="Type an email and press Enter" max={20} />
             </Row>
             {showCc && (
               <Row label="Cc" htmlFor="cm-cc" error={errors.cc}>
-                <TagInput id="cm-cc" value={v.cc} onChange={(cc) => setV({ ...v, cc })} placeholder="Optional" max={20} />
+                <EmailTagInput id="cm-cc" value={v.cc} onChange={(cc) => setV({ ...v, cc })} placeholder="Optional" max={20} />
               </Row>
             )}
             {showBcc && (
               <Row label="Bcc" htmlFor="cm-bcc" error={errors.bcc}>
-                <TagInput id="cm-bcc" value={v.bcc} onChange={(bcc) => setV({ ...v, bcc })} placeholder="Hidden from the other recipients" max={20} />
+                <EmailTagInput id="cm-bcc" value={v.bcc} onChange={(bcc) => setV({ ...v, bcc })} placeholder="Hidden from the other recipients" max={20} />
               </Row>
             )}
             <Row label="Subject" required htmlFor="cm-subject" error={errors.subject}>

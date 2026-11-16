@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
 import { motion, useReducedMotion } from "framer-motion";
 import { BadgeCheck, Check, ExternalLink, FilterX, RefreshCw, Search } from "lucide-react";
 import { CodeStatusBadge, ConfirmCodeDialog, EvidenceLinks, RejectCodeDialog } from "@/components/client-servicing/code-parts";
@@ -101,6 +102,7 @@ export function CodeConfirmation() {
               <option value="PROJECT_CODE">Project Code</option>
             </Select>
           </div>
+          <GetReplyButton />
           <Button variant="outline" disabled={!filtered} onClick={() => (setQ(""), setKind(""), setPage(1))}>
             <FilterX className="size-4" aria-hidden /> Clear
           </Button>
@@ -146,6 +148,7 @@ export function CodeConfirmation() {
                       </td>
                       <td className="px-4 py-3">
                         <CodeStatusBadge status={r.status} />
+                        {r.status === "PENDING_CONFIRMATION" && r.reply && <span className="mt-0.5 block text-xs font-medium text-royal">Reply received{r.reply.detectedCode ? `: ${r.reply.detectedCode}` : ""}</span>}
                         {r.mailStatus === "SKIPPED" && <span className="mt-0.5 block text-xs text-warning">Email off: recorded only</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -182,7 +185,7 @@ export function CodeConfirmation() {
         {!list.isError && rows.length > 0 && <Pagination meta={list.data?.meta} onPage={setPage} />}
       </Card>
 
-      <ConfirmCodeDialog key={confirm ? `${confirm.orderId}${confirm.kind}` : "c"} orderId={confirm?.orderId ?? ""} kind={confirm?.kind ?? null} onClose={() => setConfirm(null)} />
+      <ConfirmCodeDialog key={confirm ? `${confirm.orderId}${confirm.kind}` : "c"} orderId={confirm?.orderId ?? ""} kind={confirm?.kind ?? null} reply={confirm ? rows.find((x) => x.order?._id === confirm.orderId && x.kind === confirm.kind && x.active)?.reply : null} history={confirm ? rows.find((x) => x.order?._id === confirm.orderId && x.kind === confirm.kind && x.active)?.replyHistory : undefined} onClose={() => setConfirm(null)} />
       <RejectCodeDialog key={reject ? `${reject.orderId}${reject.kind}` : "r"} orderId={reject?.orderId ?? ""} kind={reject?.kind ?? null} onClose={() => setReject(null)} />
     </div>
   );

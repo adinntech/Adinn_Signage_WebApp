@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { ReplyBanner } from "@/components/mail/reply-banner";
+import { GetReplyButton } from "@/components/mail/get-reply-button";
 import { RichTextView } from "@/components/ui/rich-text-editor";
 import { ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
@@ -56,7 +58,7 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
   const setId = useSetVendorId();
   const { upload, remove } = useKycFiles();
   const [resend, setResend] = useState(false);
-  const [no, setNo] = useState("");
+  const [typed, setTyped] = useState<string | null>(null);
   const [noError, setNoError] = useState("");
   const [busy, setBusy] = useState<KycDocKey | null>(null);
   const [deleting, setDeleting] = useState<Attached | null>(null);
@@ -67,6 +69,10 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
   const d = q.data;
   const sent = !!d?.registration?.mailSentAt;
   const saved = d?.zohoVendorNo;
+  const reply = d?.registration?.reply;
+  /** What is in the box: what the person typed, else the vendor ID read from Accounts' reply. */
+  const no = typed ?? reply?.detectedVendorNo ?? "";
+  const setNo = (v: string) => setTyped(v);
 
   const saveId = () => {
     if (!/^\d{2,8}$/.test(no)) return setNoError("Enter the vendor ID Accounts sent (2 to 8 digits)");
@@ -220,12 +226,19 @@ export function VendorRegistrationPanel({ vendor }: { vendor: VendorRef }) {
 
       {sent && (
         <section aria-label="Vendor ID" className="rounded-xl border border-[#cfe0ff] bg-gradient-to-br from-[#eef4ff] to-[#f7f0ff] p-4">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><KeyRound className="size-4 text-royal" aria-hidden /> Vendor ID from Accounts</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><KeyRound className="size-4 text-royal" aria-hidden /> Vendor ID from Accounts</h3>
+            {!saved && <GetReplyButton size="sm" />}
+          </div>
           {saved ? (
             <p className="mt-2 flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-finance" aria-hidden /> Vendor ID <span className="font-mono font-bold text-navy">{saved}</span> saved. The vendor is now active.</p>
           ) : (
             <>
-              <p className="mt-1 text-xs text-muted-foreground">When Accounts reply to the mail with the vendor ID, type it here and proceed.</p>
+              {reply ? (
+                <ReplyBanner from={reply.from} receivedAt={reply.receivedAt} status={reply.status} reason={reply.reason} value={reply.detectedVendorNo} valueLabel="Vendor ID" snippet={reply.snippet} since={d?.registration?.mailSentAt} />
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">When Accounts reply to the mail with the vendor ID, it appears here on its own. You can also type it.</p>
+              )}
               <form className="mt-3 flex flex-wrap items-start gap-2" onSubmit={(e) => { e.preventDefault(); saveId(); }}>
                 <div className="min-w-44 flex-1">
                   <label htmlFor="reg-vid" className="sr-only">Vendor ID</label>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { EmailTagInput } from "@/components/mail/email-tag-input";
 import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -223,10 +224,10 @@ export function EmailComposer({
           <Input id={id("from")} value={from ?? "Not configured"} readOnly disabled />
         </Field>
         <Field label="To Email" htmlFor={id("to")} required error={errors.to}>
-          <TagInput id={id("to")} value={v.to} invalid={!!errors.to} onDraftChange={(t) => (pending.current.to = t)} onChange={(to) => setV((p) => ({ ...p, to }))} placeholder="Type an email and press Enter" max={20} />
+          <EmailTagInput id={id("to")} value={v.to} invalid={!!errors.to} onDraftChange={(t) => (pending.current.to = t)} onChange={(to) => setV((p) => ({ ...p, to }))} placeholder="Type an email and press Enter" max={20} />
         </Field>
         <Field label="CC Email" htmlFor={id("cc")} error={errors.cc} className="md:col-span-2">
-          <TagInput id={id("cc")} value={v.cc} invalid={!!errors.cc} onDraftChange={(t) => (pending.current.cc = t)} onChange={(cc) => setV((p) => ({ ...p, cc }))} placeholder="Optional" max={20} />
+          <EmailTagInput id={id("cc")} value={v.cc} invalid={!!errors.cc} onDraftChange={(t) => (pending.current.cc = t)} onChange={(cc) => setV((p) => ({ ...p, cc }))} placeholder="Optional" max={20} />
         </Field>
         <Field label="Subject" htmlFor={id("subject")} required error={errors.subject} className="md:col-span-2">
           <Input id={id("subject")} value={v.subject} maxLength={250} aria-invalid={!!errors.subject} onChange={(e) => setV({ ...v, subject: e.target.value })} />
