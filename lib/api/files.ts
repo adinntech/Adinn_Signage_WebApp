@@ -37,6 +37,13 @@ export const fileUrl = (fileId: string, src: FileSource) =>
           : `/email-templates/${src.templateSlug}/pdf/url`,
   );
 
+/**
+ * API path of a file's bytes for the in-app Excel / CSV preview. Project handover files (Client Servicing / BD) are
+ * read through the project; null = no such route for this source (the signed link is read instead).
+ */
+export const fileContentPath = (fileId: string, src?: FileSource | null) =>
+  !src ? `/files/${fileId}/content` : "projectId" in src ? `/projects/${src.projectId}/bd-handover/files/${fileId}/content` : null;
+
 /** Open a stored file in a new tab (preview). The tab is opened first so pop-up blockers allow it. */
 export async function openFile(fileId: string, src: FileSource) {
   const win = window.open("about:blank", "_blank");

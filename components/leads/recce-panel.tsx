@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { GetReplyButton } from "@/components/mail/get-reply-button";
@@ -136,7 +136,7 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#0e7490]">Included automatically</p>
         <ul className="divide-y divide-border overflow-hidden rounded-lg border border-[#a5f3fc] bg-[#ecfeff]/60">
           <li className="flex items-center gap-3 px-3 py-2.5 text-sm">
-            <UserRound className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Client details and contact persons (in the message)
+            <UserRound className="size-4 shrink-0 text-[#0891b2]" aria-hidden /> Client details and the primary contact person (in the message)
           </li>
           {r.rateCard?.choice === "SKIPPED" && (
             <li className="flex items-center gap-3 px-3 py-2.5 text-sm text-muted-foreground">
@@ -165,8 +165,9 @@ function Attachments({ r, files, onFiles }: { r: RecceState; files: File[]; onFi
           {a?.shopExcel && (
             <AttachmentRow
               icon={FileSpreadsheet}
-              name={`Shop list (${a.shopExcel.rows} shop${a.shopExcel.rows === 1 ? "" : "s"}).xlsx`}
-              meta={`${a.shopExcel.sized ? "With sizes · " : ""}as the table is when you send · Excel opens after download`}
+              // The uploaded Excel's name (the file sent under it); shops added by hand: the generated name.
+              name={a.shopExcel.name ?? `Shop list (${a.shopExcel.rows} shop${a.shopExcel.rows === 1 ? "" : "s"}).xlsx`}
+              meta={`${a.shopExcel.rows} shop${a.shopExcel.rows === 1 ? "" : "s"} · ${a.shopExcel.sized ? "with sizes · " : ""}as the table is when you send · Excel opens after download`}
               onPreview={() => setShopsOpen(true)}
               previewLabel="View"
               onDownload={() => void downloadShopExcel(r.orderId).catch(fail)}
@@ -495,6 +496,40 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const [estimateId, setEstimateId] = useStepDraft(`${key}:estimate`, "");
   const [query, setQuery] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Get Reply: the project code read from the reply is chosen once the Zoho estimates load (never over a choice already
+  // made, never saved by itself). Its estimate is chosen only when it is the only usable one, or the one the reply names.
+  const [replyPick, setReplyPick] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+  const pickedFor = useRef<string | null>(null);
+  const replyCode = r.codeReply?.detectedCode ?? [...(r.codeReplyHistory ?? [])].sort((a, b) => +new Date(b.receivedAt ?? b.at ?? 0) - +new Date(a.receivedAt ?? a.at ?? 0)).find((h) => h.detectedCode)?.detectedCode ?? null;
+  const replyEsts = (r.codeReply?.estimates?.length ? r.codeReply.estimates : (r.codeReplyHistory ?? []).find((h) => h.estimates?.length)?.estimates) ?? [];
+  const replyEstKey = replyEsts.join(",");
+  useEffect(() => {
+    const items = estimates.data?.items;
+    if (locked || r.codes || !replyCode || !items || pickedFor.current === replyCode) return;
+    pickedFor.current = replyCode;
+    if (project) return; // A project code is already chosen (by hand or kept from before): left as it is.
+    const rows = items.filter((e) => e.projectCode === replyCode);
+    const free = rows.filter((e) => e.valid && !e.usedBy);
+    if (!rows.length) {
+      setReplyPick({ tone: "warn", text: `Project code ${replyCode} from the reply is not among this client's Zoho estimates. Choose the project code below.` });
+      return;
+    }
+    if (!free.length) {
+      const used = rows.find((e) => e.usedBy);
+      setReplyPick({ tone: "warn", text: `Project code ${replyCode} from the reply cannot be used: ${used ? `already used by ${used.usedBy}` : "not a valid code"}. Choose another one below.` });
+      return;
+    }
+    setProject(replyCode);
+    const named = free.filter((e) => replyEstKey.split(",").includes(e.estimationCode));
+    const pick = free.length === 1 ? free[0] : named.length === 1 ? named[0] : null;
+    setEstimateId(pick?.estimateId ?? "");
+    setReplyPick(
+      pick
+        ? { tone: "ok", text: `Selected from the reply: ${replyCode} / ${pick.estimationCode}. Check them, then Save Codes.` }
+        : { tone: "warn", text: `Project code ${replyCode} selected from the reply. It has ${free.length} estimates: choose the estimation code, then Save Codes.` },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the estimates or the reply change, not on each choice
+  }, [estimates.data, replyCode, replyEstKey, locked, r.codes]);
   if (locked && r.codes) {
     const found = estimates.data?.items.find((e) => e.estimationCode === r.codes?.estimationCode && e.projectCode === r.codes?.projectCode);
     return <CodesView r={r} estimate={found ?? null} loading={!r.codes.estimate && estimates.isFetching} />;
@@ -533,6 +568,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       return;
     }
     setProject(o.value);
+    setReplyPick(null);
     setEstimateId("");
     setQuery("");
     setErrors({});
@@ -591,11 +627,16 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       {reply && !r.codes && (
         <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
           <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
-          <p className="mt-1">{reply.detectedCode ? <>Project code <span className="font-mono font-bold">{reply.detectedCode}</span> was read from the reply. Choose it below.</> : "No single project code could be read from the reply."}{!!reply.estimates?.length && <> Estimates in the reply: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span>.</>}</p>
+          <p className="mt-1">{reply.detectedCode ? <>Project code <span className="font-mono font-bold">{reply.detectedCode}</span> was read from the reply.</> : "No single project code could be read from the reply."}{!!reply.estimates?.length && <> Estimates in the reply: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span>.</>}</p>
           {replies.length > 1 && (
             <details className="mt-1 text-xs"><summary className="cursor-pointer font-semibold">Replies read ({replies.length})</summary>
               <ul className="mt-1 space-y-1">{replies.map((h, i) => <li key={i}><span className="font-mono font-semibold">{h.detectedCode ?? "No code found"}</span>{!!h.estimates?.length && <span className="font-mono text-muted-foreground"> · {h.estimates.join(", ")}</span>}<span className="text-muted-foreground"> · {h.from} · {formatDateTime(h.receivedAt ?? h.at)}{i === 0 ? " · latest" : ""}</span></li>)}</ul>
             </details>
+          )}
+          {replyPick && (
+            <p className={cn("mt-1.5 flex items-start gap-1.5 font-medium", replyPick.tone === "ok" ? "text-success" : "text-warning")}>
+              {replyPick.tone === "ok" ? <BadgeCheck className="mt-0.5 size-4 shrink-0" aria-hidden /> : <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />} {replyPick.text}
+            </p>
           )}
         </div>
       )}
@@ -876,13 +917,37 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
           </Field>
         </div>
         <Field label="Priority" htmlFor="recce-priority">
-          <Select id="recce-priority" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
-            {(Object.keys(PRIORITIES) as Priority[]).map((p) => (
-              <option key={p} value={p}>
-                {PRIORITIES[p]}
-              </option>
-            ))}
-          </Select>
+          {/* High / Medium / Low; Urgent shows only when it is the value already chosen (kept, never changed silently). */}
+          <div id="recce-priority" role="radiogroup" aria-label="Priority" className="flex gap-2">
+            {(["HIGH", "MEDIUM", "LOW", ...(priority === "URGENT" ? (["URGENT"] as const) : [])] as Priority[]).map((p, i, all) => {
+              const on = priority === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  tabIndex={on ? 0 : -1}
+                  onClick={() => setPriority(p)}
+                  onKeyDown={(e) => {
+                    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+                    if (!step) return;
+                    e.preventDefault();
+                    const next = all[(i + step + all.length) % all.length]!;
+                    setPriority(next);
+                    (e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=radio]")[(i + step + all.length) % all.length])?.focus();
+                  }}
+                  className={cn(
+                    "h-10 flex-1 rounded-lg border text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1",
+                    on ? "border-transparent text-white shadow-sm" : "border-border bg-surface text-foreground hover:bg-muted",
+                  )}
+                  style={on ? { background: TEAL, ["--tw-ring-color" as string]: TEAL } : undefined}
+                >
+                  {PRIORITIES[p]}
+                </button>
+              );
+            })}
+          </div>
         </Field>
         <Field label="Notes for the Recce Team" htmlFor="recce-note" className="md:col-span-2" hint="Optional: added to the project instructions with the handover notes.">
           <Textarea id="recce-note" className="min-h-20" maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />

@@ -10,12 +10,13 @@ import { AttachmentChip } from "@/components/sales/order-comments";
 import { Card } from "@/components/ui/card";
 import { DetailItem, SectionTitle } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/states";
+import type { FileRef } from "@/lib/api/files";
 import type { ProjectHandover } from "@/lib/api/recce";
 import { HANDOVER_TYPES } from "@/lib/api/sales";
 import { formatDate } from "@/lib/format";
 import { clientIdOf } from "@/lib/api/clients";
 
-/** Operations project > BD Handover: what the BD handed over in Lead Management (read-only). */
+/** Operations project > Client Servicing Handover: what Client Servicing / BD handed over (read-only). */
 export function BdHandover({ projectId, h, tabbed = true }: { projectId: string; h: ProjectHandover; /** true: sections as tabs (popup). false: every section one below the other in a single scroll (side panel). */ tabbed?: boolean }) {
   const source = { projectId };
   const c = h.client;
@@ -23,7 +24,8 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
   const [tab, setTab] = useState("overview");
   const on = (k: string) => !tabbed || tab === k;
   const chats = h.messages?.length ?? 0;
-  const docs = [...(h.documents ?? []).map((d) => d.file), ...(h.soDocuments ?? [])].filter((f, i, a) => f?.fileId && a.findIndex((x) => x.fileId === f.fileId) === i);
+  // All files of the workflow with their source (server list); older responses: the shop Excel and SO documents.
+  const docs: (FileRef & { source?: string })[] = h.files ?? [...(h.documents ?? []).map((d) => d.file), ...(h.soDocuments ?? [])].filter((f, i, a) => f?.fileId && a.findIndex((x) => x.fileId === f.fileId) === i);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-gradient-to-r from-navy to-royal px-4 py-3 text-xs text-white">
@@ -45,7 +47,7 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
       />}
       <TabPanel k={tabbed ? tab : "all"} className="space-y-5">
       {on("overview") && (<Card className="p-5">
-        <SectionTitle icon={Hash} title="Codes & Assignment" description={`From BD order ${h.orderNo}`} />
+        <SectionTitle icon={Hash} title="Codes & Assignment" description={`From order ${h.orderNo}`} />
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <DetailItem label="Project Code">
             <span className="font-mono text-base">{h.projectCode}</span>
@@ -57,7 +59,7 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
           <DetailItem label="Assigned">{h.assignedAt ? `${formatDate(h.assignedAt)}${h.assignedBy ? ` by ${h.assignedBy}` : ""}` : null}</DetailItem>
           <DetailItem label="Assign Type">{h.type ? HANDOVER_TYPES[h.type].label : null}</DetailItem>
           {h.note && (
-            <DetailItem label="Note from BD" className="sm:col-span-2 lg:col-span-4">
+            <DetailItem label="Note for the Recce Team" className="sm:col-span-2 lg:col-span-4">
               <span className="whitespace-pre-line">{h.note}</span>
             </DetailItem>
           )}
@@ -132,11 +134,13 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
 
       {on("overview") && docs.length > 0 && (
         <Card className="p-5">
-          <SectionTitle icon={Paperclip} title={`Documents (${docs.length})`} description="Files shared with the handover" />
+          <SectionTitle icon={Paperclip} title={`Documents (${docs.length})`} description="Every file shared in the Client Servicing workflow" />
           <ul className="divide-y divide-border">
             {docs.map((f) => (
               <li key={f.fileId} className="flex items-center gap-3 py-2">
                 <span className="min-w-0 flex-1"><AttachmentChip file={f} source={source} /></span>
+                <span className="hidden shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-semibold uppercase text-muted-foreground sm:inline">{(f.name ?? "").split(".").pop()?.slice(0, 5) || "file"}</span>
+                {f.source && <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-xs font-medium text-royal">{f.source}</span>}
                 <FileActions file={f} source={source} />
               </li>
             ))}

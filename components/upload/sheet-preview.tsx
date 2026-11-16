@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { apiBlob } from "@/lib/api";
+import { fileContentPath, fileUrl, type FileSource } from "@/lib/api/files";
 import { cn } from "@/lib/utils";
 
 type Cell = string | number | boolean | Date | null | undefined;
@@ -20,28 +21,39 @@ function parseCsv(text: string): Cell[][] {
 }
 
 /** Read through the API (with the sign-in token), so it works the same for local and Spaces storage and needs no bucket CORS rule. */
-export async function load(fileId: string, name: string): Promise<SheetData[]> {
-  const { blob } = await apiBlob(`/files/${fileId}/content`);
+/** `source`: the record the file belongs to (order / project handover files are not in the project file store). */
+export async function load(fileId: string, name: string, source?: FileSource | null): Promise<SheetData[]> {
+  const path = fileContentPath(fileId, source);
+  const blob = path ? (await apiBlob(path)).blob : await readSigned(fileId, source!);
   if (/\.csv$/i.test(name)) return [{ name: "Sheet 1", rows: parseCsv(await blob.text()) }];
   const { default: readXlsx } = await import("read-excel-file/browser");
   const sheets = (await readXlsx(blob)) as { sheet: string; data: Cell[][] }[];
   return sheets.map((s) => ({ name: s.sheet, rows: s.data }));
 }
 
+/** Sources without a content route: the file is read from its signed link (needs storage that allows the read). */
+async function readSigned(fileId: string, source: FileSource) {
+  const { url } = await fileUrl(fileId, source);
+  const res = await fetch(url).catch(() => null);
+  if (!res?.ok) throw new Error("Could not read this file here. Use Download to open it.");
+  return res.blob();
+}
+
 /** Shows the first rows of an Excel or CSV file as a table, read in the browser. Sheets switch with the tabs above. */
-export function SheetPreview({ fileId, name }: { fileId: string; name: string }) {
+export function SheetPreview({ fileId, name, source }: { fileId: string; name: string; source?: FileSource | null }) {
   const [sheets, setSheets] = useState<SheetData[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
 
   useEffect(() => {
     let live = true;
-    load(fileId, name)
+    load(fileId, name, source)
       .then((s) => live && setSheets(s))
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message : "Could not read this file"));
     return () => {
       live = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the source object is new on each render; its file id is in the deps
   }, [fileId, name]);
 
   if (error) return <p role="alert" className="py-10 text-center text-sm text-danger">{error}</p>;

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { load } from "@/components/upload/sheet-preview";
+import type { FileSource } from "@/lib/api/files";
 
 type Cell = string | number | boolean | Date | null | undefined;
 
@@ -24,12 +25,12 @@ export function analyseMeasurements(rows: Cell[][]): MeasurementResult {
 }
 
 /** Warns, before the shops are extracted, when a "Shop + measurement" project's Excel has no measurement details. */
-export function MeasurementCheck({ fileId, name }: { fileId: string; name: string }) {
+export function MeasurementCheck({ fileId, name, source }: { fileId: string; name: string; /** Handover files: read through the project. */ source?: FileSource }) {
   const q = useQuery({
     queryKey: ["measurement-check", fileId],
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const sheets = await load(fileId, name);
+      const sheets = await load(fileId, name, source);
       const all = sheets.map((s) => analyseMeasurements(s.rows));
       return all.find((r) => r.filled > 0) ?? all.find((r) => r.columns.length > 0) ?? all[0] ?? { columns: [], filled: 0, rows: 0 };
     },

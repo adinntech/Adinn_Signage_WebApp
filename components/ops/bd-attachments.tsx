@@ -11,6 +11,7 @@ import { FilePreviewDialog } from "@/components/upload/file-preview-dialog";
 import { isSheet } from "@/components/upload/sheet-preview";
 import { ImportWizard } from "@/components/sites/import-wizard";
 import { AttachmentChip } from "@/components/sales/order-comments";
+import type { FileRef } from "@/lib/api/files";
 import { useProjectHandover } from "@/lib/api/recce";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, useProjectFiles, type StoredFile } from "@/lib/api/pipeline";
@@ -30,7 +31,8 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
   const [preview, setPreview] = useState<StoredFile | null>(null);
   const [extract, setExtract] = useState<StoredFile | null>(null);
   const handover = useProjectHandover(project._id).data;
-  const fromCs = [
+  // Every file of the Client Servicing workflow (server list with sources); older responses: shop Excel, SO and chat files.
+  const fromCs: (FileRef & { source?: string })[] = handover?.files ?? [
     ...(handover?.documents ?? []).map((d) => d.file),
     ...(handover?.soDocuments ?? []),
     ...(handover?.messages ?? []).flatMap((m) => m.attachments ?? []),
@@ -41,7 +43,7 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
   const needsMeasurement = project.requirementType === "SHOP_MEASUREMENT";
 
   return (
-    <section aria-label="Attachments from BD" className="rounded-xl border border-border bg-surface shadow-soft">
+    <section aria-label={handover ? "Attachments from Client Servicing" : "Attachments from BD"} className="rounded-xl border border-border bg-surface shadow-soft">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><Paperclip className="size-4 text-royal" aria-hidden /> Attachments from {handover ? "Client Servicing" : "BD"} <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-xs font-semibold text-royal">{list.length + fromCs.length}</span></h3>
         {canEdit && !readOnly && sheets.length > 0 && <p className="text-xs text-muted-foreground">Open a sheet, then press <strong>Extract shops</strong> to edit its rows here.</p>}
@@ -75,14 +77,15 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
       )}
       {fromCs.length > 0 && (
         <div className="border-t border-border">
-          <h4 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Documents shared with the handover (Client Servicing / BD) · {fromCs.length}</h4>
+          <h4 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Documents shared with the handover (Client Servicing) · {fromCs.length}</h4>
           <ul className="divide-y divide-border">
             {fromCs.map((f) => (
               <li key={f.fileId} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
                 <span className="min-w-0 flex-1"><AttachmentChip file={f} source={{ projectId: project._id }} /></span>
+                {f.source && <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-xs font-medium text-royal">{f.source}</span>}
                 <FileActions file={f} source={{ projectId: project._id }} />
                 {canEdit && !readOnly && isSheet(f.name ?? "") && <Button size="sm" className="bg-finance hover:bg-finance/90" onClick={() => setExtract({ id: f.fileId, originalName: f.name ?? "shop-list.xlsx" } as StoredFile)}><Wand2 className="size-4" aria-hidden /> Extract shops</Button>}
-              {needsMeasurement && isSheet(f.name ?? "") && <div className="w-full"><MeasurementCheck fileId={f.fileId} name={f.name ?? "shop-list.xlsx"} /></div>}
+              {needsMeasurement && isSheet(f.name ?? "") && <div className="w-full"><MeasurementCheck fileId={f.fileId} name={f.name ?? "shop-list.xlsx"} source={{ projectId: project._id }} /></div>}
               </li>
             ))}
           </ul>
