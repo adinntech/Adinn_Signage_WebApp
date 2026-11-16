@@ -20,7 +20,7 @@ function parseCsv(text: string): Cell[][] {
 }
 
 /** Read through the API (with the sign-in token), so it works the same for local and Spaces storage and needs no bucket CORS rule. */
-async function load(fileId: string, name: string): Promise<SheetData[]> {
+export async function load(fileId: string, name: string): Promise<SheetData[]> {
   const { blob } = await apiBlob(`/files/${fileId}/content`);
   if (/\.csv$/i.test(name)) return [{ name: "Sheet 1", rows: parseCsv(await blob.text()) }];
   const { default: readXlsx } = await import("read-excel-file/browser");

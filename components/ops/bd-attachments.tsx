@@ -15,7 +15,9 @@ import { useProjectHandover } from "@/lib/api/recce";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, useProjectFiles, type StoredFile } from "@/lib/api/pipeline";
 import type { Project } from "@/lib/api/projects";
+import { FileActions } from "@/components/upload/file-actions";
 import { formatBytes, formatDateTime } from "@/lib/format";
+import { MeasurementCheck } from "./measurement-check";
 
 /**
  * The files BD attached to the project. Operations opens the Excel right here, and "Extract shops" turns its rows into
@@ -35,11 +37,13 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
   ].filter((f, i, a) => f?.fileId && a.findIndex((x) => x.fileId === f.fileId) === i);
   const list = files.data ?? [];
   const sheets = list.filter((f) => isSheet(f.originalName));
+  // "Shop + measurement" projects need width / height in the Excel; the check warns when it is missing.
+  const needsMeasurement = project.requirementType === "SHOP_MEASUREMENT";
 
   return (
     <section aria-label="Attachments from BD" className="rounded-xl border border-border bg-surface shadow-soft">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><Paperclip className="size-4 text-royal" aria-hidden /> Attachments from BD <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-xs font-semibold text-royal">{list.length}</span></h3>
+        <h3 className="flex items-center gap-2 text-sm font-bold text-navy"><Paperclip className="size-4 text-royal" aria-hidden /> Attachments from {handover ? "Client Servicing" : "BD"} <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-xs font-semibold text-royal">{list.length + fromCs.length}</span></h3>
         {canEdit && !readOnly && sheets.length > 0 && <p className="text-xs text-muted-foreground">Open a sheet, then press <strong>Extract shops</strong> to edit its rows here.</p>}
       </div>
       {files.isPending ? (
@@ -58,12 +62,13 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
                 <span className="block text-xs text-muted-foreground">{formatBytes(f.size)} · {formatDateTime(f.createdAt)}</span>
               </button>
               <div className="flex shrink-0 items-center gap-1.5">
-                <Button size="sm" variant="outline" onClick={() => setPreview(f)}><Eye className="size-4" aria-hidden /> View</Button>
-                <Button size="icon" variant="ghost" aria-label={`Download ${f.originalName}`} onClick={() => downloadFile(f.id).catch((e) => toast(errorMessage(e), "error"))}><Download className="size-4" aria-hidden /></Button>
+                <Button size="icon" variant="outline" aria-label={`View ${f.originalName}`} title="View" onClick={() => setPreview(f)}><Eye className="size-4" aria-hidden /></Button>
+                <Button size="icon" variant="outline" aria-label={`Download ${f.originalName}`} title="Download" onClick={() => downloadFile(f.id).catch((e) => toast(errorMessage(e), "error"))}><Download className="size-4" aria-hidden /></Button>
                 {canEdit && !readOnly && isSheet(f.originalName) && (
                   <Button size="sm" className="bg-finance hover:bg-finance/90" onClick={() => setExtract(f)}><Wand2 className="size-4" aria-hidden /> Extract shops</Button>
                 )}
               </div>
+              {needsMeasurement && isSheet(f.originalName) && <div className="w-full"><MeasurementCheck fileId={f.id} name={f.originalName} /></div>}
             </li>
           ))}
         </ul>
@@ -75,7 +80,9 @@ export function BdAttachments({ project, canEdit, readOnly }: { project: Project
             {fromCs.map((f) => (
               <li key={f.fileId} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
                 <span className="min-w-0 flex-1"><AttachmentChip file={f} source={{ projectId: project._id }} /></span>
+                <FileActions file={f} source={{ projectId: project._id }} />
                 {canEdit && !readOnly && isSheet(f.name ?? "") && <Button size="sm" className="bg-finance hover:bg-finance/90" onClick={() => setExtract({ id: f.fileId, originalName: f.name ?? "shop-list.xlsx" } as StoredFile)}><Wand2 className="size-4" aria-hidden /> Extract shops</Button>}
+              {needsMeasurement && isSheet(f.name ?? "") && <div className="w-full"><MeasurementCheck fileId={f.fileId} name={f.name ?? "shop-list.xlsx"} /></div>}
               </li>
             ))}
           </ul>

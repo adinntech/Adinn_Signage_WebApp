@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, ClipboardList, Hash, MessageSquareText, Star, Store } from "lucide-react";
+import { Building2, ClipboardList, Hash, MessageSquareText, Paperclip, Star, Store } from "lucide-react";
+import { FileActions } from "@/components/upload/file-actions";
 import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { HandoverChat } from "@/components/handover/handover-chat";
 import { ShopTable } from "@/components/handover/shop-table";
@@ -22,6 +23,7 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
   const [tab, setTab] = useState("overview");
   const on = (k: string) => !tabbed || tab === k;
   const chats = h.messages?.length ?? 0;
+  const docs = [...(h.documents ?? []).map((d) => d.file), ...(h.soDocuments ?? [])].filter((f, i, a) => f?.fileId && a.findIndex((x) => x.fileId === f.fileId) === i);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-gradient-to-r from-navy to-royal px-4 py-3 text-xs text-white">
@@ -125,6 +127,20 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
               </span>
             </div>
           )}
+        </Card>
+      )}
+
+      {on("overview") && docs.length > 0 && (
+        <Card className="p-5">
+          <SectionTitle icon={Paperclip} title={`Documents (${docs.length})`} description="Files shared with the handover" />
+          <ul className="divide-y divide-border">
+            {docs.map((f) => (
+              <li key={f.fileId} className="flex items-center gap-3 py-2">
+                <span className="min-w-0 flex-1"><AttachmentChip file={f} source={source} /></span>
+                <FileActions file={f} source={source} />
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
 

@@ -161,9 +161,10 @@ export function ProjectDetails() {
                 {p.contacts.map((c) => (
                   <li key={c._id ?? c.phone} className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
                     <span className="grid size-9 shrink-0 place-items-center rounded-full bg-navy text-xs font-semibold text-white">{(c.name || "?").slice(0, 1).toUpperCase()}</span>
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1 leading-snug">
                       <span className="block truncate font-medium text-navy">{c.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{[c.phone, c.email].filter(Boolean).join(" · ") || "-"}</span>
+                      {c.email && <span className="block truncate text-xs text-muted-foreground" title={c.email}>{c.email}</span>}
+                      {c.phone && <span className="block truncate text-xs text-muted-foreground">{c.phone}</span>}
                     </span>
                   </li>
                 ))}
