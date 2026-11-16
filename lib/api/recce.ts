@@ -20,7 +20,8 @@ export interface RecceState {
   orderNo: string;
   /** The lead is open at Project Assign and Client Servicing has not been assigned. */
   unlocked: boolean;
-  codes: { projectCode: string; estimationCode: string; clientId?: string | null; savedAt: string | null; savedBy: string | null } | null;
+  /** `estimate`: the Zoho estimate as it was when the codes were saved (null for codes saved before it was kept). */
+  codes: { projectCode: string; estimationCode: string; clientId?: string | null; savedAt: string | null; savedBy: string | null; estimate?: { date: string | null; total: number | null; status: string | null; salesperson: string | null; location: string | null } | null } | null;
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
   /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
@@ -56,7 +57,8 @@ export interface RecceState {
   assignedAt: string | null;
   assignedBy: string | null;
   note: string | null;
-  project: { _id: string; code: string; status: string } | null;
+  /** The operations project, with the dates and priority it was assigned with. */
+  project: { _id: string; code: string; status: string; startDate?: string | null; targetDate?: string | null; priority?: string | null } | null;
   missing: string[];
   mail: { enabled: boolean; from: string | null };
   draft: { to: string[]; cc: string[]; subject: string; body: string };

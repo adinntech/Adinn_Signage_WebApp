@@ -24,7 +24,7 @@ import { useRecce } from "@/lib/api/recce";
 import { contactPersonsOf } from "@/lib/api/sales";
 import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { AssignedBanner, CodesView } from "./recce-panel";
+import { AssignedView, CodesView } from "./recce-panel";
 import { ASSIGN_META } from "./stage-meta";
 
 const when = (v?: string | null) => (v ? formatDateTimeIST(v) : "—");
@@ -266,7 +266,7 @@ export function LeadFullDetails({ detail: d }: { detail: LeadDetail }) {
             {r.isPending ? <Skeleton className="h-20" /> : r.isError ? <ErrorState error={r.error} onRetry={() => r.refetch()} /> : r.data.codes ? <CodesView r={r.data} /> : <Pending text="Not saved yet." />}
           </Section>
           <Section n={++n} icon={UserRoundCheck} title={`Assign to Recce / Operations${by}`} state={d.recce.assignee ? "done" : "pending"} meta={d.recce.assignee ? `${r.data?.assignedBy ?? "—"} · ${when(d.recce.assignedAt)}` : null}>
-            {r.data?.assignee ? <AssignedBanner r={r.data} /> : <Pending text="Not assigned yet." />}
+            {r.data?.assignee ? <AssignedView r={r.data} /> : <Pending text="Not assigned yet." />}
           </Section>
         </>
       ) : (

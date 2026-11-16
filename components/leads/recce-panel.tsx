@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, History, Inbox, Lock, Mail, Paperclip, Save, Search, Send, SkipForward, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, CalendarCheck, CalendarDays, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Flag, FolderKanban, History, IndianRupee, Inbox, KeyRound, Lock, Mail, MapPin, Paperclip, Phone, Save, Search, Send, SkipForward, StickyNote, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { CONTACT_PERSON_GAP, HandoverTab, hasUnsavedContacts, saveOrderContactsBeforeLeaving, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
@@ -16,7 +16,6 @@ import { Modal } from "@/components/ui/modal";
 import { Field } from "@/components/ui/field";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { Input } from "@/components/ui/input";
-import { DetailItem } from "@/components/ui/page-header";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -466,12 +465,16 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const clientIdOk = /^[A-Za-z0-9-]{2,20}$/.test(clientId.trim());
   // New client: the Client ID the list was searched with (Find in Zoho).
   const [lookupId, setLookupId] = useState(!fromZoho && clientIdOk ? clientId.trim() : "");
-  const estimates = useRecceZohoEstimates(r.orderId, fromZoho ? undefined : lookupId || undefined, !(locked && r.codes) && (fromZoho || !!lookupId));
+  // Saved codes without a stored Zoho snapshot (saved before it was kept): the estimate is read once to show its details.
+  const estimates = useRecceZohoEstimates(r.orderId, fromZoho ? undefined : lookupId || undefined, (locked && r.codes ? !r.codes.estimate : true) && (fromZoho || !!lookupId));
   const [project, setProject] = useStepDraft(`${key}:project`, r.codes?.projectCode ?? "");
   const [estimateId, setEstimateId] = useStepDraft(`${key}:estimate`, "");
   const [query, setQuery] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  if (locked && r.codes) return <CodesView r={r} />;
+  if (locked && r.codes) {
+    const found = estimates.data?.items.find((e) => e.estimationCode === r.codes?.estimationCode && e.projectCode === r.codes?.projectCode);
+    return <CodesView r={r} estimate={found ?? null} loading={!r.codes.estimate && estimates.isFetching} />;
+  }
 
   const usable = (e: ZohoEstimateOption) => e.valid && !e.usedBy;
   const byCode = new Map<string, ZohoEstimateOption[]>();
@@ -674,21 +677,80 @@ function ReceivedHandover({ r }: { r: RecceState }) {
   );
 }
 
-/** Saved codes and Client ID, read-only (the locked codes step and Lead Management > Full Details). */
-export function CodesView({ r }: { r: RecceState }) {
+/** Zoho estimate status colour: approved / accepted green, declined / expired red, draft grey, others amber. */
+function statusTone(status: string) {
+  const v = status.toLowerCase();
+  if (/(approved|accepted|invoiced)/.test(v)) return "border-success/30 bg-success/10 text-success";
+  if (/(declined|rejected|expired)/.test(v)) return "border-danger/30 bg-danger/10 text-danger";
+  if (/draft/.test(v)) return "border-border bg-muted text-muted-foreground";
+  return "border-warning/30 bg-warning/10 text-warning";
+}
+
+/**
+ * Saved codes and Client ID with the Zoho estimate they came from, read-only (the locked codes step and Lead
+ * Management > Full Details). `estimate`: read from Zoho for codes saved before the estimate was stored on the order.
+ */
+export function CodesView({ r, estimate, loading }: { r: RecceState; estimate?: Pick<ZohoEstimateOption, "date" | "total" | "status" | "salesperson" | "location"> | null; loading?: boolean }) {
   if (!r.codes) return null;
   const fromZoho = !!r.zohoClientId?.fromZoho;
+  const est = r.codes.estimate ?? estimate ?? null;
+  const facts = est
+    ? [
+        { icon: CalendarDays, label: "Estimate Date", value: est.date ? formatDate(est.date) : null },
+        { icon: IndianRupee, label: "Amount", value: est.total !== null && est.total !== undefined ? formatCurrency(est.total) : null, num: true },
+        { icon: UserRound, label: "Salesperson", value: est.salesperson },
+        { icon: MapPin, label: "Location", value: est.location },
+      ]
+    : [];
   return (
-      <dl className="grid gap-4 sm:grid-cols-4">
-        <DetailItem label="Project Code">
-          <span className="font-mono text-base">{r.codes.projectCode}</span>
-        </DetailItem>
-        <DetailItem label="Estimation Code">
-          <span className="font-mono text-base">{r.codes.estimationCode}</span>
-        </DetailItem>
-        <DetailItem label={fromZoho ? "Client ID" : "Client ID (Zoho)"}>{r.codes.clientId ? <span className="font-mono text-base">{r.codes.clientId}</span> : null}</DetailItem>
-        <DetailItem label="Saved">{r.codes.savedBy ? `${r.codes.savedBy} · ${formatDateTimeIST(r.codes.savedAt)}` : formatDateTimeIST(r.codes.savedAt)}</DetailItem>
+    <section className="overflow-hidden rounded-xl border bg-surface shadow-sm" style={{ borderColor: `${TEAL}40` }} aria-label="Project and estimation codes">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5 sm:px-5" style={{ borderColor: `${TEAL}30`, background: ASSIGN_META.RECCE.soft }}>
+        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <BadgeCheck className="size-4" style={{ color: TEAL }} aria-hidden /> Codes from Zoho estimate
+        </span>
+        {est?.status && <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize", statusTone(est.status))}>{est.status}</span>}
+      </header>
+      <dl className="grid sm:grid-cols-3">
+        {[
+          { label: "Project Code", value: r.codes.projectCode, icon: KeyRound },
+          { label: "Estimation Code", value: r.codes.estimationCode, icon: FileText },
+          { label: fromZoho ? "Client ID" : "Client ID (Zoho)", value: r.codes.clientId, icon: Lock },
+        ].map((c) => (
+          <div key={c.label} className="bg-surface px-4 py-3 sm:px-5">
+            <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <c.icon className="size-3.5" aria-hidden /> {c.label}
+            </dt>
+            <dd className="mt-1 font-mono text-lg font-semibold tracking-wider text-foreground">{c.value || "-"}</dd>
+          </div>
+        ))}
       </dl>
+      {loading ? (
+        <div className="grid gap-3 px-4 py-3 sm:grid-cols-4 sm:px-5">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-9" />
+          ))}
+        </div>
+      ) : facts.length ? (
+        <dl className="grid gap-x-4 gap-y-3 px-4 py-3 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
+          {facts.map((f) => (
+            <div key={f.label} className="flex min-w-0 items-start gap-2.5">
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: ASSIGN_META.RECCE.soft, color: TEAL }}>
+                <f.icon className="size-4" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">{f.label}</dt>
+                <dd className={cn("truncate text-sm font-medium text-foreground", f.num && "tabular-nums")} title={f.value ?? undefined}>
+                  {f.value || "-"}
+                </dd>
+              </div>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      <footer className="bg-muted/40 px-4 py-2 text-xs text-muted-foreground sm:px-5">
+        Saved {r.codes.savedBy ? <>by <b className="font-medium text-foreground">{r.codes.savedBy}</b> </> : ""}· {formatDateTimeIST(r.codes.savedAt)}
+      </footer>
+    </section>
   );
 }
 
@@ -841,6 +903,165 @@ export function AssignedBanner({ r, projectLink = false }: { r: RecceState; proj
   );
 }
 
+const PRIORITY_TONE: Record<string, string> = {
+  URGENT: "border-danger/30 bg-danger/10 text-danger",
+  HIGH: "border-warning/30 bg-warning/10 text-warning",
+  MEDIUM: "border-brand/30 bg-brand/10 text-brand",
+  LOW: "border-border bg-muted text-muted-foreground",
+};
+const initials = (name?: string | null) =>
+  (name ?? "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+
+/**
+ * Assign step after the assignment, read-only: the Recce / Operations person, the project dates and priority, the
+ * notes for the Recce team, and who assigned it.
+ */
+export function AssignedView({ r, projectLink = false }: { r: RecceState; projectLink?: boolean }) {
+  const p = r.project;
+  const a = r.assignee;
+  const start = p?.startDate ?? null;
+  const end = p?.targetDate ?? null;
+  const days = start && end ? Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86_400_000) + 1 : null;
+  const priority = p?.priority?.toUpperCase() ?? null;
+  const role = a?.role === "RECCE_COORDINATOR" ? "Recce Coordinator" : a?.role === "OPERATIONS" ? "Operations" : "Recce team";
+  const schedule = [
+    { icon: CalendarDays, label: "Start Date", value: start ? formatDate(start) : "-", sub: null as string | null },
+    { icon: CalendarCheck, label: "Expected End Date", value: end ? formatDate(end) : "-", sub: days && days > 0 ? `${days} day${days === 1 ? "" : "s"}` : null },
+  ];
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="overflow-hidden rounded-xl border bg-surface shadow-sm"
+      style={{ borderColor: `${TEAL}40` }}
+      aria-label="Recce assignment"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5" style={{ borderColor: `${TEAL}30`, background: ASSIGN_META.RECCE.soft }}>
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full text-white" style={{ background: TEAL }}>
+            <BadgeCheck className="size-5" aria-hidden />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-foreground">Assigned to the Recce team</span>
+            <span className="block text-xs text-muted-foreground">
+              Project <b className="font-mono text-foreground">{p?.code ?? r.codes?.projectCode}</b> · {r.codes?.estimationCode} · lead completed
+            </span>
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          {p?.status && (
+            <span className="rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-semibold capitalize text-success">{p.status.toLowerCase().replace(/_/g, " ")}</span>
+          )}
+          {projectLink && p && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/projects/${p._id}`}>
+                <ExternalLink className="size-4" aria-hidden /> Open Project
+              </Link>
+            </Button>
+          )}
+        </span>
+      </header>
+
+      <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.9fr)]">
+        {/* The Recce / Operations person */}
+        <div className="bg-surface px-4 py-4 sm:px-5">
+          <p className="text-xs font-medium text-muted-foreground">Recce / Operations Person</p>
+          <div className="mt-2 flex items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white" style={{ background: TEAL }} aria-hidden>
+              {initials(a?.name)}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-foreground">{a?.name ?? "-"}</p>
+              <p className="text-xs text-muted-foreground">{role}</p>
+            </div>
+          </div>
+          {(a?.email || a?.phone) && (
+            <ul className="mt-3 space-y-1.5 text-sm">
+              {a?.phone && (
+                <li className="flex items-center gap-2 text-foreground">
+                  <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <a href={`tel:${a.phone}`} className="hover:underline">
+                    {a.phone}
+                  </a>
+                </li>
+              )}
+              {a?.email && (
+                <li className="flex min-w-0 items-center gap-2 text-foreground">
+                  <Mail className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <a href={`mailto:${a.email}`} className="truncate hover:underline" title={a.email}>
+                    {a.email}
+                  </a>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+
+        {/* Schedule and priority */}
+        <dl className="grid sm:grid-cols-3">
+          {schedule.map((f) => (
+            <div key={f.label} className="flex items-start gap-2.5 bg-surface px-4 py-4">
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: ASSIGN_META.RECCE.soft, color: TEAL }}>
+                <f.icon className="size-4" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">{f.label}</dt>
+                <dd className="text-sm font-semibold text-foreground">{f.value}</dd>
+                {f.sub && <dd className="text-xs text-muted-foreground">{f.sub}</dd>}
+              </div>
+            </div>
+          ))}
+          <div className="flex items-start gap-2.5 bg-surface px-4 py-4">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: ASSIGN_META.RECCE.soft, color: TEAL }}>
+              <Flag className="size-4" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">Priority</dt>
+              <dd className="mt-0.5 text-sm">
+                {priority ? (
+                  <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold", PRIORITY_TONE[priority] ?? PRIORITY_TONE.LOW)}>
+                    {PRIORITIES[priority as Priority] ?? priority}
+                  </span>
+                ) : (
+                  "-"
+                )}
+              </dd>
+            </div>
+          </div>
+        </dl>
+      </div>
+
+      {/* Notes for the Recce team */}
+      <div className="px-4 py-3 sm:px-5">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <StickyNote className="size-3.5" aria-hidden /> Notes for the Recce Team
+        </p>
+        {r.note ? (
+          <p className="mt-1.5 whitespace-pre-wrap rounded-lg border-l-4 bg-muted/40 px-3 py-2 text-sm text-foreground" style={{ borderLeftColor: TEAL }}>
+            {r.note}
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-muted-foreground">No notes were added.</p>
+        )}
+      </div>
+
+      <footer className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-4 py-2 text-xs text-muted-foreground sm:px-5">
+        <span>
+          Assigned {r.assignedBy ? <>by <b className="font-medium text-foreground">{r.assignedBy}</b> </> : ""}· {formatDateTimeIST(r.assignedAt)}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <FolderKanban className="size-3.5" aria-hidden /> The Recce team works on this project in Operations.
+        </span>
+      </footer>
+    </motion.section>
+  );
+}
+
 export type RecceStep = "email" | "history" | "codes" | "handover" | "ratecard" | "assign";
 
 /**
@@ -952,7 +1173,7 @@ export function RecceBranchPanel({
           )}
         </nav>
       )}
-      {assigned && <AssignedBanner r={r} projectLink={projectLink} />}
+      {assigned && step !== "assign" && <AssignedBanner r={r} projectLink={projectLink} />}
       {step === "handover" && !locked && !r.route && !csUser && <RouteNotice branch="RECCE" />}
       {step === "email" && r.csFlow?.handoverSent && <ReceivedHandover r={r} />}
       {step === "email" && <CodeRequestStep r={r} locked={locked} onSent={onDone} />}
@@ -1000,7 +1221,7 @@ export function RecceBranchPanel({
         </>
       )}
       {step === "assign" &&
-        (assigned ? <p className="text-sm text-muted-foreground">Assigned. The Recce team works on project {r.project?.code} in Operations.</p> : <AssignStep r={r} onAssigned={onAssigned} />)}
+        (assigned ? <AssignedView r={r} projectLink={projectLink} /> : <AssignStep r={r} onAssigned={onAssigned} />)}
     </div>
   );
 }
