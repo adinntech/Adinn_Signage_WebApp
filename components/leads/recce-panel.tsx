@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { GetReplyButton } from "@/components/mail/get-reply-button";
-import { ArrowLeft, ArrowRight, BadgeCheck, CalendarCheck, CalendarDays, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Flag, FolderKanban, History, IndianRupee, Inbox, KeyRound, Lock, Mail,  MailCheck, MapPin, Paperclip, Phone, Save, Search, Send, SkipForward, StickyNote, UserRound } from "lucide-react";
+import { useReplyCheckState } from "@/lib/api/mailSettings";
+import { ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, CalendarDays, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Flag, FolderKanban, History, IndianRupee, Inbox, KeyRound, Lock, Mail,  MailCheck, MapPin, Paperclip, Phone, Save, Search, Send, SkipForward, StickyNote, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { CONTACT_PERSON_GAP, HandoverTab, hasUnsavedContacts, saveOrderContactsBeforeLeaving, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
 import { EmailComposer } from "@/components/sales/email-composer";
@@ -393,6 +395,96 @@ function LatestRequestPreview({ r, onHistory }: { r: RecceState; onHistory: () =
   );
 }
 
+type EmailFactsData = NonNullable<RecceState["draft"]["facts"]>;
+const FACT_ICONS: Record<string, typeof Building2> = { "Client Details": Building2, "Project Details": FolderKanban, "Contact Persons": UserRound };
+const filledCell = (v?: string) => !!v && v !== "—" && v !== "-";
+
+/**
+ * Project code request email: the details the mail template prints by itself (client, project, contacts), read-only.
+ * Detail sections as label / value pairs; contact tables as compact contact rows with the Primary badge. Display only:
+ * the values are the server's, exactly as they go in the email.
+ */
+function EmailFacts({ facts }: { facts: EmailFactsData }) {
+  const details = facts.sections.filter((s) => s.rows.length > 0 && !s.table);
+  const lists = facts.sections.filter((s) => s.table);
+  return (
+    <section className="overflow-hidden rounded-xl border border-border bg-surface" aria-label="Details the email prints">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-[#f8fafd] px-4 py-2.5">
+        <span className="flex items-center gap-2 text-sm font-bold text-navy">
+          <Mail className="size-4 text-royal" aria-hidden /> Printed in the email automatically
+        </span>
+        <span className="rounded-full border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+          {facts.existing ? <> Client ID : <b className="font-mono text-navy">{facts.clientId || "-"}</b></> : "New client · Client ID requested with the codes"}
+        </span>
+      </header>
+      <div className="space-y-4 p-4">
+        {details.length > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {details.map((s) => {
+              const Icon = FACT_ICONS[s.title] ?? FileText;
+              return (
+                <div key={s.title} className="min-w-0">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Icon className="size-3.5 text-royal" aria-hidden /> {s.title}
+                  </h4>
+                  <dl className="divide-y divide-border/70 rounded-lg border border-border/80">
+                    {s.rows.map((x) => (
+                      <div key={x.label} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-3 px-3 py-2 text-sm">
+                        <dt className="text-xs leading-5 text-muted-foreground">{x.label}</dt>
+                        <dd className="min-w-0 break-words font-medium text-navy">{x.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {lists.map((s) => {
+          const cols = s.table!.columns;
+          const at = (name: string) => cols.indexOf(name);
+          const [iName, iDes, iMob, iMail, iPri] = ["Name", "Designation", "Mobile", "Email", "Primary"].map(at);
+          const Icon = FACT_ICONS[s.title] ?? UserRound;
+          return (
+            <div key={s.title} className="min-w-0">
+              <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Icon className="size-3.5 text-royal" aria-hidden /> {s.title}
+                <span className="rounded-full bg-muted px-1.5 text-[11px] font-semibold normal-case tracking-normal">{s.table!.rows.length}</span>
+              </h4>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {s.table!.rows.map((row, i) => {
+                  const v = (k: number) => (k >= 0 && filledCell(row[k]) ? row[k] : undefined);
+                  const name = v(iName) ?? "-";
+                  return (
+                    <li key={i} className="flex min-w-0 items-start gap-3 rounded-lg border border-border/80 px-3 py-2.5">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-navy text-xs font-semibold text-white" aria-hidden>
+                        {name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="min-w-0 flex-1 text-sm">
+                        <p className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate font-semibold text-navy" title={name}>{name}</span>
+                          {v(iPri) && <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[11px] font-semibold text-royal">Primary</span>}
+                        </p>
+                        {v(iDes) && <p className="truncate text-xs text-muted-foreground">{v(iDes)}</p>}
+                        <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-foreground">
+                          {v(iMob) && <span className="flex items-center gap-1"><Phone className="size-3 text-muted-foreground" aria-hidden /> {v(iMob)}</span>}
+                          {v(iMail) && <span className="flex min-w-0 items-center gap-1"><Mail className="size-3 shrink-0 text-muted-foreground" aria-hidden /> <span className="truncate" title={v(iMail)}>{v(iMail)}</span></span>}
+                          {!v(iMob) && !v(iMail) && <span className="text-muted-foreground">No mobile or email</span>}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+        <p className="text-xs text-muted-foreground">These details are not typed. Write only extra instructions in the Email Body below.</p>
+      </div>
+    </section>
+  );
+}
+
 /** Before the codes are saved: the composer (send / send again) and its attachments. */
 function CodeRequestComposer({
   r,
@@ -413,32 +505,7 @@ function CodeRequestComposer({
   const facts = r.mail.enabled ? r.draft.facts : undefined;
   return (
     <div className="space-y-4">
-      {facts && facts.sections.length > 0 && (
-        <section className="rounded-xl border border-border bg-[#f8fafd] p-4" aria-label="Details the email prints">
-          <h3 className="text-sm font-bold text-navy">Printed in the email automatically</h3>
-          <p className="mb-3 text-xs text-muted-foreground">{facts.existing ? `Existing client, Client ID ${facts.clientId || "-"}.` : "New client: the Client ID is requested with the codes."} These details are not typed. Write only extra instructions in the Email Body below.</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            {facts.sections.map((s) => (
-              <div key={s.title} className="min-w-0 rounded-lg border border-border bg-surface p-3">
-                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-royal">{s.title}</p>
-                {s.rows.length > 0 && (
-                  <dl className="space-y-1 text-xs">
-                    {s.rows.map((x) => <div key={x.label} className="flex gap-2"><dt className="w-32 shrink-0 text-muted-foreground">{x.label}</dt><dd className="min-w-0 break-words font-semibold text-navy">{x.value}</dd></div>)}
-                  </dl>
-                )}
-                {s.table && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead><tr>{s.table.columns.map((c) => <th key={c} className="pr-3 pb-1 font-semibold text-muted-foreground">{c}</th>)}</tr></thead>
-                      <tbody>{s.table.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j} className="pr-3 py-0.5 font-semibold text-navy">{cell}</td>)}</tr>)}</tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      {facts && facts.sections.length > 0 && <EmailFacts facts={facts} />}
       <EmailComposer
         // A neutral prefix: ids such as "recce-mail-to" made Chrome treat To / Cc / Bcc as saved email fields.
         idPrefix="recce-request"
@@ -496,40 +563,67 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const [estimateId, setEstimateId] = useStepDraft(`${key}:estimate`, "");
   const [query, setQuery] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // Get Reply: the project code read from the reply is chosen once the Zoho estimates load (never over a choice already
-  // made, never saved by itself). Its estimate is chosen only when it is the only usable one, or the one the reply names.
+  // Get Reply: the reply is matched with the Zoho estimates once they load (never over a choice already made, never
+  // saved by itself). It matches by the project code read from it, else by the possible codes / EST numbers in it. One
+  // usable project code: chosen, with its estimate when it is the only usable one or the one the reply names. Several:
+  // offered as suggestions. None: a message, the list stays for a manual choice.
   const [replyPick, setReplyPick] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+  const [replySuggest, setReplySuggest] = useState<string[]>([]);
   const pickedFor = useRef<string | null>(null);
   const replyCode = r.codeReply?.detectedCode ?? [...(r.codeReplyHistory ?? [])].sort((a, b) => +new Date(b.receivedAt ?? b.at ?? 0) - +new Date(a.receivedAt ?? a.at ?? 0)).find((h) => h.detectedCode)?.detectedCode ?? null;
   const replyEsts = (r.codeReply?.estimates?.length ? r.codeReply.estimates : (r.codeReplyHistory ?? []).find((h) => h.estimates?.length)?.estimates) ?? [];
-  const replyEstKey = replyEsts.join(",");
+  const replyCands = r.codeReply?.candidates ?? [];
+  const replyKey = [r.codeReply?.messageId ?? r.codeReply?.receivedAt ?? "", replyCode ?? "", replyCands.join(","), replyEsts.join(",")].join("|");
   useEffect(() => {
     const items = estimates.data?.items;
-    if (locked || r.codes || !replyCode || !items || pickedFor.current === replyCode) return;
-    pickedFor.current = replyCode;
+    if (locked || r.codes || !items || (!replyCode && !replyCands.length && !replyEsts.length) || pickedFor.current === replyKey) return;
+    pickedFor.current = replyKey;
+    setReplySuggest([]);
     if (project) return; // A project code is already chosen (by hand or kept from before): left as it is.
-    const rows = items.filter((e) => e.projectCode === replyCode);
-    const free = rows.filter((e) => e.valid && !e.usedBy);
-    if (!rows.length) {
-      setReplyPick({ tone: "warn", text: `Project code ${replyCode} from the reply is not among this client's Zoho estimates. Choose the project code below.` });
+    const named = new Set([...replyEsts, ...replyCands].map((x) => x.trim().toUpperCase()));
+    // Project codes the reply points to: the code read from it, else its possible codes and the projects of its EST numbers.
+    const codes = replyCode ? [replyCode] : [...new Set(items.filter((e) => replyCands.includes(e.projectCode) || named.has(e.estimationCode.toUpperCase())).map((e) => e.projectCode))];
+    const usableCodes = codes.filter((c) => items.some((e) => e.projectCode === c && e.valid && !e.usedBy));
+    const shown = (replyCode ? [replyCode] : [...replyCands, ...replyEsts]).slice(0, 6).join(", ");
+    if (!usableCodes.length) {
+      const used = items.find((e) => codes.includes(e.projectCode) && e.usedBy);
+      setReplyPick({
+        tone: "warn",
+        text: codes.length
+          ? `The reply's project code ${codes.join(", ")} cannot be used: ${used ? `already used by ${used.usedBy}` : "not a valid code"}. Choose another one below.`
+          : `The codes in the reply (${shown}) are not among this client's Zoho estimates. Choose the project code below.`,
+      });
       return;
     }
-    if (!free.length) {
-      const used = rows.find((e) => e.usedBy);
-      setReplyPick({ tone: "warn", text: `Project code ${replyCode} from the reply cannot be used: ${used ? `already used by ${used.usedBy}` : "not a valid code"}. Choose another one below.` });
+    if (usableCodes.length > 1) {
+      setReplySuggest(usableCodes);
+      setReplyPick({ tone: "warn", text: `The reply matches ${usableCodes.length} project codes in Zoho: choose one, then Save Codes.` });
       return;
     }
-    setProject(replyCode);
-    const named = free.filter((e) => replyEstKey.split(",").includes(e.estimationCode));
-    const pick = free.length === 1 ? free[0] : named.length === 1 ? named[0] : null;
+    const code = usableCodes[0]!;
+    const free = items.filter((e) => e.projectCode === code && e.valid && !e.usedBy);
+    const byReply = free.filter((e) => named.has(e.estimationCode.toUpperCase()));
+    const pick = free.length === 1 ? free[0] : byReply.length === 1 ? byReply[0] : null;
+    setProject(code);
     setEstimateId(pick?.estimateId ?? "");
     setReplyPick(
       pick
-        ? { tone: "ok", text: `Selected from the reply: ${replyCode} / ${pick.estimationCode}. Check them, then Save Codes.` }
-        : { tone: "warn", text: `Project code ${replyCode} selected from the reply. It has ${free.length} estimates: choose the estimation code, then Save Codes.` },
+        ? { tone: "ok", text: `Selected from the reply: ${code} / ${pick.estimationCode}. Check them, then Save Codes.` }
+        : { tone: "warn", text: `Project code ${code} selected from the reply. It has ${free.length} estimates: choose the estimation code, then Save Codes.` },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the estimates or the reply change, not on each choice
-  }, [estimates.data, replyCode, replyEstKey, locked, r.codes]);
+  }, [estimates.data, replyKey, locked, r.codes]);
+  // A reply saved by the automatic mailbox read (or another person's Get reply) shows without a page refresh: the step
+  // reloads when the mailbox was read again, until the codes are saved.
+  const qc = useQueryClient();
+  // Polled only while waiting for the first reply; once a reply is read (or the codes are saved) it stops. A newer reply: Get reply.
+  const lastRead = useReplyCheckState(!r.codes && !locked && !r.codeReply).data?.lastCheckedAt ?? null;
+  const seenRead = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lastRead) return;
+    if (seenRead.current && seenRead.current !== lastRead && !r.codes && !locked) void qc.invalidateQueries({ queryKey: ["sales", "order", r.orderId, "recce"] });
+    seenRead.current = lastRead;
+  }, [lastRead, r.codes, locked, r.orderId, qc]);
   if (locked && r.codes) {
     const found = estimates.data?.items.find((e) => e.estimationCode === r.codes?.estimationCode && e.projectCode === r.codes?.projectCode);
     return <CodesView r={r} estimate={found ?? null} loading={!r.codes.estimate && estimates.isFetching} />;
@@ -569,6 +663,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
     }
     setProject(o.value);
     setReplyPick(null);
+    setReplySuggest([]);
     setEstimateId("");
     setQuery("");
     setErrors({});
@@ -621,17 +716,26 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       {!r.codes && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
           <span className="text-muted-foreground">{reply ? "Newer reply not showing? Read the mailbox again." : "Waiting for the project code reply."}</span>
-          <GetReplyButton size="sm" />
+          <GetReplyButton size="sm" requestIds={r.requestIds} />
         </div>
       )}
       {reply && !r.codes && (
         <div role="status" className="rounded-lg border border-[#cfe0ff] bg-[#eef4ff] px-3 py-2 text-sm text-navy">
-          <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received from {reply.from}</p>
+          <p className="flex items-center gap-2 font-semibold"><MailCheck className="size-4 text-royal" aria-hidden /> Reply received{reply.from ? ` from ${reply.from}` : ""}</p>
           <p className="mt-1">{reply.detectedCode ? <>Project code <span className="font-mono font-bold">{reply.detectedCode}</span> was read from the reply.</> : "No single project code could be read from the reply."}{!!reply.estimates?.length && <> Estimates in the reply: <span className="font-mono font-semibold">{reply.estimates.join(", ")}</span>.</>}</p>
           {replies.length > 1 && (
             <details className="mt-1 text-xs"><summary className="cursor-pointer font-semibold">Replies read ({replies.length})</summary>
               <ul className="mt-1 space-y-1">{replies.map((h, i) => <li key={i}><span className="font-mono font-semibold">{h.detectedCode ?? "No code found"}</span>{!!h.estimates?.length && <span className="font-mono text-muted-foreground"> · {h.estimates.join(", ")}</span>}<span className="text-muted-foreground"> · {h.from} · {formatDateTime(h.receivedAt ?? h.at)}{i === 0 ? " · latest" : ""}</span></li>)}</ul>
             </details>
+          )}
+          {replySuggest.length > 1 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Project codes from the reply">
+              {replySuggest.map((c) => (
+                <button key={c} type="button" onClick={() => pickProject({ value: c, label: c })} className="rounded-full border border-royal/30 bg-white px-2.5 py-0.5 font-mono text-xs font-semibold text-royal hover:bg-royal hover:text-white">
+                  {c}
+                </button>
+              ))}
+            </div>
           )}
           {replyPick && (
             <p className={cn("mt-1.5 flex items-start gap-1.5 font-medium", replyPick.tone === "ok" ? "text-success" : "text-warning")}>
@@ -844,7 +948,16 @@ export function CodesView({ r, estimate, loading }: { r: RecceState; estimate?: 
   );
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+/** Today in India (YYYY-MM-DD), not UTC: before 5:30 AM IST the UTC date is still yesterday. */
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+/** Opens the browser's calendar on a click anywhere in a date input (not only on its icon). */
+const openPicker = (e: { currentTarget: HTMLInputElement }) => {
+  try {
+    e.currentTarget.showPicker?.();
+  } catch {
+    // Already open, or the browser refuses: the native icon still works.
+  }
+};
 
 /** Step 4: the Recce / Operations person, the project dates and location, and notes. Assigning completes the lead. */
 function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void }) {
@@ -871,6 +984,7 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
     const e: Record<string, string> = {};
     if (!person) e.assigneeId = "Choose the Recce / Operations person";
     if (!startDate) e.startDate = "Choose the start date";
+    else if (startDate < today()) e.startDate = "Start date cannot be in the past";
     if (!targetDate) e.targetDate = "Choose the expected end date";
     else if (startDate && targetDate < startDate) e.targetDate = "End date must be on or after the start date";
     setErrors(e);
@@ -910,10 +1024,40 @@ function AssignStep({ r, onAssigned }: { r: RecceState; onAssigned?: () => void 
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start Date" htmlFor="recce-start" required error={errors.startDate}>
-            <Input id="recce-start" type="date" value={startDate} aria-invalid={!!errors.startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <Input
+              id="recce-start"
+              type="date"
+              className="cursor-pointer"
+              min={today()}
+              value={startDate}
+              aria-invalid={!!errors.startDate}
+              onClick={openPicker}
+              onChange={(e) => {
+                const v = e.target.value;
+                setStartDate(v);
+                setErrors((x) => ({ ...x, startDate: "" }));
+                // An end date before the new start date is cleared and asked again.
+                if (v && targetDate && targetDate < v) {
+                  setTargetDate("");
+                  setErrors((x) => ({ ...x, targetDate: "Choose the expected end date again (on or after the new start date)" }));
+                }
+              }}
+            />
           </Field>
           <Field label="Expected End Date" htmlFor="recce-end" required error={errors.targetDate}>
-            <Input id="recce-end" type="date" min={startDate || undefined} value={targetDate} aria-invalid={!!errors.targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+            <Input
+              id="recce-end"
+              type="date"
+              className="cursor-pointer"
+              min={startDate || today()}
+              value={targetDate}
+              aria-invalid={!!errors.targetDate}
+              onClick={openPicker}
+              onChange={(e) => {
+                setTargetDate(e.target.value);
+                setErrors((x) => ({ ...x, targetDate: "" }));
+              }}
+            />
           </Field>
         </div>
         <Field label="Priority" htmlFor="recce-priority">

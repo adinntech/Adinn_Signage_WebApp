@@ -14,15 +14,16 @@ import { cn } from "@/lib/utils";
  * While this click is reading the mailbox the button shows loading and cannot be pressed again.
  * `showLast` adds "Last checked ..." (the last time the mailbox was read).
  */
-export function GetReplyButton({ className, size, showLast, onDone }: { className?: string; size?: "sm" | "default"; showLast?: boolean; /** Runs after the mailbox was read, e.g. to close a dialog that shows older data. */ onDone?: (readNew: boolean) => void }) {
+export function GetReplyButton({ className, size, showLast, onDone, requestIds }: { className?: string; size?: "sm" | "default"; showLast?: boolean; /** Read only the replies to these requests (their IDs are in the mail subject): seconds instead of the whole mailbox. */ requestIds?: string[]; /** Runs after the mailbox was read, e.g. to close a dialog that shows older data. */ onDone?: (readNew: boolean) => void }) {
   const toast = useToast();
   const check = useCheckReplies();
-  const state = useReplyCheckState();
+  // Polled only where the "Last checked" line is shown; elsewhere read once (the button tooltip).
+  const state = useReplyCheckState(!!showLast);
   // Loading only for this person's own click. A background (timer) read must not lock the button; a click then just joins that read on the server.
   const busy = check.isPending;
   const last = state.data?.lastCheckedAt;
   const run = () =>
-    check.mutate(undefined, {
+    check.mutate(requestIds?.length ? { requestIds } : undefined, {
       onSuccess: (r) => {
         const got = (r.outcomes.saved ?? 0) + (r.outcomes.confirmed ?? 0);
         toast(got ? `${got} new repl${got === 1 ? "y" : "ies"} read` : "No new reply yet. Try again after the reply is sent");

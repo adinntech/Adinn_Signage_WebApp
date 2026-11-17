@@ -24,7 +24,9 @@ export interface ReplyCheck { checked: number; outcomes: Partial<Record<"unknown
 /** When the reply mailbox was last read to the end (the timer or Get reply), and whether a read is running right now. */
 export interface ReplyCheckState { lastCheckedAt: string | null; running: boolean }
 /** Polled, so the button shows "checking" while the timer reads the mailbox and the last time stays current. */
-export const useReplyCheckState = () => useQuery({ queryKey: ["mail-replies", "check-state"], queryFn: () => api<ReplyCheckState>("/mail-replies/status"), refetchInterval: (q) => (q.state.data?.running ? 2000 : 20000), staleTime: 0 });
+/** `poll`: keep checking (every 20 s, 2 s while a read runs); false: read once. The query polls while any user of it polls. */
+export const useReplyCheckState = (poll = true) =>
+  useQuery({ queryKey: ["mail-replies", "check-state"], queryFn: () => api<ReplyCheckState>("/mail-replies/status"), refetchInterval: poll ? (q) => (q.state.data?.running ? 2000 : 20000) : false, staleTime: 0 });
 
 const KEY = ["mail-routing"];
 export const useMailRouting = () => useQuery({ queryKey: KEY, queryFn: () => api<MailRouting[]>("/mail-settings/routing") });
@@ -33,7 +35,9 @@ export const useReplyStatus = () => useQuery({ queryKey: ["mail-replies", "statu
 export function useCheckReplies() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api<ReplyCheck>("/mail-replies/check", { method: "POST" }),
+    // requestIds: read only the replies to these requests (fast); none: the whole reply mailbox.
+    mutationFn: (v?: { requestIds?: string[] }) =>
+      api<ReplyCheck>("/mail-replies/check", { method: "POST", ...(v?.requestIds?.length ? { body: JSON.stringify({ requestIds: v.requestIds }) } : {}) }),
     onSuccess: () => qc.invalidateQueries(),
   });
 }

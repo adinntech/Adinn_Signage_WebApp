@@ -24,6 +24,10 @@ export interface RecceCodeReply {
   snippet?: string;
   detectedCode?: string;
   estimates?: string[];
+  /** No single code read: the possible codes found in the reply (matched with the Zoho estimates in the Codes step). */
+  candidates?: string[];
+  status?: string;
+  reason?: string;
 }
 export interface RecceState {
   orderId: string;
@@ -35,6 +39,8 @@ export interface RecceState {
   codeReply?: RecceCodeReply | null;
   codeReplyHistory?: RecceCodeReply[];
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
+  /** Request IDs of the project code request emails (Get reply reads only their replies). */
+  requestIds?: string[];
   /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
   /** Handover Type & Details has no gaps. */
