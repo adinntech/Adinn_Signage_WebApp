@@ -41,6 +41,20 @@ export function useCheckReplies() {
     onSuccess: () => qc.invalidateQueries(),
   });
 }
+/**
+ * Automatic Get reply for one screen: reads only these requests' replies every 30 s while `enabled` (paused while the tab
+ * is hidden; stops after an error such as no mailbox on the server). The server reuses a read of the same requests from
+ * the last 20 s, so several open screens do not load the mailbox.
+ */
+export const useAutoReplyCheck = (requestIds: string[] | undefined, enabled: boolean) =>
+  useQuery({
+    queryKey: ["mail-replies", "auto", ...(requestIds ?? [])],
+    queryFn: () => api<ReplyCheck>("/mail-replies/check", { method: "POST", body: JSON.stringify({ requestIds, auto: true }) }),
+    enabled: enabled && !!requestIds?.length,
+    refetchInterval: (q) => (q.state.status === "error" ? false : 30000),
+    retry: false,
+    staleTime: 0,
+  });
 export function useSaveMailRouting() {
   const qc = useQueryClient();
   return useMutation({

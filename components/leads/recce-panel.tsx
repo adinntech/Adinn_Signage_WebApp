@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { GetReplyButton } from "@/components/mail/get-reply-button";
-import { useReplyCheckState } from "@/lib/api/mailSettings";
+import { useAutoReplyCheck } from "@/lib/api/mailSettings";
 import { ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, CalendarDays, Check, CircleAlert, Download, Eye, ExternalLink, FileSpreadsheet, FileText, Flag, FolderKanban, History, IndianRupee, Inbox, KeyRound, Lock, Mail,  MailCheck, MapPin, Paperclip, Phone, Save, Search, Send, SkipForward, StickyNote, UserRound } from "lucide-react";
 import { FileRefPreview, type PreviewTarget } from "@/components/upload/file-ref-preview";
 import { CONTACT_PERSON_GAP, HandoverTab, hasUnsavedContacts, saveOrderContactsBeforeLeaving, SO_CONTACT_GAP } from "@/components/orders/handover-tab";
@@ -574,17 +574,29 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
   const replyEsts = (r.codeReply?.estimates?.length ? r.codeReply.estimates : (r.codeReplyHistory ?? []).find((h) => h.estimates?.length)?.estimates) ?? [];
   const replyCands = r.codeReply?.candidates ?? [];
   const replyKey = [r.codeReply?.messageId ?? r.codeReply?.receivedAt ?? "", replyCode ?? "", replyCands.join(","), replyEsts.join(",")].join("|");
+  // The project code a reply chose (not one picked by hand): a newer reply with another code replaces it.
+  const fromReply = useRef<string | null>(null);
   useEffect(() => {
     const items = estimates.data?.items;
     if (locked || r.codes || !items || (!replyCode && !replyCands.length && !replyEsts.length) || pickedFor.current === replyKey) return;
     pickedFor.current = replyKey;
     setReplySuggest([]);
-    if (project) return; // A project code is already chosen (by hand or kept from before): left as it is.
     const named = new Set([...replyEsts, ...replyCands].map((x) => x.trim().toUpperCase()));
     // Project codes the reply points to: the code read from it, else its possible codes and the projects of its EST numbers.
     const codes = replyCode ? [replyCode] : [...new Set(items.filter((e) => replyCands.includes(e.projectCode) || named.has(e.estimationCode.toUpperCase())).map((e) => e.projectCode))];
     const usableCodes = codes.filter((c) => items.some((e) => e.projectCode === c && e.valid && !e.usedBy));
     const shown = (replyCode ? [replyCode] : [...replyCands, ...replyEsts]).slice(0, 6).join(", ");
+    // A code chosen by hand is never replaced: a reply with another usable code is only offered. A code an earlier reply
+    // chose (also one kept in the draft) follows the newest reply.
+    const replyCodes = [r.codeReply?.detectedCode, ...(r.codeReplyHistory ?? []).map((h) => h.detectedCode)];
+    if (project && project !== fromReply.current && !replyCodes.includes(project)) {
+      const other = usableCodes.length === 1 && usableCodes[0] !== project ? usableCodes[0] : null;
+      if (other) {
+        setReplySuggest([other]);
+        setReplyPick({ tone: "warn", text: `The reply says project code ${other}, not ${project}. Click ${other} to use it.` });
+      }
+      return;
+    }
     if (!usableCodes.length) {
       const used = items.find((e) => codes.includes(e.projectCode) && e.usedBy);
       setReplyPick({
@@ -604,26 +616,26 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
     const free = items.filter((e) => e.projectCode === code && e.valid && !e.usedBy);
     const byReply = free.filter((e) => named.has(e.estimationCode.toUpperCase()));
     const pick = free.length === 1 ? free[0] : byReply.length === 1 ? byReply[0] : null;
+    const updated = !!project && project !== code;
+    // Same code as before: the estimate chosen for it stays unless the reply names one.
+    if (!updated && project && !byReply.length && free.length > 1) return;
+    fromReply.current = code;
     setProject(code);
     setEstimateId(pick?.estimateId ?? "");
     setReplyPick(
       pick
-        ? { tone: "ok", text: `Selected from the reply: ${code} / ${pick.estimationCode}. Check them, then Save Codes.` }
+        ? { tone: "ok", text: `${updated ? "Updated from the newer reply" : "Selected from the reply"}: ${code} / ${pick.estimationCode}. Check them, then Save Codes.` }
         : { tone: "warn", text: `Project code ${code} selected from the reply. It has ${free.length} estimates: choose the estimation code, then Save Codes.` },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the estimates or the reply change, not on each choice
   }, [estimates.data, replyKey, locked, r.codes]);
-  // A reply saved by the automatic mailbox read (or another person's Get reply) shows without a page refresh: the step
-  // reloads when the mailbox was read again, until the codes are saved.
+  // A reply shows without a click or a page refresh: while the codes are not saved, this order's request replies are read
+  // every 30 s (only these requests, not the whole mailbox; also a newer reply after one with a code), then the step reloads.
   const qc = useQueryClient();
-  // Polled only while waiting for the first reply; once a reply is read (or the codes are saved) it stops. A newer reply: Get reply.
-  const lastRead = useReplyCheckState(!r.codes && !locked && !r.codeReply).data?.lastCheckedAt ?? null;
-  const seenRead = useRef<string | null>(null);
+  const auto = useAutoReplyCheck(r.requestIds, !r.codes && !locked);
   useEffect(() => {
-    if (!lastRead) return;
-    if (seenRead.current && seenRead.current !== lastRead && !r.codes && !locked) void qc.invalidateQueries({ queryKey: ["sales", "order", r.orderId, "recce"] });
-    seenRead.current = lastRead;
-  }, [lastRead, r.codes, locked, r.orderId, qc]);
+    if (auto.dataUpdatedAt) void qc.invalidateQueries({ queryKey: ["sales", "order", r.orderId, "recce"] });
+  }, [auto.dataUpdatedAt, r.orderId, qc]);
   if (locked && r.codes) {
     const found = estimates.data?.items.find((e) => e.estimationCode === r.codes?.estimationCode && e.projectCode === r.codes?.projectCode);
     return <CodesView r={r} estimate={found ?? null} loading={!r.codes.estimate && estimates.isFetching} />;
@@ -662,6 +674,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
       return;
     }
     setProject(o.value);
+    fromReply.current = replySuggest.includes(o.value) ? o.value : null;
     setReplyPick(null);
     setReplySuggest([]);
     setEstimateId("");
@@ -728,7 +741,7 @@ function CodesStep({ r, locked, onSaved }: { r: RecceState; locked: boolean; onS
               <ul className="mt-1 space-y-1">{replies.map((h, i) => <li key={i}><span className="font-mono font-semibold">{h.detectedCode ?? "No code found"}</span>{!!h.estimates?.length && <span className="font-mono text-muted-foreground"> · {h.estimates.join(", ")}</span>}<span className="text-muted-foreground"> · {h.from} · {formatDateTime(h.receivedAt ?? h.at)}{i === 0 ? " · latest" : ""}</span></li>)}</ul>
             </details>
           )}
-          {replySuggest.length > 1 && (
+          {replySuggest.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Project codes from the reply">
               {replySuggest.map((c) => (
                 <button key={c} type="button" onClick={() => pickProject({ value: c, label: c })} className="rounded-full border border-royal/30 bg-white px-2.5 py-0.5 font-mono text-xs font-semibold text-royal hover:bg-royal hover:text-white">
