@@ -53,6 +53,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [queryClient]);
 
+  // Renew the token ahead of its 15 minute expiry (and when the tab wakes up), so it is replaced silently
+  // and the cookie the server-side guard reads never goes stale. A failed renewal signs the person out.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const run = () =>
+      apiClient.refreshSession().catch(() => {
+        /* a 401 here means the refresh cookie is gone; the next API call reports the expired session */
+      });
+    // The refresh token rotates, so two open tabs must not renew at the same moment: the lock makes the second
+    // tab wait and then use the cookie the first one just refreshed.
+    const renew = () => (navigator.locks ? navigator.locks.request("sg-token-renew", run) : run());
+    const timer = setInterval(renew, 12 * 60_000);
+    return () => clearInterval(timer);
+  }, [status]);
+
   const login = useCallback(async (identifier: string, credential: apiClient.Credential, remember: boolean, loginRole?: string) => {
     const p = await apiClient.login(identifier, credential, remember, loginRole);
     setSessionExpired(false);

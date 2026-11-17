@@ -14,7 +14,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage } from "@/lib/api";
-import { useApprovalSites, useApproveAll, useSetApproval, type ApprovalState } from "@/lib/api/pipeline";
+import { useApprovalSites, useApproveAll, useApproveSelected, useSetApproval, type ApprovalState } from "@/lib/api/pipeline";
 import type { Project } from "@/lib/api/projects";
 import {
   downloadSites,
@@ -64,6 +64,7 @@ export function SitesTab({ project, readOnly, allowImport = true, verification =
   const toast = useToast();
   const setApproval = useSetApproval(pid);
   const approveAll = useApproveAll(pid);
+  const approveSelected = useApproveSelected(pid);
   const approvals = useApprovalSites(pid, verification);
   const [correcting, setCorrecting] = React.useState<Site | null>(null);
   const [note, setNote] = React.useState("");
@@ -236,9 +237,8 @@ export function SitesTab({ project, readOnly, allowImport = true, verification =
         toast("Clear the filters to verify every shop, or tick the shops on this page.", "error");
         return;
       } else {
-        const ids = [...selected];
-        for (const siteId of ids) await setApproval.mutateAsync({ siteId, level: "ops", value: "APPROVED" });
-        toast(`Verified ${ids.length} shop(s)`);
+        const r = await approveSelected.mutateAsync({ level: "ops", ids: [...selected] });
+        toast(`Verified ${r.approved} shop(s)${r.alreadyApproved ? `, ${r.alreadyApproved} already verified` : ""}${r.notApproved ? `, ${r.notApproved} still waiting (no address or size)` : ""}`, r.approved ? undefined : "error");
       }
       clearSelection();
     } catch (e) {
