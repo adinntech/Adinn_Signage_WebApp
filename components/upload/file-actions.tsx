@@ -21,7 +21,7 @@ export function FileActions({ file, source }: { file: FileRef; source: FileSourc
         <Button size="icon" variant="outline" aria-label={`View ${name}`} title="View" onClick={() => setOpen(true)}><Eye className="size-4" aria-hidden /></Button>
         <Button size="icon" variant="outline" aria-label={`Download ${name}`} title="Download" onClick={() => downloadFile(file.fileId, source, name).catch((e) => toast(errorMessage(e), "error"))}><Download className="size-4" aria-hidden /></Button>
       </span>
-      {open && <FilePreviewDialog file={stored} onClose={() => setOpen(false)} />}
+      {open && <FilePreviewDialog file={stored} source={source} onClose={() => setOpen(false)} />}
     </>
   );
 }

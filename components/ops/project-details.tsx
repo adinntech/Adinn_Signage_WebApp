@@ -36,7 +36,7 @@ import { ShopDetailsStage } from "./shop-details-stage";
 const HANDOVER_IN_DRAWER = true;
 
 const STEPS = [
-  { title: "Extract shops", hint: "Open the Excel BD attached, check the column mapping and import the shops." },
+  { title: "Extract shops", hint: "Open the Excel Client Servicing attached, check the column mapping and import the shops." },
   { title: "Validate shops", hint: "Check each shop (address, area, size) and verify it. Only verified shops are planned." },
   { title: "Pre-setup", hint: "Vendors (cost, district, skills) and the in-house team are compared; the suggestion can be edited." },
   { title: "Allocate shops", hint: "Confirm the plan and give each area to its team or vendor." },
@@ -116,7 +116,10 @@ export function ProjectDetails() {
   const canWork = can("sites:write") && !cancelled;
   const planning = p.status !== "RECCE_ASSIGNED"; // the work area opens once planning has started
   const h = handover.data;
-  const hasPoc = !!p.contacts?.length || !!p.instructions;
+  // Projects from an order: the primary POC as handed over (it may have no email, so it is not among p.contacts).
+  const primary = handover.data?.primaryContact ?? null;
+  const pocList = primary ? [{ _id: "primary", name: primary.name, email: primary.email || undefined, phone: primary.phone || undefined }] : (p.contacts ?? []);
+  const hasPoc = !!pocList.length || !!p.instructions;
   const by = handedOverBy(p);
   const assignedBy = h?.assignedBy ?? by.name;
   const assignedRole = h?.assignedBy ? "" : by.role;
@@ -170,13 +173,16 @@ export function ProjectDetails() {
         {hasPoc && (
           <div className="rounded-xl border border-border bg-surface p-5">
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy"><Users className="size-4" aria-hidden /> POC Details</h2>
-            {!!p.contacts?.length && (
+            {!!pocList.length && (
               <ul className="space-y-2">
-                {p.contacts.map((c) => (
+                {pocList.map((c) => (
                   <li key={c._id ?? c.phone} className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2 text-sm">
                     <span className="grid size-9 shrink-0 place-items-center rounded-full bg-navy text-xs font-semibold text-white">{(c.name || "?").slice(0, 1).toUpperCase()}</span>
                     <span className="min-w-0 flex-1 leading-snug">
-                      <span className="block truncate font-medium text-navy">{c.name}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-medium text-navy">{c.name}</span>
+                        {primary && <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[11px] font-semibold text-royal">{primary.source === "POC" ? "Primary POC" : "Primary contact"}</span>}
+                      </span>
                       {c.email && <span className="block truncate text-xs text-muted-foreground" title={c.email}>{c.email}</span>}
                       {c.phone && <span className="block truncate text-xs text-muted-foreground">{c.phone}</span>}
                     </span>
@@ -184,7 +190,7 @@ export function ProjectDetails() {
                 ))}
               </ul>
             )}
-            {p.instructions && <p className={cn("text-sm text-muted-foreground", !!p.contacts?.length && "mt-3 border-t border-border pt-3")}><span className="font-medium text-navy">Additional: </span>{p.instructions}</p>}
+            {p.instructions && <p className={cn("text-sm text-muted-foreground", !!pocList.length && "mt-3 border-t border-border pt-3")}><span className="font-medium text-navy">Additional: </span>{p.instructions}</p>}
           </div>
         )}
       </section>
@@ -264,7 +270,7 @@ export function ProjectDetails() {
         </TabPanel>
       </section>
 
-      <Modal open={drawer} onOpenChange={setDrawer} variant={HANDOVER_IN_DRAWER ? "drawer" : "dialog"} title="BD handover" description={h ? `From Lead Management · order ${h.orderNo}` : "Details shared by BD"} className={HANDOVER_IN_DRAWER ? "max-w-3xl" : "h-[88dvh] max-w-5xl rounded-xl border border-border"}>
+      <Modal open={drawer} onOpenChange={setDrawer} variant={HANDOVER_IN_DRAWER ? "drawer" : "dialog"} title="Client Servicing Handover" description={h ? `From order ${h.orderNo}` : "Details shared by Client Servicing"} className={HANDOVER_IN_DRAWER ? "max-w-3xl" : "h-[88dvh] max-w-5xl rounded-xl border border-border"}>
         {h ? <BdHandover projectId={p._id} h={h} tabbed={!HANDOVER_IN_DRAWER} /> : <p className="text-sm text-muted-foreground">This project was not assigned from Lead Management, so there are no handover details beyond the ones shown on the page.</p>}
       </Modal>
     </div>

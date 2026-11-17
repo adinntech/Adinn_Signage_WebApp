@@ -1,11 +1,13 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Download, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { downloadFile, openFile, useFileUrl, type StoredFile } from "@/lib/api/pipeline";
+import { downloadFile as downloadFrom, fileUrl, openFile as openFrom, type FileSource } from "@/lib/api/files";
 import { formatBytes } from "@/lib/format";
 import { FileTypeIcon } from "./file-drop";
 import { SheetPreview, isSheet } from "./sheet-preview";
@@ -16,15 +18,18 @@ export const isPdf = (name: string) => /\.pdf$/i.test(name);
  * Preview window for a stored file. Images and PDFs show right here; other types (Excel, Word, PowerPoint, CSV)
  * cannot be shown by a browser, so the window offers a download that keeps the original file name.
  */
-export function FilePreviewDialog({ file, onClose }: { file: StoredFile | null; onClose: () => void }) {
+export function FilePreviewDialog({ file, onClose, source }: { file: StoredFile | null; onClose: () => void; /** The record the file belongs to, when it is not a project file (e.g. a Client Servicing handover file). */ source?: FileSource }) {
   const toast = useToast();
   const sheet = !!file && isSheet(file.originalName);
   const previewable = !!file && (file.kind === "image" || isPdf(file.originalName));
   // Word / PowerPoint / old Excel can be shown by Office Online, but only from a public address (Spaces), never from localhost.
   const office = !!file && /\.(docx?|pptx?|xls)$/i.test(file.originalName) && !!file.url && !/^https?:\/\/(localhost|127\.)/.test(file.url);
-  const url = useFileUrl(file?.id, previewable);
+  const own = useFileUrl(file?.id, previewable && !source);
+  const linked = useQuery({ queryKey: ["file-url", source, file?.id], queryFn: () => fileUrl(file!.id, source!), enabled: previewable && !!source && !!file, staleTime: 60_000 });
+  const url = source ? linked : own;
 
-  const save = () => file && downloadFile(file.id).catch((e) => toast(errorMessage(e), "error"));
+  const save = () => file && (source ? downloadFrom(file.id, source, file.originalName) : downloadFile(file.id)).catch((e) => toast(errorMessage(e), "error"));
+  const open = () => file && (source ? openFrom(file.id, source) : openFile(file.id)).catch((e) => toast(errorMessage(e), "error"));
 
   return (
     <Modal
@@ -37,7 +42,7 @@ export function FilePreviewDialog({ file, onClose }: { file: StoredFile | null; 
         file && (
           <div className="flex flex-wrap items-center justify-end gap-2">
             {previewable && (
-              <Button variant="outline" onClick={() => openFile(file.id).catch((e) => toast(errorMessage(e), "error"))}>
+              <Button variant="outline" onClick={open}>
                 <ExternalLink className="size-4" aria-hidden /> Open in new tab
               </Button>
             )}
@@ -49,7 +54,7 @@ export function FilePreviewDialog({ file, onClose }: { file: StoredFile | null; 
       }
     >
       {file && sheet ? (
-        <SheetPreview fileId={file.id} name={file.originalName} />
+        <SheetPreview fileId={file.id} name={file.originalName} source={source} />
       ) : file && office ? (
         <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url!)}`} title={file.originalName} data-testid="preview-office" className="h-[68vh] w-full rounded-lg border border-border" />
       ) : file && previewable ? (

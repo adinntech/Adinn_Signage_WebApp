@@ -24,6 +24,10 @@ export interface RecceCodeReply {
   snippet?: string;
   detectedCode?: string;
   estimates?: string[];
+  /** No single code read: the possible codes found in the reply (matched with the Zoho estimates in the Codes step). */
+  candidates?: string[];
+  status?: string;
+  reason?: string;
 }
 export interface RecceState {
   orderId: string;
@@ -35,6 +39,8 @@ export interface RecceState {
   codeReply?: RecceCodeReply | null;
   codeReplyHistory?: RecceCodeReply[];
   requests: { count: number; lastSentAt: string | null; lastStatus: SentEmail["status"] | null };
+  /** Request IDs of the project code request emails (Get reply reads only their replies). */
+  requestIds?: string[];
   /** Email step done: an email recorded as sent (or not sent only because mail is off). Unlocks the codes. */
   emailDone: boolean;
   /** Handover Type & Details has no gaps. */
@@ -60,7 +66,7 @@ export interface RecceState {
   /** Sent automatically with every request email (besides the client details and contacts in the message). */
   /** documents: chat files and (SO) Additional Documents (`so`), one copy of each. */
   /** rateCard: the PDF of the Rate Card version included in this flow (none when skipped). */
-  autoAttachments?: { shopExcel: { rows: number; sized: boolean } | null; rateCard?: (FileRef & { label: string }) | null; documents: (FileRef & { so?: boolean })[]; /** New Client only. */ gstCertificates?: FileRef[] };
+  autoAttachments?: { shopExcel: { rows: number; sized: boolean; /** Uploaded Excel's name (sent under it); absent for shops added by hand. */ name?: string } | null; rateCard?: (FileRef & { label: string }) | null; documents: (FileRef & { so?: boolean })[]; /** New Client only. */ gstCertificates?: FileRef[] };
   /** Project Assign route: HANDOVER (Client Servicing), RECCE, or null until the first save. */
   route: "HANDOVER" | "RECCE" | null;
   /** Client contacts with both a mobile number and an email (they go on the operations project). */
@@ -211,6 +217,10 @@ export interface ProjectHandover {
   /** Communication & attachments (chat) from the BD. */
   messages: HandoverMessage[];
   documents: HandoverDoc[];
+  /** Every file shared in the workflow, once each, with its source section (projects read before this existed: absent). */
+  files?: (FileRef & { source: string })[];
+  /** Operations POC: the primary POC contact, else the primary client contact (email optional). */
+  primaryContact?: { name: string; designation?: string; phone?: string; email?: string; source: "POC" | "CLIENT" } | null;
   shopList: ShopListSummary | null;
   declaredShopTotal: number | null;
   shopFiles: number;
