@@ -77,6 +77,24 @@ export function ForgotForm() {
     return () => clearTimeout(t);
   }, [wait]);
 
+  // Every visit from the login screen carries a new "t" (and that role's ID). Pages kept alive by the router must not show
+  // the previous visit's step, code, e-mail or password, so any change of the query starts everything over.
+  const query = params.toString();
+  const firstQuery = useRef(query);
+  useEffect(() => {
+    if (firstQuery.current === query) return;
+    firstQuery.current = query;
+    form.reset({ code: "", authMethod: params.get("method") === "password" ? "PASSWORD" : "MPIN", password: "", mpin: "", confirm: "" });
+    setStep("request");
+    setIdentifier(params.get("id") ?? "");
+    setError(null);
+    setReusePending(false);
+    setWait(0);
+    inFlight.current = false;
+    setBusy(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
   // After a successful reset the form stays "busy" while the page navigates to /login. If the browser later brings this page back
   // from its back/forward cache (Back button), that frozen state, code and PIN come with it. Start clean whenever that happens.
   useEffect(() => {
@@ -125,6 +143,8 @@ export function ForgotForm() {
     try {
       const r = await confirmReset(identifier, v.code, toCredential(v), confirmReuse);
       toast(`${r.authMethod === "MPIN" ? "MPIN" : "Password"} updated. You can sign in with your MPIN or password.`, "success");
+      // Wipe the code and new credential right away so nothing typed here survives in the form, history or the autofill snapshot.
+      form.reset({ code: "", authMethod: v.authMethod, password: "", mpin: "", confirm: "" });
       router.replace("/login");
     } catch (err) {
       if (err instanceof ApiError && err.code === "CREDENTIAL_REUSED") {
