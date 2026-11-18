@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -98,6 +98,23 @@ export function LoginForm() {
       setValue("remember", true);
     }
   }, [setValue]);
+
+  // Switching role starts that role's sign-in fresh, without a page refresh: the ID, password/MPIN, "remember me",
+  // errors and the stored "remember" ID of the previous role are all cleared, so nothing carries over (including to Forgot password).
+  const prevRole = useRef<LoginRoleKey | undefined>(undefined);
+  useEffect(() => {
+    const before = prevRole.current;
+    prevRole.current = role;
+    if (!before || !role || before === role) return; // first value or the saved-role restore after hydration
+    setValue("identifier", "");
+    setValue("idType", "email");
+    setValue("remember", false);
+    setValue("password", "");
+    setValue("mpin", "");
+    setValue("confirm", "");
+    clearErrors();
+    writeLoginPref({ role, identifier: undefined, lastMethod: getValues("authMethod") });
+  }, [role, setValue, clearErrors, getValues]);
 
   // Already signed in (e.g. opened /login in a second tab): go straight to the role home.
   useEffect(() => {
@@ -231,7 +248,15 @@ export function LoginForm() {
                       Remember me
                     </label>
                     {/* Carries the typed ID and whether "Use MPIN" is on, so a password user resets a password and an MPIN user an MPIN. */}
-                    <Link href={`/forgot-password?method=${getValues("authMethod") === "MPIN" ? "mpin" : "password"}${getValues("identifier") ? `&id=${encodeURIComponent(getValues("identifier"))}` : ""}`} className="text-sm font-medium text-[var(--accent)] hover:underline 2xl:text-base">
+                    <Link
+                      href="/forgot-password"
+                      onClick={(e) => {
+                        // Built at click time (not render time) from the current role's values; "t" makes every visit a fresh page.
+                        e.preventDefault();
+                        const id = getValues("identifier").trim();
+                        router.push(`/forgot-password?method=${getValues("authMethod") === "MPIN" ? "mpin" : "password"}${id ? `&id=${encodeURIComponent(id)}` : ""}&t=${Date.now()}`);
+                      }}
+                      className="text-sm font-medium text-[var(--accent)] hover:underline 2xl:text-base">
                       Forgot MPIN / password?
                     </Link>
                   </div>

@@ -291,6 +291,16 @@ export function useApproveAll(pid: string) {
   });
 }
 
+/** The ticked shops in one request: one audit record, so the project's people get one notification, not one per shop. */
+export function useApproveSelected(pid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { level: ApprovalLevel; ids: string[] }) =>
+      api<{ approved: number; selected: number; notApproved: number; alreadyApproved: number }>(`/projects/${pid}/sites/approve-selected`, { method: "POST", body: JSON.stringify(b) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sites", pid] }),
+  });
+}
+
 /* ------------------------------- notifications ------------------------------ */
 
 export type NotificationKindKey = "activity" | "assigned" | "documents" | "imported" | "stage" | "approval" | "cancelled" | "order";

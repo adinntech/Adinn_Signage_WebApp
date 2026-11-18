@@ -29,6 +29,8 @@ export function AllocationShops({ projectId, overview, canEdit }: { projectId: s
   const [page, setPage] = useState(1);
   const list = useAllocationShops(projectId, { q: dq || undefined, view: view || undefined, district: district || undefined, sort, page, limit: 50 });
   const vendors = useActiveVendors(canEdit);
+  // Only vendors whose cost (rate per shop) is entered can be given shops; an active vendor without a cost is not offered.
+  const costedVendors = (vendors.data ?? []).filter((v) => !!v.ratePerShop);
   const assign = useAssign(projectId);
   const setCoords = useSetCoords(projectId);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
@@ -77,7 +79,7 @@ export function AllocationShops({ projectId, overview, canEdit }: { projectId: s
       {canEdit && picked.size > 0 && (
         <div role="region" aria-label="Allocate selected shops" className="flex flex-wrap items-center gap-2 rounded-xl border border-royal/30 bg-[#e8f0ff] p-3">
           <span className="text-sm font-semibold text-navy">{picked.size} selected</span>
-          <div className="w-60"><Select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Allocate to"><option value="">Allocate to…</option><option value="IN_HOUSE">In-house team</option>{(vendors.data ?? []).map((v) => <option key={v._id} value={v._id}>{v.name} ({v.code})</option>)}</Select></div>
+          <div className="w-60"><Select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Allocate to"><option value="">Allocate to…</option><option value="IN_HOUSE">In-house team</option>{costedVendors.map((v) => <option key={v._id} value={v._id}>{v.name} ({v.code})</option>)}</Select></div>
           <Button className="bg-royal hover:bg-royal/90" disabled={!target} loading={assign.isPending} onClick={doAssign}><Users className="size-4" aria-hidden /> Allocate</Button>
           <Button variant="outline" onClick={() => run("NONE")}><UserMinus className="size-4" aria-hidden /> Remove allocation</Button>
           <Button variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>

@@ -51,6 +51,24 @@ let accessToken: string | null = null;
 /** The current access token, for the live (Socket.IO) connection. */
 export const getAccessToken = () => accessToken;
 let refreshInFlight: Promise<AuthPayload> | null = null;
+
+/**
+ * Mirrors the token into an httpOnly cookie on the web origin (see app/session/route.ts) so the server-side proxy
+ * can guard pages. Awaited before any navigation so the proxy never sees a stale cookie. A failure is ignored:
+ * the in-memory token and the API checks still work, only the server-side page guard would bounce the next page.
+ */
+async function syncSession(token: string | null, remember?: boolean): Promise<void> {
+  try {
+    await fetch("/session", {
+      method: token ? "POST" : "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: token ? JSON.stringify({ accessToken: token, remember }) : undefined,
+      credentials: "same-origin",
+    });
+  } catch {
+    /* offline: keep going */
+  }
+}
 let onSessionExpired: (() => void) | null = null;
 
 export function setSessionExpiredHandler(fn: (() => void) | null) {
@@ -118,8 +136,9 @@ async function raw<T>(path: string, init: RequestInit & { auth?: boolean } = {})
 export function refreshSession(): Promise<AuthPayload> {
   if (!refreshInFlight) {
     refreshInFlight = raw<AuthPayload>("/auth/refresh", { method: "POST", body: "{}", auth: false })
-      .then((p) => {
+      .then(async (p) => {
         accessToken = p.accessToken;
+        await syncSession(p.accessToken, p.remember);
         return p;
       })
       .finally(() => {
@@ -138,6 +157,7 @@ async function withRefresh<R>(fn: () => Promise<R>): Promise<R> {
         await refreshSession();
       } catch {
         accessToken = null;
+        await syncSession(null);
         onSessionExpired?.();
         throw err;
       }
@@ -225,6 +245,7 @@ export async function login(identifier: string, credential: Credential, remember
     auth: false,
   });
   accessToken = p.accessToken;
+  await syncSession(p.accessToken, remember);
   return p;
 }
 
@@ -250,6 +271,7 @@ export async function registerAccount({ credential, ...rest }: RegisterInput): P
     auth: false,
   });
   accessToken = p.accessToken;
+  await syncSession(p.accessToken, true);
   return p;
 }
 
@@ -269,6 +291,7 @@ export async function logout(): Promise<void> {
     await raw<unknown>("/auth/logout", { method: "POST", body: "{}" });
   } finally {
     accessToken = null;
+    await syncSession(null);
   }
 }
 
@@ -294,6 +317,7 @@ export function openEventStream(path: string, onEvent: (event: string, data: unk
             await refreshSession();
           } catch {
             accessToken = null;
+            await syncSession(null);
             onSessionExpired?.();
             return;
           }
