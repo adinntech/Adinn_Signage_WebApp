@@ -215,7 +215,7 @@ export interface RateCardRow {
 /** Editor state (same shape as an order's rate card) plus the selected Zoho client. */
 export type RateCardCreationState = QuotationState & { client: { zohoId: string; name: string } | null };
 
-export function useRateCardList(params: { page?: number; limit?: number; q?: string }) {
+export function useRateCardList(params: { page?: number; limit?: number; q?: string; createdFrom?: string; createdTo?: string; updatedFrom?: string; updatedTo?: string }) {
   return useQuery({ queryKey: ["rate-card-creation", "list", params], queryFn: () => apiPage<RateCardRow>(`/rate-card-creation${qs(params)}`), placeholderData: keepPreviousData });
 }
 

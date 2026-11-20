@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { PageHeader } from "@/components/ui/page-header";
+import { DateFiltersPanel, EMPTY_RANGE, MoreFiltersButton, datesSet, rangeParams, type DateRange } from "@/components/ui/date-range-filter";
 import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
@@ -22,6 +23,9 @@ import { formatDateTimeIST } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { clientIdOf } from "@/lib/api/clients";
 import { leadBase } from "@/lib/role-routes";
+
+/** Rows per page offered on this list (default 10). */
+const LIST_SIZES = [10, 25, 50] as const;
 
 /** India time ("03 Nov 2026, 04:53 PM"), or "—" when there is none. */
 const ist = (v?: string | null) => {
@@ -42,15 +46,23 @@ export function LeadsView() {
   const [status, setStatus] = useState("OPEN");
   const [clientType, setClientType] = useState("");
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [created, setCreated] = useState<DateRange>(EMPTY_RANGE);
+  const [updated, setUpdated] = useState<DateRange>(EMPTY_RANGE);
+  const [moreOpen, setMoreOpen] = useState(false);
   const dq = useDebounced(q);
   // Client Servicing (Create Project): no client filter (Zoho clients only), so none is ever sent.
   const clientFilter = cs ? "" : clientType;
-  const list = useLeads({ page, limit: 20, q: dq, stage, status, clientType: clientFilter });
+  // Date ranges are sent only when valid (From on or before To); both ends are whole India days.
+  const c = rangeParams(created);
+  const u = rangeParams(updated);
+  const list = useLeads({ page, limit, q: dq, stage, status, clientType: clientFilter, createdFrom: c.from, createdTo: c.to, updatedFrom: u.from, updatedTo: u.to });
   const summary = useLeadSummary();
   const rows = list.data?.data ?? [];
   // S.No of the first row on this page, from the page the server returned (filters reset to page 1).
   const serialFrom = list.data ? (list.data.meta.page - 1) * list.data.meta.limit + 1 : 1;
-  const filtered = !!(dq || stage || clientFilter || status !== "OPEN");
+  const dated = !!(created.from || created.to || updated.from || updated.to);
+  const filtered = !!(dq || stage || clientFilter || status !== "OPEN" || dated);
   const reset = (fn: () => void) => {
     fn();
     setPage(1);
@@ -65,7 +77,8 @@ export function LeadsView() {
   );
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-5">
+    // The page grows with its rows (the main area scrolls), so a page of 10 / 25 / 50 rows shows in full.
+    <div className="mx-auto flex max-w-7xl flex-col gap-5">
       <PageHeader
         icon={Waypoints}
         title={cs ? "Create Project" : "Lead Management"}
@@ -73,9 +86,10 @@ export function LeadsView() {
         actions={newButton}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className={cn("grid grid-cols-2 gap-3", cs ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
         <KpiCard label="Open Leads" value={summary.data?.open} icon={Network} color="blue" loading={summary.isPending} active={status === "OPEN" && !stage} onClick={() => reset(() => (setStatus("OPEN"), setStage("")))} />
-        {LEAD_FLOW.filter((s) => s !== "NEW_LEAD").map((s, i) => (
+        {/* Create Project: no Project Assign card (the stage stays in the data and the mind map). */}
+        {!cs && LEAD_FLOW.filter((s) => s !== "NEW_LEAD").map((s, i) => (
           <KpiCard
             key={s}
             label={STAGE_META[s].short}
@@ -103,16 +117,19 @@ export function LeadsView() {
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input aria-label="Search leads" placeholder="Search order no, company name, client name or Client ID" className="pl-9" value={q} onChange={(e) => reset(() => setQ(e.target.value))} />
           </div>
-          <div className="w-52">
-            <Select aria-label="Filter by stage" value={stage} onChange={(e) => reset(() => setStage(e.target.value as LeadStage | ""))}>
-              <option value="">All Stages</option>
-              {LEAD_FLOW.map((s) => (
-                <option key={s} value={s}>
-                  {STAGE_META[s].label}
-                </option>
-              ))}
-            </Select>
-          </div>
+          {/* Create Project: no stage filter. */}
+          {!cs && (
+            <div className="w-52">
+              <Select aria-label="Filter by stage" value={stage} onChange={(e) => reset(() => setStage(e.target.value as LeadStage | ""))}>
+                <option value="">All Stages</option>
+                {LEAD_FLOW.map((s) => (
+                  <option key={s} value={s}>
+                    {STAGE_META[s].label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div className="w-40">
             <Select aria-label="Filter by status" value={status} onChange={(e) => reset(() => setStatus(e.target.value))}>
               <option value="OPEN">Open</option>
@@ -131,15 +148,21 @@ export function LeadsView() {
               </Select>
             </div>
           )}
-          <Button variant="outline" disabled={!filtered && !q} onClick={() => reset(() => (setQ(""), setStage(""), setStatus("OPEN"), setClientType("")))}>
+          <MoreFiltersButton open={moreOpen} count={datesSet(created, updated)} onClick={() => setMoreOpen((o) => !o)} />
+          <Button
+            variant="outline"
+            disabled={!filtered && !q}
+            onClick={() => reset(() => (setQ(""), setStage(""), setStatus("OPEN"), setClientType(""), setCreated(EMPTY_RANGE), setUpdated(EMPTY_RANGE)))}
+          >
             <FilterX className="size-4" aria-hidden /> Clear Filters
           </Button>
         </div>
+        <DateFiltersPanel open={moreOpen} created={created} updated={updated} onCreated={(r) => reset(() => setCreated(r))} onUpdated={(r) => reset(() => setUpdated(r))} />
       </Card>
 
-      <Card className="flex min-h-[360px] flex-1 flex-col overflow-hidden">
+      <Card className="flex flex-col overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-          <h2 className="text-sm font-semibold text-foreground">Leads</h2>
+          {/* <h2 className="text-sm font-semibold text-foreground">Leads</h2> */}
           {list.data && <span className="text-xs text-muted-foreground">{list.data.meta.total} records</span>}
         </div>
         {list.isPending ? (
@@ -154,7 +177,8 @@ export function LeadsView() {
             action={!filtered ? newButton : undefined}
           />
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto">
+          // Horizontal scroll only: every row of the page shows, the page itself scrolls down.
+          <div className="overflow-x-auto">
             <table className={cn("w-full text-left text-sm", cs ? "min-w-[1100px]" : "min-w-[980px]")}>
               <thead className="sticky top-0 z-10 border-b border-border bg-muted text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <tr>
@@ -164,7 +188,8 @@ export function LeadsView() {
                   <th className="px-4 py-3">Client Company</th>
                   {/* Client Servicing (Create Project): no Client Flag and BD columns. */}
                   {!cs && <th className="px-4 py-3">Client Flag</th>}
-                  <th className={cn("px-4 py-3", cs && "w-56")}>Current Stage</th>
+                  {/* Create Project: no Current Stage column. */}
+                  {!cs && <th className="px-4 py-3">Current Stage</th>}
                   {!cs && <th className="px-4 py-3">BD</th>}
                   {cs ? (
                     <>
@@ -202,20 +227,22 @@ export function LeadsView() {
                           <ClientTypeBadge type={l.clientType} full />
                         </td>
                       )}
-                      <td className="px-4 py-3">
-                        <span className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: m.soft, color: m.color }}>
-                            <m.icon className="size-3.5" aria-hidden /> {m.short}
+                      {!cs && (
+                        <td className="px-4 py-3">
+                          <span className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: m.soft, color: m.color }}>
+                              <m.icon className="size-3.5" aria-hidden /> {m.short}
+                            </span>
+                            {closed && <Badge tone="danger">Closed</Badge>}
+                            {l.lead.status === "COMPLETED" && <Badge tone="success">Completed</Badge>}
                           </span>
-                          {closed && <Badge tone="danger">Closed</Badge>}
-                          {l.lead.status === "COMPLETED" && <Badge tone="success">Completed</Badge>}
-                        </span>
-                        <span className="mt-1.5 flex gap-1" aria-label={`Stage ${l.stageNumber} of ${l.stageCount}`}>
-                          {Array.from({ length: l.stageCount }).map((_, k) => (
-                            <span key={k} className={cn("h-1.5 w-5 rounded-full", k < l.stageNumber - 1 ? "bg-success" : k === l.stageNumber - 1 ? "" : "bg-border")} style={k === l.stageNumber - 1 ? { background: m.color } : undefined} />
-                          ))}
-                        </span>
-                      </td>
+                          <span className="mt-1.5 flex gap-1" aria-label={`Stage ${l.stageNumber} of ${l.stageCount}`}>
+                            {Array.from({ length: l.stageCount }).map((_, k) => (
+                              <span key={k} className={cn("h-1.5 w-5 rounded-full", k < l.stageNumber - 1 ? "bg-success" : k === l.stageNumber - 1 ? "" : "bg-border")} style={k === l.stageNumber - 1 ? { background: m.color } : undefined} />
+                            ))}
+                          </span>
+                        </td>
+                      )}
                       {!cs && <td className="px-4 py-3">{l.owner?.name ?? <span className="text-muted-foreground">Unassigned</span>}</td>}
                       {cs ? (
                         <>
@@ -249,7 +276,7 @@ export function LeadsView() {
             </table>
           </div>
         )}
-        {!list.isError && rows.length > 0 && <Pagination meta={list.data?.meta} onPage={setPage} />}
+        {!list.isError && rows.length > 0 && <Pagination meta={list.data?.meta} onPage={setPage} onLimit={(n) => reset(() => setLimit(n))} sizes={LIST_SIZES} />}
       </Card>
     </div>
   );

@@ -7,7 +7,7 @@ import { formatNumber } from "@/lib/format";
 export const PAGE_SIZES = [10, 40, 50, 100] as const;
 
 /** Pass `onLimit` to add the "rows per page" choice (10, 40, 50, 100); the caller resets to page 1 and refetches. */
-export function Pagination({ meta, onPage, onLimit }: { meta?: PageMeta; onPage: (p: number) => void; onLimit?: (limit: number) => void }) {
+export function Pagination({ meta, onPage, onLimit, sizes = PAGE_SIZES }: { meta?: PageMeta; onPage: (p: number) => void; onLimit?: (limit: number) => void; sizes?: readonly number[] }) {
   if (!meta) return null;
   const from = meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1;
   const to = Math.min(meta.page * meta.limit, meta.total);
@@ -21,7 +21,7 @@ export function Pagination({ meta, onPage, onLimit }: { meta?: PageMeta; onPage:
           <label className="flex items-center gap-1.5 text-muted-foreground">
             Rows per page
             <select value={meta.limit} onChange={(e) => onLimit(Number(e.target.value))} className="h-8 rounded-md border border-border bg-surface px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+              {sizes.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
         )}
