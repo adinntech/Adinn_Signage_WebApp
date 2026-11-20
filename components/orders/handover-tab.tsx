@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -243,7 +244,7 @@ function ClientSection({
           </DetailItem>
         )}
         <DetailItem label="Company Email">{c.email}</DetailItem>
-        <DetailItem label="Phone Number">{c.phone}</DetailItem>
+        <DetailItem label="Phone Number">{showMobile(c.phone)}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
         {crm && (
           <DetailItem label="GST Certificate" className="sm:col-span-2 xl:col-span-3">

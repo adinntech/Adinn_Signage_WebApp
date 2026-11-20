@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Input } from "@/components/ui/input";
+import { PHONE_PREFIX_CLASS } from "@/lib/input-format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,7 +31,7 @@ export function PhoneInput({ className, onChange, value, defaultValue, ...props 
     <div className="relative">
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 z-10 flex select-none items-center border-r border-border px-3 text-sm font-medium text-muted-foreground"
+        className={PHONE_PREFIX_CLASS}
       >
         +91
       </span>
@@ -43,7 +44,7 @@ export function PhoneInput({ className, onChange, value, defaultValue, ...props 
         {...(value !== undefined ? { value: toMobile10(String(value)) } : {})}
         {...(defaultValue !== undefined ? { defaultValue: toMobile10(String(defaultValue)) } : {})}
         aria-description={props["aria-description"] ?? "Country code +91"}
-        className={cn("pl-[3.75rem] tabular-nums", className)}
+        className={cn("pl-[4.25rem] tabular-nums", className)}
         onChange={handle}
       />
     </div>

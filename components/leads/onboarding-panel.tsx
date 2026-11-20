@@ -150,7 +150,7 @@ function PersonFields({ prefix, base, form, errAt }: { prefix: string; base: str
         <Input id={id("des")} maxLength={120} placeholder="e.g. Accounts Manager" {...r("designation")} />
       </Field>
       <Field label="Mobile No" htmlFor={id("mob")} error={errAt(`${base}.mobile`)}>
-        <Input id={id("mob")} inputMode="numeric" maxLength={10} placeholder="10-digit mobile" aria-invalid={!!errAt(`${base}.mobile`)} {...filtered(r("mobile"), digits(10))} />
+        <Input id={id("mob")} format="phone" placeholder="10-digit mobile" aria-invalid={!!errAt(`${base}.mobile`)} {...filtered(r("mobile"), digits(10))} />
       </Field>
       <Field label="Email ID" htmlFor={id("mail")} error={errAt(`${base}.email`)}>
         <Input id={id("mail")} type="email" placeholder="name@company.com" aria-invalid={!!errAt(`${base}.email`)} {...r("email")} />

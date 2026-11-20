@@ -70,6 +70,8 @@ export interface ChatMessage {
   /** When it was deleted (only on deleted messages). */
   deletedAt?: string | null;
   pinned: boolean;
+  /** A structured card posted by the system (recce submitted / reviewed). */
+  card?: { title: string; lines: { label: string; value: string }[]; path: string | null; tone: string | null } | null;
   createdAt: string;
 }
 export interface MessagePage {

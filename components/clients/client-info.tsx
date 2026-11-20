@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { Building2, ListPlus, Star, Users } from "lucide-react";
 import { AttachmentChip } from "@/components/sales/order-comments";
@@ -26,7 +27,7 @@ export function CompanyDetailsCard({ client: c, className, extras = true, client
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
         <DetailItem label="Company Name">{c.name}</DetailItem>
         <DetailItem label="Company Email">{c.email}</DetailItem>
-        <DetailItem label="Phone Number">{c.phone}</DetailItem>
+        <DetailItem label="Phone Number">{showMobile(c.phone)}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
         {/* `extras` off (Existing / Zoho clients in Lead Management): no GST certificate or custom fields. */}
         {extras && (
@@ -104,8 +105,8 @@ export function ContactsCard({ contacts }: { contacts: ClientContact[] }) {
                 <td className="px-5 py-3 font-medium">{k.name}</td>
                 <td className="px-5 py-3">{k.designation ?? "-"}</td>
                 <td className="px-5 py-3 tabular-nums">
-                  {k.phone ? `+91 ${k.phone}` : "-"}
-                  {k.alternatePhone && <span className="block text-xs text-muted-foreground">Alt: +91 {k.alternatePhone}</span>}
+                  {showMobile(k.phone) || "-"}
+                  {k.alternatePhone && <span className="block text-xs text-muted-foreground">Alt: {showMobile(k.alternatePhone)}</span>}
                 </td>
                 <td className="px-5 py-3">
                   {k.email ?? "-"}

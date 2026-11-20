@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -295,7 +296,7 @@ function Screen({ orderId, d }: { orderId: string; d: Data }) {
                         <span className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           {x.phone && (
                             <span className="inline-flex items-center gap-1">
-                              <Phone className="size-3" aria-hidden /> {x.phone}
+                              <Phone className="size-3" aria-hidden /> {showMobile(x.phone)}
                             </span>
                           )}
                           <span className="inline-flex min-w-0 items-center gap-1">

@@ -36,13 +36,8 @@ import {
 import { formData } from "@/lib/api/files";
 import { formatBytes } from "@/lib/format";
 
-/** Same normalisation as the backend (common/validators/contact.ts): +91 / leading 0 / spaces are accepted. */
-export const normalizeMobile = (raw: string) => {
-  let d = raw.replace(/[^\d+]/g, "").replace(/^\+/, "");
-  if (d.length === 12 && d.startsWith("91")) d = d.slice(2);
-  else if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
-  return d;
-};
+export { normalizeMobile } from "@/lib/validation";
+import { normalizeMobile } from "@/lib/validation";
 const isEmail = (v: string) => z.email().safeParse(v).success;
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/;
 
@@ -297,7 +292,7 @@ export function CompanyFormFields({
             <Input id={id("email")} type="email" placeholder="e.g. info@company.com" {...NO_AUTOFILL} aria-invalid={!!e("email")} {...register("email")} />
           </Field>
           <Field label="Phone Number" htmlFor={id("phone")} required error={e("phone")}>
-            <Input id={id("phone")} type="tel" inputMode="numeric" maxLength={10} placeholder="Enter 10-digit phone number" {...NO_AUTOFILL} aria-invalid={!!e("phone")} {...filtered(register("phone"), digitsOnly(10))} />
+            <Input id={id("phone")} format="phone" placeholder="10-digit phone number" {...NO_AUTOFILL} aria-invalid={!!e("phone")} {...filtered(register("phone"), digitsOnly(10))} />
           </Field>
           <Field label="GST Number" htmlFor={id("gstin")} error={e("gstin")}>
             <Input id={id("gstin")} className="uppercase" maxLength={15} placeholder="27ABCDE1234F1Z5" {...NO_AUTOFILL} aria-invalid={!!e("gstin")} {...register("gstin")} />

@@ -1,3 +1,4 @@
+import { normalizeMobile } from "@/lib/validation";
 /**
  * What a person may type into a field. The input removes everything else as they type or paste, so a wrong character
  * never appears. The server checks the same rules again, so this is a convenience and not the only guard.
@@ -60,3 +61,13 @@ export function isValidFormat(format: InputFormat, value: string): boolean {
     case "coord": return /^-?\d+(\.\d{1,6})?$/.test(v);
   }
 }
+
+/** A stored 10-digit mobile number shown with its country code: "+91 9876543210". Blank stays blank; an existing +91 is not doubled. */
+export function showMobile(raw: string | null | undefined): string {
+  const d = normalizeMobile(String(raw ?? ""));
+  return d ? `+91 ${d}` : "";
+}
+
+/** The "+91" chip inside every mobile number box: a tinted block on the left edge, then a divider, then the digits. */
+export const PHONE_PREFIX_CLASS =
+  "pointer-events-none absolute inset-y-px left-px z-10 flex select-none items-center rounded-l-[7px] border-r border-border bg-muted/70 px-3.5 text-sm font-semibold text-muted-foreground";

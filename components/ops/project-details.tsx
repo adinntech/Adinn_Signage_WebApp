@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -184,7 +185,7 @@ export function ProjectDetails() {
                         {primary && <span className="shrink-0 rounded-full bg-[#eef4ff] px-2 py-0.5 text-[11px] font-semibold text-royal">{primary.source === "POC" ? "Primary POC" : "Primary contact"}</span>}
                       </span>
                       {c.email && <span className="block truncate text-xs text-muted-foreground" title={c.email}>{c.email}</span>}
-                      {c.phone && <span className="block truncate text-xs text-muted-foreground">{c.phone}</span>}
+                      {c.phone && <span className="block truncate text-xs text-muted-foreground">{showMobile(c.phone)}</span>}
                     </span>
                   </li>
                 ))}

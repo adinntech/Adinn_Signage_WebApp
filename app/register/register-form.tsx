@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FormProvider, useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowRight, Hash, Mail, Phone, User } from "lucide-react";
+import { ArrowRight, Hash, Mail, User } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { CredentialFields } from "@/components/auth/credential-fields";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ const schema = z
   .superRefine((v, ctx) => checkCredential(v, ctx, true));
 type FormValues = z.infer<typeof schema>;
 
-type TextFieldProps = React.ComponentProps<"input"> & { id: string; label: string; icon: typeof User; error?: string | undefined; hint?: string };
+type TextFieldProps = React.ComponentProps<"input"> & { id: string; label: string; icon?: typeof User; error?: string | undefined; hint?: string; format?: "phone" };
 
 function TextField({ id, label, icon: Icon, error, hint, ...rest }: TextFieldProps) {
   return (
@@ -46,8 +46,8 @@ function TextField({ id, label, icon: Icon, error, hint, ...rest }: TextFieldPro
         </span>
       </Label>
       <div className="relative">
-        <Icon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground 2xl:size-5" aria-hidden />
-        <Input id={id} className="h-11 rounded-xl border-[#d9e3f5] bg-white pl-10 2xl:h-12 2xl:text-base" aria-invalid={!!error} aria-required {...rest} />
+        {Icon && <Icon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground 2xl:size-5" aria-hidden />}
+        <Input id={id} className={cn("h-11 rounded-xl border-[#d9e3f5] bg-white 2xl:h-12 2xl:text-base", Icon && "pl-10")} aria-invalid={!!error} aria-required {...rest} />
       </div>
       {error ? (
         <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} role="alert" className="text-xs text-danger 2xl:text-sm">
@@ -150,20 +150,11 @@ export function RegisterForm() {
             <TextField
               id="phone"
               label="Phone"
-              icon={Phone}
-              type="tel"
-              inputMode="numeric"
-              maxLength={10}
-              autoComplete="tel-national"
+              format="phone"
               placeholder="Enter your phone number"
-              hint="10 digits, numbers only"
+              hint="+91 followed by 10 digits, numbers only"
               error={errors.phone?.message}
-              {...register("phone", {
-                // Only digits can be typed or pasted, and never more than 10.
-                onChange: (e) => {
-                  e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                },
-              })}
+              {...register("phone")}
             />
           </div>
 

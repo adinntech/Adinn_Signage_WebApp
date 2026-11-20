@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import { Ban, CheckCircle2, FileUp, Mail, MapPin, Pencil, Phone, Power, Send, ShieldCheck } from "lucide-react";
@@ -53,7 +54,7 @@ export function VendorDrawer({ vendor, onClose, onEdit }: { vendor: Vendor | nul
           </div>
 
           <dl className="space-y-1.5 text-sm">
-            <div className="flex items-center gap-2"><Phone className="size-4 text-muted-foreground" aria-hidden /><dd>{v.mobile}{v.mobileAlt ? ` / ${v.mobileAlt}` : ""}{v.contactPerson ? ` · ${v.contactPerson}${v.designation ? `, ${v.designation}` : ""}` : ""}</dd></div>
+            <div className="flex items-center gap-2"><Phone className="size-4 text-muted-foreground" aria-hidden /><dd>{showMobile(v.mobile)}{v.mobileAlt ? ` / ${showMobile(v.mobileAlt)}` : ""}{v.contactPerson ? ` · ${v.contactPerson}${v.designation ? `, ${v.designation}` : ""}` : ""}</dd></div>
             {v.email && <div className="flex items-center gap-2"><Mail className="size-4 text-muted-foreground" aria-hidden /><dd>{v.email}</dd></div>}
             {(v.address || v.district) && <div className="flex items-start gap-2"><MapPin className="mt-0.5 size-4 text-muted-foreground" aria-hidden /><dd>{[v.address, v.district, v.state, v.pincode].filter(Boolean).join(", ")}</dd></div>}
             {!!v.serviceAreas?.length && <div className="flex flex-wrap gap-1.5 pt-1">{v.serviceAreas.map((a) => <span key={a} className="rounded-full bg-[#eef4ff] px-2.5 py-0.5 text-xs font-medium text-royal">{a}</span>)}</div>}

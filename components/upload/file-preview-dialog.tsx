@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/api";
 import { downloadFile, openFile, useFileUrl, type StoredFile } from "@/lib/api/pipeline";
 import { downloadFile as downloadFrom, fileUrl, openFile as openFrom, type FileSource } from "@/lib/api/files";
 import { formatBytes } from "@/lib/format";
+import { PhotoLightbox } from "@/components/preview/photo-lightbox";
 import { FileTypeIcon } from "./file-drop";
 import { SheetPreview, isSheet } from "./sheet-preview";
 
@@ -30,6 +31,18 @@ export function FilePreviewDialog({ file, onClose, source }: { file: StoredFile 
 
   const save = () => file && (source ? downloadFrom(file.id, source, file.originalName) : downloadFile(file.id)).catch((e) => toast(errorMessage(e), "error"));
   const open = () => file && (source ? openFrom(file.id, source) : openFile(file.id)).catch((e) => toast(errorMessage(e), "error"));
+
+  // Pictures open full screen (same viewer for local and Spaces files); other types keep the preview window below.
+  if (file && file.kind === "image" && !sheet) {
+    if (url.isPending || url.isError) {
+      return (
+        <Modal open onOpenChange={(o) => !o && onClose()} title={file.originalName} description={formatBytes(file.size)}>
+          {url.isPending ? <p role="status" className="flex items-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" aria-hidden /> Loading preview…</p> : <p role="alert" className="py-8 text-center text-sm text-danger">{errorMessage(url.error)}</p>}
+        </Modal>
+      );
+    }
+    return <PhotoLightbox index={0} onIndexChange={() => {}} onClose={onClose} photos={[{ id: file.id, src: url.data.url, title: file.originalName, subtitle: formatBytes(file.size), onDownload: save }]} />;
+  }
 
   return (
     <Modal

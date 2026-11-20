@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -317,7 +318,7 @@ function VendorPicker({ label, vendors, disabled, onPick }: { label: string; ven
           {list.length === 0 ? <li className="px-3 py-2 text-xs text-muted-foreground">No vendor with a cost matches.</li> : list.map((v) => (
             <li key={v._id} role="option" aria-selected={false}>
               <button type="button" className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted/60" onClick={() => { onPick(v._id); setOpen(false); setQ(""); }}>
-                <span className="min-w-0"><span className="block truncate font-medium text-navy">{v.name}</span><span className="block truncate text-xs text-muted-foreground">{v.code} · {v.mobile}</span></span>
+                <span className="min-w-0"><span className="block truncate font-medium text-navy">{v.name}</span><span className="block truncate text-xs text-muted-foreground">{v.code} · {showMobile(v.mobile)}</span></span>
                 <span className="shrink-0 font-semibold tabular-nums text-navy">₹{v.ratePerShop}/shop</span>
               </button>
             </li>

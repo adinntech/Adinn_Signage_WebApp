@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import { CloudDownload, ListPlus, Lock, Pencil, Plus, Save, Star, Users } from "lucide-react";
@@ -72,7 +73,7 @@ export function CrmClientCard({ client: c, onEdit }: { client: ClientDetails; on
         <DetailItem label="Client ID">{c.clientNo}</DetailItem>
         <DetailItem label="Client Name">{c.clientName}</DetailItem>
         <DetailItem label="Company Email">{c.email}</DetailItem>
-        <DetailItem label="Phone Number">{c.phone}</DetailItem>
+        <DetailItem label="Phone Number">{showMobile(c.phone)}</DetailItem>
         <DetailItem label="GST Number">{c.gstin}</DetailItem>
         <DetailItem label="GST Certificate" className="sm:col-span-2">
           {certs.length ? (

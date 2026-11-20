@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -838,7 +839,7 @@ export function ShopTable({
                         </td>
                         <td className="max-w-[240px] px-3 py-2.5 text-xs">{[r.address1, r.address2, r.address3].filter(Boolean).join(", ") || "-"}</td>
                         <td className="px-3 py-2.5 text-xs tabular-nums">
-                          {r.mobile ?? "-"}
+                          {showMobile(r.mobile) || "-"}
                           {r.gstin && <p className="text-muted-foreground">{r.gstin}</p>}
                         </td>
                       </>

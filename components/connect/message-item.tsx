@@ -124,6 +124,13 @@ export function MessageItem({
             </p>
           )
         )}
+        {m.card && (
+          <div className="mt-1 rounded-lg border border-primary/30 bg-secondary p-3 text-sm">
+            <p className="font-semibold">{m.card.title}</p>
+            <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 text-xs">{m.card.lines.map((l) => <div key={l.label} className="contents"><dt className="text-muted-foreground">{l.label}</dt><dd>{l.value}</dd></div>)}</dl>
+            {m.card.path && <a href={m.card.path} className="mt-2 inline-block text-xs font-medium text-accent hover:underline">Open review workspace</a>}
+          </div>
+        )}
         <Attachments channelId={channelId} items={m.attachments} />
         {(m.reactions.length > 0 || m.pinned || joined) && (
           <div className={cn("mt-1 flex flex-wrap items-center gap-1.5", mine && "justify-end")}>

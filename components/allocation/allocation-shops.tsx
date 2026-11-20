@@ -1,7 +1,8 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
-import { MapPin, Search, UserMinus, Users } from "lucide-react";
+import { MapPin, Search, UserMinus, Users, Wand2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -13,7 +14,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { useDebounced } from "@/hooks/use-debounced";
 import { errorMessage, fieldErrorsOf } from "@/lib/api";
-import { useAllocationShops, useAssign, useSetCoords, type AllocShop, type AllocationOverview } from "@/lib/api/allocation";
+import { useAllocationShops, useAssign, useGeocodeSite, useSetCoords, type AllocShop, type AllocationOverview } from "@/lib/api/allocation";
 import { useActiveVendors } from "@/lib/api/vendors";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,7 @@ export function AllocationShops({ projectId, overview, canEdit }: { projectId: s
   const costedVendors = (vendors.data ?? []).filter((v) => !!v.ratePerShop);
   const assign = useAssign(projectId);
   const setCoords = useSetCoords(projectId);
+  const geocodeSite = useGeocodeSite(projectId);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [target, setTarget] = useState("");
   const [locate, setLocate] = useState<AllocShop | null>(null);
@@ -106,7 +108,7 @@ export function AllocationShops({ projectId, overview, canEdit }: { projectId: s
                 {rows.map((s) => (
                   <tr key={s._id} className={cn("hover:bg-[#f4f8ff]", picked.has(s._id) && "bg-[#eef4ff]")}>
                     {canEdit && <td className="px-3 py-2"><input type="checkbox" aria-label={`Select ${nameOf(s)}`} checked={picked.has(s._id)} onChange={() => toggle(s._id)} /></td>}
-                    <td className="px-3 py-2 font-medium text-navy">{nameOf(s)}<span className="block text-xs font-normal text-muted-foreground">{s.siteCode}{s.mobile ? ` · ${s.mobile}` : ""}</span></td>
+                    <td className="px-3 py-2 font-medium text-navy">{nameOf(s)}<span className="block text-xs font-normal text-muted-foreground">{s.siteCode}{s.mobile ? ` · ${showMobile(s.mobile)}` : ""}</span></td>
                     <td className="px-3 py-2">{s.location ?? "-"}<span className="block text-xs text-muted-foreground">{s.district ?? ""}</span></td>
                     <td className="px-3 py-2 text-right tabular-nums">{s.distanceKm != null ? `${s.distanceKm} km` : <span className="text-xs text-muted-foreground">–</span>}</td>
                     <td className="px-3 py-2">
@@ -129,7 +131,7 @@ export function AllocationShops({ projectId, overview, canEdit }: { projectId: s
         title="Map position"
         description={locate ? `${nameOf(locate)} — type the coordinates, or place it by clicking on the Map tab.` : undefined}
         className="max-w-sm"
-        footer={<div className="flex justify-between gap-2"><Button variant="ghost" className="text-loss" disabled={locate?.lat == null} onClick={() => locate && setCoords.mutate({ id: locate._id, lat: null, lng: null }, { onSuccess: () => setLocate(null) })}>Clear</Button><div className="flex gap-2"><Button variant="outline" onClick={() => setLocate(null)}>Cancel</Button><Button className="bg-royal hover:bg-royal/90" loading={setCoords.isPending} onClick={savePos}>Save</Button></div></div>}
+        footer={<div className="flex justify-between gap-2"><Button variant="outline" loading={geocodeSite.isPending} onClick={() => locate && geocodeSite.mutate(locate._id, { onSuccess: () => { toast("Map position found from the address"); setLocate(null); }, onError: (err) => toast(errorMessage(err), "error") })}><Wand2 className="size-4" aria-hidden /> Find from address</Button><div className="flex gap-2"><Button variant="outline" onClick={() => setLocate(null)}>Cancel</Button><Button className="bg-royal hover:bg-royal/90" loading={setCoords.isPending} onClick={savePos}>Save</Button></div></div>}
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="Latitude" htmlFor="lat" error={posErr.lat}><Input id="lat" format="coord" value={pos.lat} onChange={(e) => setPos((p) => ({ ...p, lat: e.target.value }))} /></Field>

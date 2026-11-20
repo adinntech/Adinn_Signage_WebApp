@@ -20,6 +20,7 @@ import {
   MessagesSquare,
   FileCheck2,
   BadgeCheck,
+  ClipboardCheck,
   BookUser,
   type LucideIcon,
 } from "lucide-react";
@@ -48,7 +49,8 @@ export type Permission =
   | "approvals:client"
   | "zoho:sync"
   | "connect:use"
-  | "mail:manage";
+  | "mail:manage"
+  | "recce:review-cs";
 
 export interface NavLeaf {
   label: string;
@@ -73,6 +75,7 @@ export const NAV: NavItem[] = [
   { label: "Rate Card Management", icon: ReceiptIndianRupee, href: "/rate-cards", permission: "ratecards:manage" },
   { label: "Projects", icon: FolderKanban, href: "/projects", permission: "projects:read" },
   { label: "Project Monitoring", icon: Waypoints, href: "/admin/projects", permission: "projects:read", roles: ["SUPER_ADMIN", "MANAGEMENT"] },
+  { label: "Recce Review", icon: ClipboardCheck, href: "/recce-review", roles: ["SUPER_ADMIN", "MANAGEMENT"] },
   { label: "Sites", icon: MapPin, href: "/sites", permission: "sites:read" },
   {
     label: "Recce",
@@ -199,6 +202,7 @@ ROLE_NAV.CLIENT_SERVICING = [
   { label: "Client Finder", icon: Building2, href: "/client-servicing/clients", permission: "clients:read" },
   { label: "Code Requests", icon: FileCheck2, href: "/client-servicing/codes", permission: "sales:read" },
   { label: "Code Confirmation", icon: BadgeCheck, href: "/client-servicing/confirmations", permission: "sales:read" },
+  { label: "Recce Review", icon: ClipboardCheck, href: "/recce-review", permission: "recce:review-cs" },
   { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
@@ -217,6 +221,7 @@ const OPERATIONS_NAV: NavItem[] = [
   // { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
   // { label: "Movement", icon: Route, href: "/operations/movement", permission: "sites:read" },
   { label: "Vendors", icon: Store, href: "/operations/vendors", permission: "vendors:manage" },
+  { label: "Recce Review", icon: ClipboardCheck, href: "/recce-review", permission: "verification:manage" },
   { label: "Approvals", icon: AlertTriangle, href: "/operations/approvals", permission: "verification:manage" },
   { label: "Adinn Connect", icon: MessagesSquare, href: "/connect", permission: "connect:use" },
   { label: "Settings", icon: Settings, href: "/settings" },

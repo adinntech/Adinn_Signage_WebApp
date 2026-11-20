@@ -84,6 +84,7 @@ function useAllocMutation<V, R = unknown>(pid: string, fn: (v: V) => Promise<R>)
 }
 export const useSetOrigin = (pid: string) => useAllocMutation(pid, (b: { name?: string; lat: number; lng: number }) => api(`/projects/${pid}/allocation/origin`, { method: "PUT", body: JSON.stringify(b) }));
 export const useSetCoords = (pid: string) => useAllocMutation(pid, ({ id, lat, lng }: { id: string; lat: number | null; lng: number | null }) => api(`/sites/${id}/coords`, { method: "PUT", body: JSON.stringify({ lat, lng }) }));
+export const useGeocodeSite = (pid: string) => useAllocMutation(pid, (id: string) => api<{ lat: number; lng: number }>(`/sites/${id}/geocode`, { method: "POST" }));
 export const useAssign = (pid: string) =>
   useAllocMutation(pid, (b: { siteIds: string[]; channel: Channel | "NONE"; vendorId?: string }) => api<{ affected: number }>(`/projects/${pid}/allocation/assign`, { method: "POST", body: JSON.stringify(b) }));
 export const usePreviewSplit = (pid: string) =>

@@ -94,10 +94,10 @@ export function ContactDialog({
           <Input id="cd-des" placeholder="Enter designation" {...NO_AUTOFILL} {...register("designation")} />
         </Field>
         <Field label="Mobile Number" htmlFor="cd-phone" required error={e.phone?.message}>
-          <Input id="cd-phone" inputMode="numeric" maxLength={10} placeholder="Enter 10-digit mobile number" {...NO_AUTOFILL} aria-invalid={!!e.phone} {...filtered(register("phone"), digitsOnly(10))} />
+          <Input id="cd-phone" format="phone" placeholder="10-digit mobile number" {...NO_AUTOFILL} aria-invalid={!!e.phone} {...filtered(register("phone"), digitsOnly(10))} />
         </Field>
         <Field label="Alternate Mobile Number" htmlFor="cd-aphone" error={e.alternatePhone?.message}>
-          <Input id="cd-aphone" inputMode="numeric" maxLength={10} placeholder="Enter alternate mobile number" {...NO_AUTOFILL} aria-invalid={!!e.alternatePhone} {...filtered(register("alternatePhone"), digitsOnly(10))} />
+          <Input id="cd-aphone" format="phone" placeholder="10-digit alternate mobile" {...NO_AUTOFILL} aria-invalid={!!e.alternatePhone} {...filtered(register("alternatePhone"), digitsOnly(10))} />
         </Field>
         <Field label="Email Address" htmlFor="cd-email" error={e.email?.message}>
           <Input id="cd-email" type="email" placeholder="Enter email address" {...NO_AUTOFILL} {...register("email")} />
