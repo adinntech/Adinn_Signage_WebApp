@@ -223,6 +223,11 @@ export interface LeadListParams {
   status?: string;
   clientType?: string;
   sort?: string;
+  /** Created At / Last Updated At ranges: India dates (YYYY-MM-DD), both ends included. */
+  createdFrom?: string;
+  createdTo?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
 }
 
 const leadKey = (id: string) => ["leads", "lead", id] as const;

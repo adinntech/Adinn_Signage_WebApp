@@ -9,7 +9,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
+    // Browser extensions (e.g. QuillBot: data-qb-installed) add attributes to <html> before React loads; this ignores
+    // only those attribute differences on this one tag (children are still checked).
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full">
         <Providers>{children}</Providers>
       </body>

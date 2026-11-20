@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
+import { DateFiltersPanel, EMPTY_RANGE, MoreFiltersButton, datesSet, rangeParams, type DateRange } from "@/components/ui/date-range-filter";
 import { Pagination } from "@/components/ui/pagination";
 import type { SearchOption } from "@/components/ui/search-select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +22,8 @@ import { newRequestKey } from "@/lib/api/sales";
 import { formatDateTimeIST } from "@/lib/format";
 
 const BASE = "/rate-card-creation";
+/** Rows per page offered on the list (default 10). */
+const LIST_SIZES = [10, 25, 50] as const;
 
 /**
  * One rate card in the editor (preview left, fields right): a new one (id null) or a saved one. The Client Company
@@ -87,14 +90,23 @@ export function RateCardCreationView() {
   const card = params.get("card");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [created, setCreated] = useState<DateRange>(EMPTY_RANGE);
+  const [updated, setUpdated] = useState<DateRange>(EMPTY_RANGE);
+  const [moreOpen, setMoreOpen] = useState(false);
   const dq = useDebounced(q);
-  const list = useRateCardList({ q: dq || undefined, page, limit: 20 });
+  // Date ranges are sent only when valid (From on or before To); both ends are whole India days.
+  const c = rangeParams(created);
+  const u = rangeParams(updated);
+  const list = useRateCardList({ q: dq || undefined, page, limit, createdFrom: c.from, createdTo: c.to, updatedFrom: u.from, updatedTo: u.to });
   const rows = list.data?.data ?? [];
-  const offset = ((list.data?.meta.page ?? 1) - 1) * (list.data?.meta.limit ?? 20);
+  const offset = ((list.data?.meta.page ?? 1) - 1) * (list.data?.meta.limit ?? limit);
+  const dated = !!(created.from || created.to || updated.from || updated.to);
   const open = (c: string | null) => router.replace(c ? `${BASE}?card=${encodeURIComponent(c)}` : BASE, { scroll: false });
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-5">
+    // The page grows with its rows (the main area scrolls), so a page of 10 / 25 / 50 rows shows in full.
+    <div className="mx-auto flex max-w-7xl flex-col gap-5">
       <PageHeader
         icon={ReceiptIndianRupee}
         title="Rate Card Creation"
@@ -106,7 +118,8 @@ export function RateCardCreationView() {
         }
       />
 
-      <Card className="flex flex-wrap items-center gap-3 p-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
@@ -120,20 +133,25 @@ export function RateCardCreationView() {
             }}
           />
         </div>
-        {/* Reset: clears the search and goes back to page 1. */}
+        <MoreFiltersButton open={moreOpen} count={datesSet(created, updated)} onClick={() => setMoreOpen((o) => !o)} />
+        {/* Reset: clears the search and the date filters, and goes back to page 1. */}
         <Button
           variant="outline"
-          disabled={!q && page === 1}
+          disabled={!q && !dated && page === 1}
           onClick={() => {
             setQ("");
+            setCreated(EMPTY_RANGE);
+            setUpdated(EMPTY_RANGE);
             setPage(1);
           }}
         >
           <RotateCcw className="size-4" aria-hidden /> Reset
         </Button>
+        </div>
+        <DateFiltersPanel open={moreOpen} created={created} updated={updated} onCreated={(r) => (setCreated(r), setPage(1))} onUpdated={(r) => (setUpdated(r), setPage(1))} />
       </Card>
 
-      <Card className="flex min-h-[380px] flex-1 flex-col overflow-hidden">
+      <Card className="flex flex-col overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
           <h2 className="text-sm font-semibold text-foreground">Rate Cards</h2>
           {list.data && <span className="text-xs text-muted-foreground">{list.data.meta.total} rate cards</span>}
@@ -145,9 +163,9 @@ export function RateCardCreationView() {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={FilePlus2}
-            title={dq ? "No rate cards match your search" : "No rate cards yet"}
+            title={dq || dated ? "No rate cards match your filters" : "No rate cards yet"}
             action={
-              !dq ? (
+              !dq && !dated ? (
                 <Button variant="brand" onClick={() => open("new")}>
                   <Plus className="size-4" aria-hidden /> New Rate Card
                 </Button>
@@ -155,7 +173,8 @@ export function RateCardCreationView() {
             }
           />
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto">
+          // Horizontal scroll only: every row of the page shows, the page itself scrolls down.
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
@@ -201,7 +220,17 @@ export function RateCardCreationView() {
             </table>
           </div>
         )}
-        {!list.isError && rows.length > 0 && <Pagination meta={list.data?.meta} onPage={setPage} />}
+        {!list.isError && rows.length > 0 && (
+          <Pagination
+            meta={list.data?.meta}
+            onPage={setPage}
+            onLimit={(n) => {
+              setLimit(n);
+              setPage(1);
+            }}
+            sizes={LIST_SIZES}
+          />
+        )}
       </Card>
 
       <Modal
