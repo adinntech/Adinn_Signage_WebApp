@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useState } from "react";
 import { BadgeIndianRupee, Check, ChevronDown, CloudDownload, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -191,7 +192,7 @@ function SearchResults({ canWrite, onCost, onView, signageOnly, all, onAll }: { 
                   <tr key={v._id} className="group cursor-pointer hover:bg-[#f4f8ff]" onClick={() => onView(v)} title="Click to see all details">
                     <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#f4f8ff]`}>{v.vendorNo ?? "–"}</td>
                     <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#f4f8ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span></td>
-                    <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{showMobile(v.mobile) || "–"}</td>
                     <td className="px-4 py-3 text-xs">{v.gstin ?? "–"}<span className="block text-muted-foreground">{v.pan ?? ""}</span></td>
                     <td className="max-w-36 truncate px-4 py-3">{v.city || "–"}</td>
                     <td className="px-4 py-3">{v.price.ratePerShop != null ? <Badge tone="success"><Check className="mr-1 size-3" aria-hidden />{money(v.price.ratePerShop)}</Badge> : <span className="text-xs text-muted-foreground">Not added</span>}{v.price.pending && <span className="mt-1 block text-xs font-semibold text-approval" title={`Company rate ${money(v.price.pending.limitRate)} / travelling cost ${money(v.price.pending.limitFar)}. Waiting for the approver's reply (${v.price.pending.requestId}).`}>Waiting for approval: {money(v.price.pending.ratePerShop)}{v.price.pending.farRatePerShop != null ? ` / travelling ${money(v.price.pending.farRatePerShop)}` : ""}</span>}</td>
@@ -247,7 +248,7 @@ function WithCost({ canWrite, onView, onEdit, onRemove, onStatus }: { canWrite: 
                 <tr key={v._id} className="group cursor-pointer hover:bg-[#faf6ff]" onClick={() => onView(v)} title="Click to see all details">
                   <td className={`sticky left-0 z-10 w-32 min-w-32 bg-surface px-4 py-3 font-mono font-semibold text-navy group-hover:bg-[#faf6ff]`}>{v.vendorNo ?? "–"}</td>
                   <td className="sticky left-32 z-10 max-w-60 bg-surface px-4 py-3 font-semibold text-navy group-hover:bg-[#faf6ff] shadow-[2px_0_0_0_var(--color-border,#e5e7eb)]"><span className="block truncate" title={v.name}>{v.name}</span>{v.vendor && <span className="text-xs font-normal text-muted-foreground">Registered · {v.vendor.code}</span>}</td>
-                  <td className="whitespace-nowrap px-3 py-3 tabular-nums">{v.mobile ?? "–"}</td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums">{showMobile(v.mobile) || "–"}</td>
                   <td className="max-w-32 px-3 py-3"><span className="block truncate" title={v.city ?? ""}>{v.city || "–"}</span></td>
                   <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums">{v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.ratePerShop)}</span> : money(v.price.ratePerShop)}{v.price.approval && <div><ApprovalTag a={v.price.approval} /></div>}{canWrite && v.price.approval && <button type="button" className="mt-0.5 block w-full text-right text-xs font-semibold text-royal hover:underline" onClick={(e) => { e.stopPropagation(); onStatus(v); }}>View status</button>}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{v.price.farRatePerShop == null && v.price.ratePerShop == null && v.price.pending ? <span className="text-approval" title="Requested, waiting for the approver's reply">{money(v.price.pending.farRatePerShop)}</span> : money(v.price.farRatePerShop)}</td>

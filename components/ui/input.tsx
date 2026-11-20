@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { X } from "lucide-react";
-import { FORMATS, type InputFormat } from "@/lib/input-format";
+import { FORMATS, PHONE_PREFIX_CLASS, type InputFormat } from "@/lib/input-format";
 import { cn } from "@/lib/utils";
 
 /** A search box is a controlled input with room for an icon (pl-9) and a label or placeholder that starts with "Search". */
@@ -46,6 +46,15 @@ export function Input({ className, type = "text", format, onChange, ...props }: 
       onChange={handle}
     />
   );
+  // Mobile numbers always show a fixed "+91" inside the box (not editable, not part of the value).
+  if (format === "phone") {
+    return (
+      <div className="relative w-full">
+        <span aria-hidden className={PHONE_PREFIX_CLASS}>+91</span>
+        {React.cloneElement(field, { className: cn(field.props.className, "pl-[4.25rem] tabular-nums") })}
+      </div>
+    );
+  }
   if (!clearable) return field;
   return (
     <>

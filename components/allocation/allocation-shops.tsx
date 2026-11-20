@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import { MapPin, Search, UserMinus, Users, Wand2 } from "lucide-react";
@@ -107,7 +108,7 @@ export function AllocationShops({ projectId, overview, canEdit }: { projectId: s
                 {rows.map((s) => (
                   <tr key={s._id} className={cn("hover:bg-[#f4f8ff]", picked.has(s._id) && "bg-[#eef4ff]")}>
                     {canEdit && <td className="px-3 py-2"><input type="checkbox" aria-label={`Select ${nameOf(s)}`} checked={picked.has(s._id)} onChange={() => toggle(s._id)} /></td>}
-                    <td className="px-3 py-2 font-medium text-navy">{nameOf(s)}<span className="block text-xs font-normal text-muted-foreground">{s.siteCode}{s.mobile ? ` · ${s.mobile}` : ""}</span></td>
+                    <td className="px-3 py-2 font-medium text-navy">{nameOf(s)}<span className="block text-xs font-normal text-muted-foreground">{s.siteCode}{s.mobile ? ` · ${showMobile(s.mobile)}` : ""}</span></td>
                     <td className="px-3 py-2">{s.location ?? "-"}<span className="block text-xs text-muted-foreground">{s.district ?? ""}</span></td>
                     <td className="px-3 py-2 text-right tabular-nums">{s.distanceKm != null ? `${s.distanceKm} km` : <span className="text-xs text-muted-foreground">–</span>}</td>
                     <td className="px-3 py-2">

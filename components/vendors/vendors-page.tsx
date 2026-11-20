@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -162,7 +163,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
                     <tr key={v._id} className="cursor-pointer hover:bg-[#faf6ff]" onClick={() => setZview(v)} title="Click to see all details">
                       <td className="px-4 py-3 font-mono font-semibold text-navy">{v.vendorNo ?? "–"}</td>
                       <td className="max-w-60 px-4 py-3 font-semibold text-navy"><span className="block truncate" title={v.name}>{v.name}</span></td>
-                      <td className="whitespace-nowrap px-4 py-3">{v.mobile ?? "–"}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{showMobile(v.mobile) || "–"}</td>
                       <td className="px-4 py-3 text-xs">{v.gstin ?? "–"}<span className="block text-muted-foreground">{v.pan ?? ""}</span></td>
                       <td className="max-w-36 truncate px-4 py-3">{v.city || "–"}</td>
                       <td className="px-4 py-3 text-xs">{v.vendor ? <span className="font-semibold text-finance">{v.vendor.code}</span> : <span className="text-muted-foreground">No</span>}</td>
@@ -190,7 +191,7 @@ export function VendorsPage({ view: which = "master" }: { view?: "master" | "reg
                   <tr key={v._id} className="cursor-pointer hover:bg-[#f4f8ff]" onClick={() => setView(v)} title="Click to see all details">
                     <td className="px-4 py-3 font-semibold text-navy">{v.name}<span className="block text-xs font-normal text-muted-foreground">{v.code}</span></td>
                     <td className="px-4 py-3">{VENDOR_TYPE_LABEL[v.type]}</td>
-                    <td className="px-4 py-3">{v.contactPerson ?? "-"}<span className="block text-xs text-muted-foreground">{v.mobile}</span></td>
+                    <td className="px-4 py-3">{v.contactPerson ?? "-"}<span className="block text-xs text-muted-foreground">{showMobile(v.mobile)}</span></td>
                     <td className="max-w-48 truncate px-4 py-3 text-muted-foreground" title={(v.serviceAreas ?? []).join(", ")}>{(v.serviceAreas ?? []).join(", ") || v.district || "-"}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{v.ratePerShop != null ? `₹${v.ratePerShop}` : <span className="text-xs text-muted-foreground">Company</span>}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{v.allocatedShops ?? 0}</td>

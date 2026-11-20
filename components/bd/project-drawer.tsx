@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -187,7 +188,7 @@ export function ProjectDrawer({
                     <li key={c._id ?? c.phone} className="rounded-lg border border-border p-3 text-sm">
                       <p className="font-medium text-foreground">{c.name}</p>
                       <p className="mt-1 flex items-center gap-2 text-muted-foreground"><Mail className="size-3.5" aria-hidden />{c.email}</p>
-                      <p className="mt-0.5 flex items-center gap-2 text-muted-foreground"><Phone className="size-3.5" aria-hidden />{c.phone}</p>
+                      <p className="mt-0.5 flex items-center gap-2 text-muted-foreground"><Phone className="size-3.5" aria-hidden />{showMobile(c.phone)}</p>
                     </li>
                   ))}
                 </ul>

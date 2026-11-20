@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -1257,7 +1258,7 @@ export function AssignedView({ r, projectLink = false }: { r: RecceState; projec
                 <li className="flex items-center gap-2 text-foreground">
                   <Phone className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   <a href={`tel:${a.phone}`} className="hover:underline">
-                    {a.phone}
+                    {showMobile(a.phone)}
                   </a>
                 </li>
               )}

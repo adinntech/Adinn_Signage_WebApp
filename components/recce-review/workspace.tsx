@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -75,7 +76,7 @@ export function ReviewWorkspace() {
             <p className="mt-1 font-medium">{w.shop.name ?? "-"} <span className="text-muted-foreground">({w.shop.code})</span></p>
             <p className="text-muted-foreground">{w.shop.address || "-"}</p>
             <p className="mt-1">{w.shop.district ?? ""}</p>
-            {w.shop.contactPerson && <p>{w.shop.contactPerson}{w.shop.mobile ? ` · ${w.shop.mobile}` : ""}</p>}
+            {w.shop.contactPerson && <p>{w.shop.contactPerson}{w.shop.mobile ? ` · ${showMobile(w.shop.mobile)}` : ""}</p>}
             <p className="mt-2 text-xs text-muted-foreground">Recce by {w.assignee ?? "-"} ({w.channel === "VENDOR" ? "vendor" : "in-house"})</p>
             <p className="text-xs text-muted-foreground">{w.project.name}</p>
           </Card>

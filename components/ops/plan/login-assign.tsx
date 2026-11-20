@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import { Building2, Home, Loader2, Smartphone, UserPlus } from "lucide-react";
@@ -11,7 +12,7 @@ import { errorMessage } from "@/lib/api";
 import { useAssignLogins, useLegLogins, type LegLogins } from "@/lib/api/costing";
 import { formatDateTime } from "@/lib/format";
 
-const label = (u: LegLogins["logins"][number]) => `${u.name}${u.phone ? ` · ${u.phone}` : ""}${u.employeeId ? ` · ${u.employeeId}` : ""}`;
+const label = (u: LegLogins["logins"][number]) => `${u.name}${u.phone ? ` · ${showMobile(u.phone)}` : ""}${u.employeeId ? ` · ${u.employeeId}` : ""}`;
 
 /**
  * Last step of the recce operations login: after the shops are given to the in-house team or a vendor, pick the recce mobile

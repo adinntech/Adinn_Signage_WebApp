@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { BadgeIndianRupee, Building2, Hash, Mail, MapPin, Phone, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,7 @@ export function ZohoVendorDrawer({ vendor: v, canWrite, onCost, onClose }: { ven
           </div>
 
           <dl className="space-y-2 text-sm">
-            <Line icon={Phone}>{v.mobile ?? <span className="text-muted-foreground">No phone in Zoho</span>}</Line>
+            <Line icon={Phone}>{showMobile(v.mobile) ||  <span className="text-muted-foreground">No phone in Zoho</span>}</Line>
             <Line icon={Mail}>{v.email ?? <span className="text-muted-foreground">No email in Zoho</span>}</Line>
             <Line icon={MapPin}>{[v.address, v.city].filter(Boolean).join(", ") || <span className="text-muted-foreground">No address in Zoho</span>}</Line>
             <Line icon={UserRound}>Created by {v.createdByName ?? "–"}{v.zohoCreatedAt ? ` on ${formatDate(v.zohoCreatedAt)}` : ""}</Line>

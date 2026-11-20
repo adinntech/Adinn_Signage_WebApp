@@ -1,4 +1,5 @@
 "use client";
+import { showMobile } from "@/lib/input-format";
 
 import { useState } from "react";
 import { Building2, ClipboardList, Hash, MessageSquareText, Paperclip, Star, Store } from "lucide-react";
@@ -74,7 +75,7 @@ export function BdHandover({ projectId, h, tabbed = true }: { projectId: string;
             <DetailItem label="Client Name">{c.clientName}</DetailItem>
             <DetailItem label="Client ID">{clientIdOf(c, c.clientType) ?? (c.clientType === "EXISTING" ? h.clientId : undefined)}</DetailItem>
             <DetailItem label="Company Email">{c.email}</DetailItem>
-            <DetailItem label="Phone Number">{c.phone}</DetailItem>
+            <DetailItem label="Phone Number">{showMobile(c.phone)}</DetailItem>
             <DetailItem label="GST Number">{c.gstin}</DetailItem>
             {!!c.gstCertificates?.length && (
               <DetailItem label="GST Certificate" className="sm:col-span-2 lg:col-span-3">
