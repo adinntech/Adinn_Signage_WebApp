@@ -85,6 +85,8 @@ export interface WsReview {
   comment: string;
   checklist: { key: string; label: string; passed: boolean }[];
   override: { reason: string; by: string | null } | null;
+  /** Earlier answers of this stage that were replaced (a stage that approved and later changed its decision), oldest first. */
+  history: { decision: string | null; reviewer: string | null; decidedAt: string | null; comment: string; changedAt: string | null }[];
 }
 export interface WsVersion {
   id: string;
@@ -133,7 +135,7 @@ export interface Workspace {
   reworks: WsRework[];
   checklist: { key: string; label: string; stage: string; gps: boolean }[];
   categories: { key: string; label: string }[];
-  me: { stage: ReviewStage | null; canDecide: boolean; openStage: ReviewStage | null; isAdmin: boolean; canReopen: boolean };
+  me: { stage: ReviewStage | null; canDecide: boolean; /** my stage approved this version: I may still change it to Rework / More photos / Reject */ canChange: boolean; openStage: ReviewStage | null; isAdmin: boolean; canReopen: boolean };
 }
 export interface TimelineEvent {
   id: string;
@@ -240,6 +242,8 @@ export interface DecisionInput {
 }
 const post = (path: string, body: unknown) => api(path, { method: "POST", body: JSON.stringify(body) });
 export const useDecide = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/decision`, b));
+/** A stage that approved changes its decision (Operations and Client Servicing, each for its own stage). A reason is always needed. */
+export const useChangeDecision = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/change-decision`, b));
 export const useStartReview = (id: string) => useAct(id, () => post(`${B}/submissions/${id}/start`, {}));
 export const useOverride = (id: string) => useAct(id, (b: { action: "APPROVE" | "REJECT"; reason: string }) => post(`${B}/submissions/${id}/override`, b));
 export const useReopen = (id: string) => useAct(id, (b: { reason: string }) => post(`${B}/submissions/${id}/reopen`, b));

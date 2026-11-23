@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Download, ExternalLink, Maximize2, RotateCw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,8 @@ export type LightboxPhoto = {
   facts?: string[];
   /** Saves the file under its own name. Without it the picture opens in a new tab. */
   onDownload?: () => void;
+  /** Extra buttons for this picture, shown in the header next to Download (for example a reviewer's "Reject photo"). */
+  actions?: ReactNode;
 };
 
 const MIN = 1;
@@ -86,6 +88,7 @@ export function PhotoLightbox({ photos, index, onIndexChange, onClose }: { photo
             ) : (
               <a className={btn} aria-label="Open in new tab" href={photo.src} target="_blank" rel="noreferrer"><ExternalLink className="size-4" /></a>
             ))}
+            {photo.actions}
             <Dialog.Close className={btn} aria-label="Close"><X className="size-5" /></Dialog.Close>
           </header>
 
