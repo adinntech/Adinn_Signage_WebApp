@@ -95,7 +95,7 @@ export function StepFooter({
   const ready = missing.length === 0;
   const blocked = missing.some((m) => !softGaps.includes(m));
   return (
-    <div id={FOOTER_ID} className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-warning/40 bg-warning-soft/90")}>
+    <div id={FOOTER_ID} className={cn("sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 shadow-card backdrop-blur", ready ? "border-success/40 bg-success-soft/90" : "border-white bg-white")}>
       {ready ? <CheckCircle2 className="size-5 shrink-0 text-success" aria-hidden /> : <CircleAlert className="size-5 shrink-0 text-warning" aria-hidden />}
       <p className="min-w-0 flex-1 text-sm">
         {ready ? (
