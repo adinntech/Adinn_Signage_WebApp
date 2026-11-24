@@ -111,8 +111,12 @@ export interface WsRework {
   instructions: string;
   requestedBy: string | null;
   requestedAt: string;
-  items: { id: string; type: string; category: string | null; categoryLabel: string | null; mediaKey: string; photo: string | null; note: string; resolved: boolean; resolvedInVersion: number | null }[];
+  items: { id: string; type: string; category: string | null; categoryLabel: string | null; mediaKey: string; photo: string | null; note: string; rejected?: boolean; resolved: boolean; resolvedInVersion: number | null }[];
 }
+/** One physical board of a shop. `key` is its permanent id (a photo's `mediaKey` points at it). `mediaType` + `seq` make its number ("GSB-01"); boards made before numbers existed have neither. */
+export interface BoardItem { key: string; name: string; mediaType?: string | null; seq?: number | null; quantity?: number; width?: number; height?: number; unit?: string; notes?: string }
+/** "GSB-01" for a numbered board; the name for an older line. */
+export const boardLabel = (b: Pick<BoardItem, "name" | "mediaType" | "seq">) => (b.mediaType && b.seq ? `${b.mediaType}-${String(b.seq).padStart(2, "0")}` : b.name);
 export interface Workspace {
   id: string;
   status: RecceStatus;
@@ -126,7 +130,7 @@ export interface Workspace {
   assignee: string | null;
   channel: string | null;
   notes: string;
-  mediaItems: { key: string; name: string; quantity?: number; width?: number; height?: number; unit?: string; notes?: string }[];
+  mediaItems: BoardItem[];
   reviewers: { OPS: { id: string; name: string } | null; CS: { id: string; name: string } | null };
   shop: { id: string; code: string; name: string | null; dealer: string | null; district: string | null; contactPerson: string | null; mobile: string | null; address: string; lat: number | null; lng: number | null; boardType: string | null };
   project: { id: string; code: string; name: string; client: string | null; requirementType: string | null; closed: boolean };
@@ -238,7 +242,7 @@ export interface DecisionInput {
   comment: string;
   reason?: string;
   checklist: { key: string; passed: boolean }[];
-  items: { type: string; category?: string; mediaKey?: string; photo?: string; note?: string }[];
+  items: { type: string; category?: string; mediaKey?: string; photo?: string; note?: string; /** a photo rejected on the review screen: `note` is the reason for rejection */ rejected?: boolean }[];
 }
 const post = (path: string, body: unknown) => api(path, { method: "POST", body: JSON.stringify(body) });
 export const useDecide = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/decision`, b));

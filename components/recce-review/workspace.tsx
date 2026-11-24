@@ -19,7 +19,7 @@ import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import {
   useAssignReviewer, useChangeDecision, useDecide, useOverride, useReopen, useRestorePhoto, useReviewers, useSendShopMessage, useShopThread, useStartReview, useTimeline, useWorkspace,
-  type DecisionInput, type WsPhoto, type Workspace,
+  boardLabel, type DecisionInput, type WsPhoto, type Workspace,
 } from "@/lib/api/recceReview";
 import { DecisionBadge, OverdueBadge, STAGE_LABEL, StatusBadge, fmtDate } from "./common";
 
@@ -90,7 +90,7 @@ export function ReviewWorkspace() {
             <ul className="mt-2 flex flex-col gap-2">
               {w.mediaItems.map((m) => (
                 <li key={m.key} className="rounded-lg border border-border px-3 py-2">
-                  <p className="font-medium">{m.name} × {m.quantity ?? 1}</p>
+                  <p className="font-medium">{boardLabel(m)}{m.mediaType && m.seq ? <span className="font-normal text-muted-foreground"> · {m.name}</span> : ` × ${m.quantity ?? 1}`}</p>
                   <p className="text-xs text-muted-foreground">{m.width && m.height ? `${m.width} × ${m.height} ${m.unit ?? ""}` : "No measurement"}</p>
                   {m.notes && <p className="text-xs">{m.notes}</p>}
                 </li>
@@ -146,6 +146,7 @@ export function ReviewWorkspace() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 {p.url ? <img src={p.editedUrl ?? p.url} alt={`${label(w, p.category)} photo`} loading="lazy" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center text-xs text-muted-foreground">No file</span>}
                 {version?.addedIds.includes(p.id) && <span className="absolute left-1 top-1 rounded bg-success px-1 text-[10px] font-medium text-white">NEW</span>}
+                {w.mediaItems.length > 1 && boardOf(w, p.mediaKey) && <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-medium text-white">{boardOf(w, p.mediaKey)}</span>}
                 {p.state !== "SUBMITTED" && <span className="absolute inset-x-0 bottom-0 bg-black/70 px-1 text-[10px] text-white">{p.state === "REMOVED" ? "Removed" : "Replaced"}</span>}
                 {p.id in rejects && <span className="absolute inset-x-0 bottom-0 bg-danger px-1 text-[10px] font-medium text-white">Rejected</span>}
                 {p.flags.length > 0 && <AlertTriangle className="absolute right-1 top-1 size-4 text-warning" aria-label="Metadata warning" />}
@@ -169,6 +170,8 @@ export function ReviewWorkspace() {
 }
 
 const label = (w: Workspace, key: string) => w.categories.find((c) => c.key === key)?.label ?? key;
+/** The board number ("GSB-02") a photo belongs to; empty for a photo that belongs to no board. */
+const boardOf = (w: Workspace, mediaKey: string) => { const b = w.mediaItems.find((m) => m.key === mediaKey); return b ? boardLabel(b) : ""; };
 
 const lightboxItem = (p: WsPhoto, w: Workspace) => ({
   id: p.id,
@@ -341,7 +344,9 @@ function ReviewPanel({ w, cur, photos, rejects, setRejects }: { w: Workspace; cu
 
   // Photos rejected on the viewer (or ticked under "Replace these photos"): each one is a REPLACE_PHOTO item with its own reason.
   const rejected = photos.filter((p) => p.state === "SUBMITTED" && p.id in rejects);
-  const rejectItems: DecisionInput["items"] = rejected.map((p) => ({ type: "REPLACE_PHOTO", photo: p.id, ...(rejects[p.id]?.trim() ? { note: rejects[p.id]!.trim() } : {}) }));
+  const rejectItems: DecisionInput["items"] = rejected.map((p) => ({ type: "REPLACE_PHOTO", photo: p.id, rejected: true, note: (rejects[p.id] ?? "").trim() }));
+  // Every rejected photo needs its reason (3+ characters): the recce person sees "Rejected" with that reason.
+  const reasonsMissing = rejected.filter((p) => (rejects[p.id] ?? "").trim().length < 3);
   const run = canChange ? changeDecision : decide;
   const submit = (input: DecisionInput) => run.mutate(input, { onSuccess: () => { toast(canChange ? "Decision changed" : "Decision saved"); setMode(null); setComment(""); setCats([]); setRejects({}); }, onError: (e) => toast(errorMessage(e), "error") });
 
@@ -362,8 +367,8 @@ function ReviewPanel({ w, cur, photos, rejects, setRejects }: { w: Workspace; cu
   };
   const needsText = mode === "REJECT" || mode === "REWORK" || mode === "ADDITIONAL";
   // Changing an approval always needs a written reason (5+ characters), whatever the new answer is. Approving needs no rejected photo.
-  const valid = canChange ? comment.trim().length >= 5 && (mode !== "ADDITIONAL" || cats.length > 0) && !!mode && mode !== "APPROVE"
-    : mode === "APPROVE" ? rejected.length === 0 && w.checklist.filter((c) => !(c.gps && false)).every((c) => checks[c.key]) : mode === "REJECT" ? comment.trim().length >= 3 : mode === "REWORK" ? comment.trim().length >= 5 : mode === "ADDITIONAL" ? cats.length > 0 : false;
+  const valid = canChange ? comment.trim().length >= 5 && (mode !== "ADDITIONAL" || cats.length > 0) && !!mode && mode !== "APPROVE" && (mode !== "REWORK" || reasonsMissing.length === 0)
+    : mode === "APPROVE" ? rejected.length === 0 && w.checklist.filter((c) => !(c.gps && false)).every((c) => checks[c.key]) : mode === "REJECT" ? comment.trim().length >= 3 : mode === "REWORK" ? comment.trim().length >= 5 && reasonsMissing.length === 0 : mode === "ADDITIONAL" ? cats.length > 0 : false;
 
   return (
     <div className="flex flex-col gap-3">
@@ -451,13 +456,14 @@ function ReviewPanel({ w, cur, photos, rejects, setRejects }: { w: Workspace; cu
               <Textarea className="mt-1" value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} />
             </label>
           )}
-          <p className="text-xs text-muted-foreground">Only these photos are asked again. The other photos stay as they are.</p>
+          {reasonsMissing.length > 0 && <p role="alert" className="text-xs text-danger">Write the reason for rejecting: {reasonsMissing.map((p) => label(w, p.category)).join(", ")}.</p>}
+          <p className="text-xs text-muted-foreground">The recce person sees these photos as Rejected, with your reason. Only these photos are asked again; the other photos stay as they are.</p>
         </Card>
       )}
 
       {acting ? (
         <div className="sticky bottom-0 -mx-1 flex flex-wrap gap-2 border-t border-border bg-background/95 px-1 py-3 backdrop-blur">
-          {!mode && rejected.length > 0 && <Button variant="destructive" loading={pending} disabled={pending} onClick={sendRejected}><ShieldX className="size-4" aria-hidden /> Send {rejected.length} rejected photo{rejected.length === 1 ? "" : "s"} back</Button>}
+          {!mode && rejected.length > 0 && <Button variant="destructive" loading={pending} disabled={pending || reasonsMissing.length > 0} title={reasonsMissing.length > 0 ? "Write a reason for every rejected photo" : undefined} onClick={sendRejected}><ShieldX className="size-4" aria-hidden /> Send {rejected.length} rejected photo{rejected.length === 1 ? "" : "s"} back</Button>}
           {mode ? (
             <>
               <Button disabled={!valid || pending} loading={pending} onClick={send} variant={mode === "REJECT" ? "destructive" : "default"}><Send className="size-4" aria-hidden /> Confirm {canChange ? "change" : mode === "APPROVE" ? "approval" : mode === "REJECT" ? "rejection" : mode === "REWORK" ? "rework request" : "request"}</Button>
@@ -512,7 +518,7 @@ function ReworkList({ w }: { w: Workspace }) {
             <p className="mt-2">{r.instructions}</p>
             <ul className="mt-2 flex flex-col gap-1">
               {r.items.map((i) => (
-                <li key={i.id} className="flex items-center gap-2 text-xs"><span className={`size-2 rounded-full ${i.resolved ? "bg-success" : "bg-warning"}`} aria-hidden />{i.type === "ADDITIONAL_PHOTO" ? `Add: ${i.categoryLabel}` : i.type === "REPLACE_PHOTO" ? (i.note ? `Replace a photo: ${i.note}` : "Replace a photo") : i.type === "FIX_MEASUREMENT" ? "Correct measurements" : i.note || "Other"}{i.resolved ? ` (resolved in v${i.resolvedInVersion})` : " (open)"}</li>
+                <li key={i.id} className="flex items-center gap-2 text-xs"><span className={`size-2 rounded-full ${i.resolved ? "bg-success" : "bg-warning"}`} aria-hidden />{i.type === "ADDITIONAL_PHOTO" ? `Add: ${i.categoryLabel}` : i.type === "REPLACE_PHOTO" ? (i.rejected ? `Rejected photo${i.categoryLabel ? ` (${i.categoryLabel})` : ""}: ${i.note}` : i.note ? `Replace a photo: ${i.note}` : "Replace a photo") : i.type === "FIX_MEASUREMENT" ? "Correct measurements" : i.note || "Other"}{i.resolved ? ` (resolved in v${i.resolvedInVersion})` : " (open)"}</li>
               ))}
             </ul>
           </Card>

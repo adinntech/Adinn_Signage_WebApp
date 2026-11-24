@@ -22,6 +22,7 @@ import {
   BadgeCheck,
   ClipboardCheck,
   BookUser,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -50,7 +51,8 @@ export type Permission =
   | "zoho:sync"
   | "connect:use"
   | "mail:manage"
-  | "recce:review-cs";
+  | "recce:review-cs"
+  | "catalog:manage";
 
 export interface NavLeaf {
   label: string;
@@ -122,6 +124,7 @@ export const NAV: NavItem[] = [
   { label: "Cost Rates", icon: ReceiptIndianRupee, href: "/admin/cost-rates", permission: "finance:manage" },
   { label: "Mail Contacts", icon: BookUser, href: "/admin/mail-contacts", permission: "mail:manage" },
   { label: "Reply Test Lab", icon: FlaskConical, href: "/admin/reply-test-lab", permission: "mail:manage" },
+  { label: "Media Catalog", icon: Boxes, href: "/admin/media-catalog", permission: "catalog:manage" },
   { label: "Recce Price Management", icon: ReceiptIndianRupee, href: "/recce-cost" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
