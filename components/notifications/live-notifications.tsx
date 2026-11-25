@@ -49,6 +49,8 @@ export function LiveNotifications() {
       qc.invalidateQueries({ queryKey: ["sites"] });
       qc.invalidateQueries({ queryKey: ["files"] });
       qc.invalidateQueries({ queryKey: ["notification-log"] });
+      // A recce review event (the other team approved / rejected / marked something, a new version came): the open review page and the inbox refresh at once.
+      if (n.type?.startsWith("RECCE_") || n.path?.startsWith("/recce-review")) qc.invalidateQueries({ queryKey: ["recce-review"] });
       setPopups((p) => [n, ...p.filter((x) => x.id !== n.id)].slice(0, 3));
     });
   }, [status, qc]);

@@ -91,6 +91,10 @@ export interface WsReview {
 export interface WsVersion {
   id: string;
   version: number;
+  /** The boards as they were in this version (media type, quantity, size). */
+  mediaItems: BoardItem[];
+  /** Installation feasibility as it was in this version (absent on versions made before it was recorded). */
+  installation?: ShopInstallation;
   submittedAt: string;
   submittedBy: string | null;
   photoIds: string[];
@@ -111,10 +115,47 @@ export interface WsRework {
   instructions: string;
   requestedBy: string | null;
   requestedAt: string;
-  items: { id: string; type: string; category: string | null; categoryLabel: string | null; mediaKey: string; photo: string | null; note: string; rejected?: boolean; resolved: boolean; resolvedInVersion: number | null }[];
+  items: { id: string; type: string; category: string | null; categoryLabel: string | null; mediaKey: string; photo: string | null; note: string; rejected?: boolean; /** a reworked checklist item: the phone section it shows in, and its label (note = the remark of that item) */ section?: string | null; label?: string; resolved: boolean; resolvedInVersion: number | null }[];
 }
+/** What a reviewer marked on one photo or one board detail. One per (version, stage, thing); an earlier answer moves into `history`. A reason is mandatory for REJECTED / REWORK. */
+export type MarkDecision = "APPROVED" | "REJECTED" | "REWORK";
+export type BoardField = "MEDIA_TYPE" | "QUANTITY" | "SIZE";
+export interface WsMark {
+  id: string;
+  versionNo: number;
+  stage: ReviewStage;
+  stageLabel: string;
+  kind: "PHOTO" | "BOARD" | "CHECK";
+  photo: string | null;
+  mediaKey: string;
+  field: BoardField | null;
+  /** The checklist item (key and label) of a CHECK mark. */
+  check: string | null;
+  label: string | null;
+  decision: MarkDecision;
+  reason: string;
+  reviewer: string | null;
+  at: string | null;
+  /** The stage already sent it to the recce person (it became a rework item). */
+  sent: boolean;
+  history: { decision: string | null; reason: string; reviewer: string | null; at: string | null; changedAt: string | null }[];
+}
+/** One thing to mark: a photo, a board detail or a checklist item. `reason` is the remark of THIS item (each selected item has its own). */
+export type MarkTarget = ({ kind: "PHOTO"; photo: string } | { kind: "BOARD"; mediaKey: string; field: BoardField } | { kind: "CHECK"; key: string }) & { reason?: string };
+export interface MarksInput { stage: ReviewStage; versionNo: number; decision: MarkDecision; reason: string; targets: MarkTarget[] }
+
 /** One physical board of a shop. `key` is its permanent id (a photo's `mediaKey` points at it). `mediaType` + `seq` make its number ("GSB-01"); boards made before numbers existed have neither. */
-export interface BoardItem { key: string; name: string; mediaType?: string | null; seq?: number | null; quantity?: number; width?: number; height?: number; unit?: string; notes?: string }
+export interface BoardItem {
+  key: string; name: string; mediaType?: string | null; seq?: number | null; quantity?: number; width?: number; height?: number; unit?: string; notes?: string;
+  /** SINGLE / DOUBLE, EXISTING / PROPOSED, where the board sits, and the installation requirement of THIS board (catalog installation code + the answers to its site questions, by question key). */
+  sided?: string | null; condition?: string | null; position?: string | null; installationNotes?: string | null; mediaCode?: string | null;
+  installationType?: string | null; answers?: Record<string, string | number | boolean> | null;
+}
+/** The shop-level installation feasibility the recce person answered (YES / NO / NOT_ASSESSED; a missing answer is NOT_ASSESSED, never NO). */
+export interface ShopInstallation {
+  ladderRequired: string; scaffoldingRequired: string; craneRequired: string; hydraRequired: string; manualInstallationPossible: string; electricalAccess: string;
+  installationHeightFt: number | null; accessRestrictions: string[]; obstruction: string; roadsideConstraints: string; safetyNotes: string; additionalEquipment: string[]; notes: string;
+}
 /** "GSB-01" for a numbered board; the name for an older line. */
 export const boardLabel = (b: Pick<BoardItem, "name" | "mediaType" | "seq">) => (b.mediaType && b.seq ? `${b.mediaType}-${String(b.seq).padStart(2, "0")}` : b.name);
 export interface Workspace {
@@ -131,15 +172,17 @@ export interface Workspace {
   channel: string | null;
   notes: string;
   mediaItems: BoardItem[];
+  installation?: ShopInstallation;
   reviewers: { OPS: { id: string; name: string } | null; CS: { id: string; name: string } | null };
   shop: { id: string; code: string; name: string | null; dealer: string | null; district: string | null; contactPerson: string | null; mobile: string | null; address: string; lat: number | null; lng: number | null; boardType: string | null };
   project: { id: string; code: string; name: string; client: string | null; requirementType: string | null; closed: boolean };
   versions: WsVersion[];
   photos: WsPhoto[];
   reworks: WsRework[];
+  marks: WsMark[];
   checklist: { key: string; label: string; stage: string; gps: boolean }[];
   categories: { key: string; label: string }[];
-  me: { stage: ReviewStage | null; canDecide: boolean; /** my stage approved this version: I may still change it to Rework / More photos / Reject */ canChange: boolean; openStage: ReviewStage | null; isAdmin: boolean; canReopen: boolean };
+  me: { stage: ReviewStage | null; canDecide: boolean; /** my stage approved this version: I may still change it to Rework / More photos / Reject */ canChange: boolean; /** I may tick photos / board details and mark them Approved, Rejected or Rework */ canMark: boolean; openStage: ReviewStage | null; isAdmin: boolean; canReopen: boolean };
 }
 export interface TimelineEvent {
   id: string;
@@ -222,7 +265,8 @@ const B = "/recce-review";
 
 export const useInbox = (f: InboxFilters) =>
   useQuery({ queryKey: [KEY, "inbox", f], queryFn: () => apiPage<InboxRow>(`${B}/inbox${qs({ ...f, limit: 20 })}`), placeholderData: keepPreviousData, refetchInterval: 60_000 });
-export const useWorkspace = (id: string) => useQuery({ queryKey: [KEY, "ws", id], queryFn: () => api<Workspace>(`${B}/submissions/${id}`), refetchInterval: 45_000 });
+/** Refreshed at once by the live notification of the other team's answer (see LiveNotifications); the 15 s poll is the fallback when that stream is down. */
+export const useWorkspace = (id: string) => useQuery({ queryKey: [KEY, "ws", id], queryFn: () => api<Workspace>(`${B}/submissions/${id}`), refetchInterval: 15_000 });
 export const useTimeline = (id: string, f: { type?: string; person?: string; from?: string; to?: string }) =>
   useQuery({ queryKey: [KEY, "timeline", id, f], queryFn: () => api<TimelineEvent[]>(`${B}/submissions/${id}/activity${qs(f)}`) });
 export const useShopThread = (id: string) => useQuery({ queryKey: [KEY, "thread", id], queryFn: () => api<ShopMessage[]>(`${B}/submissions/${id}/messages`), refetchInterval: 30_000 });
@@ -248,6 +292,17 @@ const post = (path: string, body: unknown) => api(path, { method: "POST", body: 
 export const useDecide = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/decision`, b));
 /** A stage that approved changes its decision (Operations and Client Servicing, each for its own stage). A reason is always needed. */
 export const useChangeDecision = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/change-decision`, b));
+/** Marks photos / board details Approved, Rejected or Rework. A remark is mandatory for Rejected and Rework. Saved at once; sent to the recce person with the stage's Rework decision. */
+export const useMarks = (id: string) => useAct(id, (b: MarksInput) => post(`${B}/submissions/${id}/marks`, b));
+/**
+ * "Send back": marks the selected checklist items (each with its own remark) and then sends the stage's Rework, which carries them and every
+ * other unsent mark to the recce person. Two calls, one refresh. If the second fails the marks stay saved (nothing is lost; send again).
+ */
+export const useSendBack = (id: string) =>
+  useAct(id, async (b: { marks: MarksInput | null; decision: DecisionInput; change: boolean }) => {
+    if (b.marks) await post(`${B}/submissions/${id}/marks`, b.marks);
+    return post(`${B}/submissions/${id}/${b.change ? "change-decision" : "decision"}`, b.decision);
+  });
 export const useStartReview = (id: string) => useAct(id, () => post(`${B}/submissions/${id}/start`, {}));
 export const useOverride = (id: string) => useAct(id, (b: { action: "APPROVE" | "REJECT"; reason: string }) => post(`${B}/submissions/${id}/override`, b));
 export const useReopen = (id: string) => useAct(id, (b: { reason: string }) => post(`${B}/submissions/${id}/reopen`, b));

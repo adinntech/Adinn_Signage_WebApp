@@ -318,6 +318,8 @@ export interface NotificationItem {
   orderId?: string | null;
   /** A web path to open instead (e.g. the vendor ID screen); set by the backend. */
   path?: string | null;
+  /** The stored kind (RECCE_REVIEWED, RECCE_MESSAGE ...), for screens that refresh themselves on one kind. */
+  type?: string;
   client: string;
   read: boolean;
 }

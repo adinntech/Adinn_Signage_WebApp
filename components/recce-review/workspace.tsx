@@ -1,11 +1,8 @@
 "use client";
-import { showMobile } from "@/lib/input-format";
-
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PhotoLightbox } from "@/components/preview/photo-lightbox";
-import { AlertTriangle, ArrowLeft, Check, Columns2, MapPin, Maximize2, RotateCcw, Send, ShieldX, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertTriangle, Columns2, History, Images, Layers, MapPin, Maximize2, MessageSquare, Send, ShieldX, ZoomIn, ZoomOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,42 +10,52 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/states";
-import { Tabs } from "@/components/ui/tabs";
+import { TabPanel, Tabs } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import {
-  useAssignReviewer, useChangeDecision, useDecide, useOverride, useReopen, useRestorePhoto, useReviewers, useSendShopMessage, useShopThread, useStartReview, useTimeline, useWorkspace,
-  boardLabel, type DecisionInput, type WsPhoto, type Workspace,
+  useAssignReviewer, useMarks, useRestorePhoto, useReviewers, useSendShopMessage, useShopThread, useStartReview, useTimeline, useWorkspace,
+  boardLabel, type WsPhoto, type Workspace,
 } from "@/lib/api/recceReview";
-import { DecisionBadge, OverdueBadge, STAGE_LABEL, StatusBadge, fmtDate } from "./common";
+import { BoardReview, myProblems } from "./board-review";
+import { STAGE_LABEL, fmtDate } from "./common";
+import { ReviewHeader } from "./review-header";
+import { ReviewPanel } from "./review-panel";
 
-type RightTab = "review" | "rework" | "activity" | "chat";
+type CenterTab = "boards" | "photos" | "compare" | "activity" | "chat";
 
-/** Full-screen photo review workspace: shop and versions on the left, photo viewer in the centre, decisions and history on the right. */
+/** Full-screen review workspace: the shop header on top, then the details (boards, photos, comparison, history, chat) beside the checklist and decisions. */
 export function ReviewWorkspace() {
   const { id } = useParams<{ id: string }>();
   const q = useWorkspace(id);
   const start = useStartReview(id);
   const [ver, setVer] = useState<number | null>(null);
   const [photoId, setPhotoId] = useState<string | null>(null);
-  const [compare, setCompare] = useState(false);
   const [showRemoved, setShowRemoved] = useState(false);
-  const [tab, setTab] = useState<RightTab>("review");
+  const [tab, setTab] = useState<CenterTab>("boards");
   const [full, setFull] = useState<number | null>(null);
-  // Photos the reviewer rejected on this screen (photo id -> reason). They go to the recce person together, as one rework request.
-  const [rejects, setRejects] = useState<Rejects>({});
   const [askFor, setAskFor] = useState<string | null>(null);
+  const marker = useMarks(id);
+  const toast = useToast();
 
   const w = q.data;
   const cur = ver ?? w?.currentVersion ?? 1;
-  // Both reviewer logins may reject a photo: the stage that still has to decide, and the stage that approved and now changes its mind.
-  const canReject = !!w && (w.me.canDecide || w.me.canChange) && cur === w.currentVersion && !!w.me.stage;
-  // Opening a submission that waits for my stage marks the review as started (once).
+  // Both reviewer logins may mark: the stage that still has to decide, and the stage that approved and now changes its mind. Only on the current version.
+  const canMark = !!w && w.me.canMark && cur === w.currentVersion && !!w.me.stage;
+  const canReject = canMark;
+  const markHint = !w ? null : cur !== w.currentVersion ? "You are looking at an older version." : !w.me.stage ? "Only the review teams can mark photos." : w.status === "REWORK_REQUIRED" ? "Waiting for the recce person to resubmit." : "Nothing for you to mark right now.";
+  // Photos my stage marked Rejected / Rework and has not sent yet (photo id -> reason). They are saved on the server, so they survive a reload and the other team sees them.
+  const rejects = useMemo<Rejects>(() => Object.fromEntries((w ? myProblems(w, cur) : []).filter((m) => m.photo).map((m) => [m.photo as string, m.reason])), [w, cur]);
+  const markPhoto = (photoId: string, decision: "APPROVED" | "REJECTED", reason: string) => {
+    if (!w?.me.stage) return;
+    marker.mutate({ stage: w.me.stage, versionNo: w.currentVersion, decision, reason, targets: [{ kind: "PHOTO", photo: photoId }] }, { onError: (e) => toast(errorMessage(e), "error") });
+  };
+  // Opening a submission that waits for my stage (either stage, in any order) marks the review as started (once).
   useEffect(() => {
-    if (w && w.me.openStage && w.me.openStage === w.me.stage && w.status === "SUBMITTED") start.mutate();
+    if (w && w.me.canDecide && w.status === "SUBMITTED") start.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [w?.id, w?.status, w?.me.openStage]);
+  }, [w?.id, w?.status, w?.me.canDecide]);
 
   const version = w?.versions.find((v) => v.version === cur);
   const photos = useMemo(() => {
@@ -59,110 +66,94 @@ export function ReviewWorkspace() {
   const active = photos.find((p) => p.id === photoId) ?? photos[0] ?? null;
   const prevVersion = w?.versions.find((v) => v.version === cur - 1);
 
-  if (q.isPending) return <div className="grid gap-4 lg:grid-cols-[18rem_1fr_24rem]"><Skeleton className="h-[70dvh]" /><Skeleton className="h-[70dvh]" /><Skeleton className="h-[70dvh]" /></div>;
+  if (q.isPending) return <div className="flex flex-col gap-4"><Skeleton className="h-40" /><div className="grid gap-4 lg:grid-cols-[1fr_24rem]"><Skeleton className="h-[60dvh]" /><Skeleton className="h-[60dvh]" /></div></div>;
   if (q.isError || !w) return <ErrorState error={q.error} onRetry={() => q.refetch()} title="Could not open this submission" />;
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      <header className="flex flex-wrap items-center gap-3">
-        <Button asChild variant="ghost" size="sm"><Link href="/recce-review"><ArrowLeft className="size-4" aria-hidden /> Inbox</Link></Button>
-        <h1 className="text-lg font-semibold text-primary">{w.shop.name ?? w.shop.code}</h1>
-        <span className="text-sm text-muted-foreground">{w.project.code} · {w.project.client ?? ""}</span>
-        <StatusBadge status={w.status} />
-        {w.overdue && <OverdueBadge />}
-        {w.project.closed && <Badge tone="neutral">Project closed</Badge>}
-      </header>
+      <ReviewHeader w={w} cur={cur} version={version} onVersion={(n) => { setVer(n); setPhotoId(null); setAskFor(null); }} onOpenPhoto={(pid) => setFull(photos.findIndex((p) => p.id === pid))} />
 
-      <div className="grid min-h-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)_24rem]">
-        {/* LEFT: project, shop, media types, versions */}
-        <aside className="flex flex-col gap-3 lg:max-h-[calc(100dvh-9rem)] lg:overflow-y-auto" aria-label="Project and shop information">
-          <Card className="p-4 text-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Shop</p>
-            <p className="mt-1 font-medium">{w.shop.name ?? "-"} <span className="text-muted-foreground">({w.shop.code})</span></p>
-            <p className="text-muted-foreground">{w.shop.address || "-"}</p>
-            <p className="mt-1">{w.shop.district ?? ""}</p>
-            {w.shop.contactPerson && <p>{w.shop.contactPerson}{w.shop.mobile ? ` · ${showMobile(w.shop.mobile)}` : ""}</p>}
-            <p className="mt-2 text-xs text-muted-foreground">Recce by {w.assignee ?? "-"} ({w.channel === "VENDOR" ? "vendor" : "in-house"})</p>
-            <p className="text-xs text-muted-foreground">{w.project.name}</p>
-          </Card>
-          <Card className="p-4 text-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Media types</p>
-            <ul className="mt-2 flex flex-col gap-2">
-              {w.mediaItems.map((m) => (
-                <li key={m.key} className="rounded-lg border border-border px-3 py-2">
-                  <p className="font-medium">{boardLabel(m)}{m.mediaType && m.seq ? <span className="font-normal text-muted-foreground"> · {m.name}</span> : ` × ${m.quantity ?? 1}`}</p>
-                  <p className="text-xs text-muted-foreground">{m.width && m.height ? `${m.width} × ${m.height} ${m.unit ?? ""}` : "No measurement"}</p>
-                  {m.notes && <p className="text-xs">{m.notes}</p>}
-                </li>
-              ))}
-            </ul>
-            {w.notes && <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs"><span className="font-medium">Recce notes:</span> {w.notes}</p>}
-          </Card>
-          <Card className="p-4 text-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submission versions</p>
-            <ul className="mt-2 flex flex-col gap-1.5">
-              {[...w.versions].reverse().map((v) => (
-                <li key={v.id}>
-                  <button onClick={() => { setVer(v.version); setPhotoId(null); setRejects({}); setAskFor(null); }} aria-current={v.version === cur} className={`w-full rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring ${v.version === cur ? "border-primary bg-secondary" : "border-border hover:bg-muted"}`}>
-                    <span className="flex items-center justify-between"><span className="font-medium">Version {v.version}</span>{v.version === w.currentVersion && <Badge tone="info">Current</Badge>}</span>
-                    <span className="block text-xs text-muted-foreground">{fmtDate(v.submittedAt)} · {v.photoIds.length} photos{v.addedIds.length ? ` · +${v.addedIds.length} new` : ""}</span>
-                    <span className="mt-1 flex flex-wrap gap-1">{v.reviews.map((r) => <span key={r.stage} className="text-[11px]">{r.stage}: <DecisionBadge decision={r.decision} /></span>)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Card>
-          <ReviewerAssign w={w} />
-        </aside>
-
-        {/* CENTER: viewer */}
-        <section className="flex min-w-0 flex-col gap-3" aria-label="Photo viewer">
-          <Card className="flex flex-wrap items-center gap-2 p-2.5 text-sm">
-            <Button size="sm" variant={compare ? "default" : "outline"} disabled={!prevVersion} onClick={() => setCompare((c) => !c)} aria-pressed={compare}><Columns2 className="size-4" aria-hidden /> Compare with v{cur - 1}</Button>
-            <label className="ml-auto flex items-center gap-2 text-muted-foreground"><input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} /> Show removed / replaced photos</label>
-          </Card>
-          {!active ? <Card><EmptyState title="No photos in this version" /></Card> : compare && prevVersion ? (
-            <Compare w={w} cur={version?.photoIds ?? []} prev={prevVersion.photoIds} reject={{ enabled: canReject, rejects, onOpen: (id) => { setPhotoId(id); setCompare(false); setAskFor(id); } }} />
-          ) : (
-            <Viewer
-              key={active.id} photo={active} w={w} onOpen={() => setFull(photos.findIndex((p) => p.id === active.id))}
-              reject={{ enabled: canReject && active.state === "SUBMITTED", reason: rejects[active.id], asking: askFor === active.id, onAsk: () => setAskFor(active.id), onCancel: () => setAskFor(null), onSave: (r) => { setRejects((s) => ({ ...s, [active.id]: r })); setAskFor(null); }, onUndo: () => setRejects((s) => withoutKey(s, active.id)) }}
+      {/* The shop and submission facts sit in the header above, so the page is two columns: the details with their tabs, and the decisions. */}
+      <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_22rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+        {/* LEFT: boards, photos, comparison, history, chat */}
+        <section className="flex min-w-0 flex-col gap-3" aria-label="Submission details">
+          <Card className="flex flex-wrap items-center gap-x-3 pr-3">
+            <Tabs
+              className="min-w-0 flex-1"
+              label="Submission sections"
+              value={tab}
+              onChange={(k) => setTab(k as CenterTab)}
+              tabs={[
+                { key: "boards", label: "Boards", count: version?.mediaItems.length ?? 0, icon: Layers },
+                { key: "photos", label: "All Photos", count: photos.length, icon: Images },
+                { key: "compare", label: "Comparison", icon: Columns2 },
+                { key: "activity", label: "Activity & History", count: w.reworks.filter((r) => r.status === "OPEN").length || undefined, icon: History },
+                { key: "chat", label: "Chat", icon: MessageSquare },
+              ]}
             />
-          )}
+            {(tab === "boards" || tab === "photos" || tab === "compare") && (
+              <label className="ml-auto flex items-center gap-2 py-2 text-xs text-muted-foreground"><input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} /> Show removed / replaced photos</label>
+            )}
+          </Card>
+
+          <TabPanel k={tab} className="flex min-w-0 flex-col gap-3">
+            {tab === "boards" && (version ? <BoardReview w={w} version={version} photos={photos} canMark={canMark} hint={markHint} onOpenPhoto={(pid) => setFull(photos.findIndex((p) => p.id === pid))} /> : <Card><EmptyState title="This version was not found" /></Card>)}
+
+            {tab === "photos" && (!active ? <Card><EmptyState title="No photos in this version" /></Card> : (
+              <>
+                <Viewer
+                  key={active.id} photo={active} w={w} onOpen={() => setFull(photos.findIndex((p) => p.id === active.id))}
+                  reject={{ enabled: canReject && active.state === "SUBMITTED", reason: rejects[active.id], asking: askFor === active.id, onAsk: () => setAskFor(active.id), onCancel: () => setAskFor(null), onSave: (r) => { markPhoto(active.id, "REJECTED", r); setAskFor(null); }, onUndo: () => markPhoto(active.id, "APPROVED", "") }}
+                />
+                <div className="flex gap-2 overflow-x-auto pb-1" role="listbox" aria-label="Photos of this version">
+                  {photos.map((p) => (
+                    <button key={p.id} role="option" aria-selected={p.id === active.id} onClick={() => setPhotoId(p.id)} className={`relative h-20 w-28 shrink-0 overflow-hidden rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-ring ${p.id === active.id ? "border-primary" : "border-border"}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {p.url ? <img src={p.editedUrl ?? p.url} alt={`${label(w, p.category)} photo`} loading="lazy" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center text-xs text-muted-foreground">No file</span>}
+                      {version?.addedIds.includes(p.id) && <span className="absolute left-1 top-1 rounded bg-success px-1 text-[10px] font-medium text-white">NEW</span>}
+                      {w.mediaItems.length > 1 && boardOf(w, p.mediaKey) && <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-medium text-white">{boardOf(w, p.mediaKey)}</span>}
+                      {p.state !== "SUBMITTED" && <span className="absolute inset-x-0 bottom-0 bg-black/70 px-1 text-[10px] text-white">{p.state === "REMOVED" ? "Removed" : "Replaced"}</span>}
+                      {p.id in rejects && <span className="absolute inset-x-0 bottom-0 bg-danger px-1 text-[10px] font-medium text-white">Rejected</span>}
+                      {p.flags.length > 0 && <AlertTriangle className="absolute right-1 top-1 size-4 text-warning" aria-label="Metadata warning" />}
+                    </button>
+                  ))}
+                </div>
+                <PhotoFacts photo={active} w={w} />
+              </>
+            ))}
+
+            {tab === "compare" && (prevVersion
+              ? <Compare w={w} cur={version?.photoIds ?? []} prev={prevVersion.photoIds} reject={{ enabled: canReject, rejects, onOpen: (pid) => { setPhotoId(pid); setTab("photos"); setAskFor(pid); } }} />
+              : <Card><EmptyState title="Nothing to compare" description="This is the first version of the submission." /></Card>)}
+
+            {tab === "activity" && (
+              <div className="grid gap-4 xl:grid-cols-2">
+                <section aria-label="Rework requests"><h2 className="mb-2 text-sm font-semibold">Rework requests</h2><ReworkList w={w} /></section>
+                <section aria-label="Activity"><h2 className="mb-2 text-sm font-semibold">Activity</h2><Activity id={id} /></section>
+              </div>
+            )}
+
+            {tab === "chat" && <Chat id={id} />}
+          </TabPanel>
+
           <PhotoLightbox
             index={full} onIndexChange={setFull} onClose={() => setFull(null)}
             photos={photos.map((p) => ({
               ...lightboxItem(p, w),
               actions: canReject && p.state === "SUBMITTED" ? (
                 p.id in rejects
-                  ? <button className={LIGHTBOX_BTN} onClick={() => setRejects((s) => withoutKey(s, p.id))}>Undo reject</button>
-                  : <button className={`${LIGHTBOX_BTN} bg-danger hover:bg-danger/80`} onClick={() => { setFull(null); setPhotoId(p.id); setCompare(false); setAskFor(p.id); }}><ShieldX className="size-4" aria-hidden /> Reject photo</button>
+                  ? <button className={LIGHTBOX_BTN} onClick={() => markPhoto(p.id, "APPROVED", "")}>Undo reject</button>
+                  : <button className={`${LIGHTBOX_BTN} bg-danger hover:bg-danger/80`} onClick={() => { setFull(null); setPhotoId(p.id); setTab("photos"); setAskFor(p.id); }}><ShieldX className="size-4" aria-hidden /> Reject photo</button>
               ) : undefined,
             }))}
           />
-          <div className="flex gap-2 overflow-x-auto pb-1" role="listbox" aria-label="Photos of this version">
-            {photos.map((p) => (
-              <button key={p.id} role="option" aria-selected={p.id === active?.id} onClick={() => { setPhotoId(p.id); setCompare(false); }} className={`relative h-20 w-28 shrink-0 overflow-hidden rounded-lg border-2 focus-visible:outline-2 focus-visible:outline-ring ${p.id === active?.id ? "border-primary" : "border-border"}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {p.url ? <img src={p.editedUrl ?? p.url} alt={`${label(w, p.category)} photo`} loading="lazy" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center text-xs text-muted-foreground">No file</span>}
-                {version?.addedIds.includes(p.id) && <span className="absolute left-1 top-1 rounded bg-success px-1 text-[10px] font-medium text-white">NEW</span>}
-                {w.mediaItems.length > 1 && boardOf(w, p.mediaKey) && <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px] font-medium text-white">{boardOf(w, p.mediaKey)}</span>}
-                {p.state !== "SUBMITTED" && <span className="absolute inset-x-0 bottom-0 bg-black/70 px-1 text-[10px] text-white">{p.state === "REMOVED" ? "Removed" : "Replaced"}</span>}
-                {p.id in rejects && <span className="absolute inset-x-0 bottom-0 bg-danger px-1 text-[10px] font-medium text-white">Rejected</span>}
-                {p.flags.length > 0 && <AlertTriangle className="absolute right-1 top-1 size-4 text-warning" aria-label="Metadata warning" />}
-              </button>
-            ))}
-          </div>
-          {active && <PhotoFacts photo={active} w={w} />}
         </section>
 
-        {/* RIGHT: checklist, decisions, history */}
-        <aside className="flex min-h-0 flex-col gap-3 lg:max-h-[calc(100dvh-9rem)] lg:overflow-y-auto" aria-label="Review actions">
-          <Tabs tabs={[{ key: "review", label: "Review" }, { key: "rework", label: "Rework", count: w.reworks.filter((r) => r.status === "OPEN").length || undefined }, { key: "activity", label: "Activity" }, { key: "chat", label: "Chat" }]} value={tab} onChange={(k) => setTab(k as RightTab)} label="Review sections" />
-          {tab === "review" && <ReviewPanel w={w} cur={cur} photos={photos} rejects={rejects} setRejects={setRejects} />}
-          {tab === "rework" && <ReworkList w={w} />}
-          {tab === "activity" && <Activity id={id} />}
-          {tab === "chat" && <Chat id={id} />}
+        {/* RIGHT: checklist and decisions */}
+        <aside className="flex min-h-0 flex-col gap-3 lg:sticky lg:top-2 lg:max-h-[calc(100dvh-9rem)] lg:self-start lg:overflow-y-auto" aria-label="Review actions">
+          {/* A new key per version: the checklist starts empty again when the recce person submits the next one. */}
+          <ReviewPanel key={`${w.id}:${cur}:${w.currentVersion}`} w={w} cur={cur} />
+          <ReviewerAssign w={w} />
         </aside>
       </div>
     </div>
@@ -189,7 +180,6 @@ const lightboxItem = (p: WsPhoto, w: Workspace) => ({
 
 /** Photos rejected on this screen: photo id -> reason. */
 type Rejects = Record<string, string>;
-const withoutKey = (r: Rejects, id: string): Rejects => { const n = { ...r }; delete n[id]; return n; };
 const LIGHTBOX_BTN = "inline-flex h-9 items-center justify-center gap-1 rounded-md bg-white/10 px-3 text-xs font-medium text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white";
 
 /** What the viewer needs to let a reviewer reject the photo on screen. */
@@ -319,193 +309,6 @@ function ReviewerAssign({ w }: { w: Workspace }) {
   );
 }
 
-type Mode = null | "APPROVE" | "REJECT" | "REWORK" | "ADDITIONAL";
-
-function ReviewPanel({ w, cur, photos, rejects, setRejects }: { w: Workspace; cur: number; photos: WsPhoto[]; rejects: Rejects; setRejects: Dispatch<SetStateAction<Rejects>> }) {
-  const decide = useDecide(w.id);
-  const changeDecision = useChangeDecision(w.id);
-  const override = useOverride(w.id);
-  const reopen = useReopen(w.id);
-  const toast = useToast();
-  const stage = w.me.stage;
-  const [checks, setChecks] = useState<Record<string, boolean>>({});
-  const [mode, setMode] = useState<Mode>(null);
-  const [comment, setComment] = useState("");
-  const [cats, setCats] = useState<string[]>([]);
-  const [fixMeasure, setFixMeasure] = useState(false);
-  const [reason, setReason] = useState("");
-  const version = w.versions.find((v) => v.version === cur);
-  const readOnly = cur !== w.currentVersion;
-  const can = w.me.canDecide && !readOnly && !!stage;
-  // My stage already approved this version: it may still change to Rework / More photos / Reject, with a reason (both reviewer logins).
-  const canChange = w.me.canChange && !readOnly && !!stage && !can;
-  const acting = can || canChange;
-  const pending = decide.isPending || changeDecision.isPending;
-
-  // Photos rejected on the viewer (or ticked under "Replace these photos"): each one is a REPLACE_PHOTO item with its own reason.
-  const rejected = photos.filter((p) => p.state === "SUBMITTED" && p.id in rejects);
-  const rejectItems: DecisionInput["items"] = rejected.map((p) => ({ type: "REPLACE_PHOTO", photo: p.id, rejected: true, note: (rejects[p.id] ?? "").trim() }));
-  // Every rejected photo needs its reason (3+ characters): the recce person sees "Rejected" with that reason.
-  const reasonsMissing = rejected.filter((p) => (rejects[p.id] ?? "").trim().length < 3);
-  const run = canChange ? changeDecision : decide;
-  const submit = (input: DecisionInput) => run.mutate(input, { onSuccess: () => { toast(canChange ? "Decision changed" : "Decision saved"); setMode(null); setComment(""); setCats([]); setRejects({}); }, onError: (e) => toast(errorMessage(e), "error") });
-
-  const send = () => {
-    if (!stage || !mode) return;
-    const items: DecisionInput["items"] = [
-      ...cats.map((c) => ({ type: "ADDITIONAL_PHOTO", category: c, mediaKey: w.mediaItems[0]?.key })),
-      ...(mode === "REWORK" ? rejectItems : []),
-      ...(fixMeasure ? [{ type: "FIX_MEASUREMENT" }] : []),
-    ];
-    submit({ stage, decision: mode, versionNo: w.currentVersion, comment, ...(mode === "REJECT" ? { reason: comment } : {}), checklist: w.checklist.map((c) => ({ key: c.key, passed: !!checks[c.key] })), items });
-  };
-  /** The rejected photos go back to the recce person as one rework request; the note is optional (a summary is written when it is empty). */
-  const sendRejected = () => {
-    if (!stage || rejected.length === 0) return;
-    const text = comment.trim().length >= 5 ? comment.trim() : `Photos rejected: ${rejected.map((p) => label(w, p.category)).join(", ")}`;
-    submit({ stage, decision: "REWORK", versionNo: w.currentVersion, comment: text, checklist: [], items: rejectItems });
-  };
-  const needsText = mode === "REJECT" || mode === "REWORK" || mode === "ADDITIONAL";
-  // Changing an approval always needs a written reason (5+ characters), whatever the new answer is. Approving needs no rejected photo.
-  const valid = canChange ? comment.trim().length >= 5 && (mode !== "ADDITIONAL" || cats.length > 0) && !!mode && mode !== "APPROVE" && (mode !== "REWORK" || reasonsMissing.length === 0)
-    : mode === "APPROVE" ? rejected.length === 0 && w.checklist.filter((c) => !(c.gps && false)).every((c) => checks[c.key]) : mode === "REJECT" ? comment.trim().length >= 3 : mode === "REWORK" ? comment.trim().length >= 5 && reasonsMissing.length === 0 : mode === "ADDITIONAL" ? cats.length > 0 : false;
-
-  return (
-    <div className="flex flex-col gap-3">
-      <Card className="p-4 text-sm">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Review status · version {cur}</p>
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {(version?.reviews ?? []).map((r) => (
-            <li key={r.stage} className="rounded-lg border border-border px-3 py-2">
-              <div className="flex items-center justify-between"><span className="font-medium">{r.stageLabel}</span><DecisionBadge decision={r.decision} /></div>
-              {r.reviewer && <p className="text-xs text-muted-foreground">{r.reviewer} · {fmtDate(r.decidedAt)}</p>}
-              {r.comment && <p className="mt-1 text-xs">{r.comment}</p>}
-              {r.override && <p className="mt-1 text-xs text-warning">Admin override: {r.override.reason}</p>}
-              {(r.history ?? []).map((h, i) => (
-                <p key={i} className="mt-1 text-xs text-muted-foreground">Changed from {h.decision?.toLowerCase() ?? "earlier answer"}{h.reviewer ? ` (${h.reviewer}` : " ("}{h.decidedAt ? `, ${fmtDate(h.decidedAt)}` : ""}) on {fmtDate(h.changedAt)}</p>
-              ))}
-            </li>
-          ))}
-        </ul>
-        {w.status === "APPROVED" && <p className="mt-2 rounded-lg bg-success-soft px-3 py-2 text-success">{canChange ? "Final approved. You can still change your decision below." : "Final approved. This version is locked."}</p>}
-        {canChange && w.status !== "APPROVED" && <p className="mt-2 rounded-lg bg-muted px-3 py-2 text-muted-foreground">You approved this version. You can still change your decision below.</p>}
-      </Card>
-
-      {can && (
-        <Card className="p-4 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{STAGE_LABEL[stage!]} checklist</p>
-          <ul className="mt-2 flex flex-col gap-1.5">
-            {w.checklist.map((c) => (
-              <li key={c.key}><label className="flex items-start gap-2"><input type="checkbox" className="mt-0.5" checked={!!checks[c.key]} onChange={(e) => setChecks((s) => ({ ...s, [c.key]: e.target.checked }))} /><span>{c.label}</span></label></li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {acting && mode && needsText && (
-        <Card className="flex flex-col gap-3 p-4 text-sm">
-          <label>
-            <span className="font-medium">{canChange ? "Reason for changing your decision (required, min 5 characters)" : mode === "REJECT" ? "Rejection reason (required)" : mode === "REWORK" ? "Rework instructions (required)" : "Note for the recce person"}</span>
-            <Textarea className="mt-1" value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder={mode === "REWORK" ? "e.g. Need a clearer right-side view of the board mounting area." : ""} />
-          </label>
-          {(mode === "REWORK" || mode === "ADDITIONAL") && (
-            <fieldset>
-              <legend className="font-medium">Photos needed</legend>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {w.categories.map((c) => (
-                  <label key={c.key} className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs ${cats.includes(c.key) ? "border-primary bg-secondary" : "border-border"}`}>
-                    <input type="checkbox" className="sr-only" checked={cats.includes(c.key)} onChange={() => setCats((s) => (s.includes(c.key) ? s.filter((x) => x !== c.key) : [...s, c.key]))} />{c.label}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          )}
-          {mode === "REWORK" && (
-            <>
-              <fieldset>
-                <legend className="font-medium">Replace these photos</legend>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {photos.filter((p) => p.state === "SUBMITTED").map((p) => (
-                    <label key={p.id} className={`cursor-pointer rounded-lg border px-2 py-1 text-xs ${p.id in rejects ? "border-primary bg-secondary" : "border-border"}`}>
-                      <input type="checkbox" className="sr-only" checked={p.id in rejects} onChange={() => setRejects((s) => (p.id in s ? withoutKey(s, p.id) : { ...s, [p.id]: "" }))} />{label(w, p.category)}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={fixMeasure} onChange={(e) => setFixMeasure(e.target.checked)} /> Measurements need correction</label>
-            </>
-          )}
-        </Card>
-      )}
-
-      {acting && rejected.length > 0 && (
-        <Card className="flex flex-col gap-2 border-danger/40 p-4 text-sm" data-testid="rejected-photos">
-          <p className="text-xs font-medium uppercase tracking-wide text-danger">Rejected photos ({rejected.length})</p>
-          <ul className="flex flex-col gap-2">
-            {rejected.map((p) => (
-              <li key={p.id} className="flex items-center gap-2">
-                <span className="w-28 shrink-0 truncate font-medium" title={label(w, p.category)}>{label(w, p.category)}</span>
-                <Input aria-label={`Reason for rejecting ${label(w, p.category)}`} maxLength={500} placeholder="Reason" value={rejects[p.id] ?? ""} onChange={(e) => setRejects((s) => ({ ...s, [p.id]: e.target.value }))} />
-                <Button size="sm" variant="ghost" aria-label={`Undo reject of ${label(w, p.category)}`} onClick={() => setRejects((s) => withoutKey(s, p.id))}>Undo</Button>
-              </li>
-            ))}
-          </ul>
-          {!mode && (
-            <label>
-              <span className="text-xs text-muted-foreground">Note for the recce person (optional)</span>
-              <Textarea className="mt-1" value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} />
-            </label>
-          )}
-          {reasonsMissing.length > 0 && <p role="alert" className="text-xs text-danger">Write the reason for rejecting: {reasonsMissing.map((p) => label(w, p.category)).join(", ")}.</p>}
-          <p className="text-xs text-muted-foreground">The recce person sees these photos as Rejected, with your reason. Only these photos are asked again; the other photos stay as they are.</p>
-        </Card>
-      )}
-
-      {acting ? (
-        <div className="sticky bottom-0 -mx-1 flex flex-wrap gap-2 border-t border-border bg-background/95 px-1 py-3 backdrop-blur">
-          {!mode && rejected.length > 0 && <Button variant="destructive" loading={pending} disabled={pending || reasonsMissing.length > 0} title={reasonsMissing.length > 0 ? "Write a reason for every rejected photo" : undefined} onClick={sendRejected}><ShieldX className="size-4" aria-hidden /> Send {rejected.length} rejected photo{rejected.length === 1 ? "" : "s"} back</Button>}
-          {mode ? (
-            <>
-              <Button disabled={!valid || pending} loading={pending} onClick={send} variant={mode === "REJECT" ? "destructive" : "default"}><Send className="size-4" aria-hidden /> Confirm {canChange ? "change" : mode === "APPROVE" ? "approval" : mode === "REJECT" ? "rejection" : mode === "REWORK" ? "rework request" : "request"}</Button>
-              <Button variant="ghost" onClick={() => setMode(null)}>Cancel</Button>
-            </>
-          ) : (
-            <>
-              {!canChange && <Button disabled={rejected.length > 0} title={rejected.length > 0 ? "Undo the rejected photos first" : undefined} onClick={() => setMode("APPROVE")}><Check className="size-4" aria-hidden /> Approve</Button>}
-              <Button variant="outline" onClick={() => setMode("REWORK")}><RotateCcw className="size-4" aria-hidden /> Rework</Button>
-              <Button variant="outline" onClick={() => setMode("ADDITIONAL")}>More photos</Button>
-              <Button variant="destructive" onClick={() => setMode("REJECT")}><ShieldX className="size-4" aria-hidden /> Reject</Button>
-            </>
-          )}
-        </div>
-      ) : (
-        <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-          {readOnly ? "You are looking at an older version. Switch to the current version to decide." : w.me.stage && w.me.openStage && w.me.openStage !== w.me.stage ? `Waiting for ${STAGE_LABEL[w.me.openStage]} to decide first.` : w.status === "REWORK_REQUIRED" ? "Waiting for the recce person to resubmit." : w.me.stage ? "Nothing for you to decide right now." : "You can view this submission. Decisions are made by the review teams."}
-        </p>
-      )}
-
-      {w.me.isAdmin && ["SUBMITTED", "UNDER_REVIEW"].includes(w.status) && (
-        <Card className="flex flex-col gap-2 p-4 text-sm">
-          <p className="font-medium">Admin override</p>
-          <Input aria-label="Override reason" placeholder="Reason (kept in the audit trail)" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <div className="flex gap-2">
-            {(["APPROVE", "REJECT"] as const).map((a) => (
-              <Button key={a} size="sm" variant="outline" disabled={reason.trim().length < 5 || override.isPending} onClick={() => override.mutate({ action: a, reason }, { onSuccess: () => { toast(`Override: ${a.toLowerCase()}`); setReason(""); }, onError: (e) => toast(errorMessage(e), "error") })}>{a === "APPROVE" ? "Approve anyway" : "Reject anyway"}</Button>
-            ))}
-          </div>
-        </Card>
-      )}
-      {w.me.canReopen && (
-        <Card className="flex flex-col gap-2 p-4 text-sm">
-          <p className="font-medium">Reopen for a new attempt</p>
-          <Input aria-label="Reopen reason" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <Button size="sm" variant="outline" disabled={reason.trim().length < 5 || reopen.isPending} onClick={() => reopen.mutate({ reason }, { onSuccess: () => { toast("Shop reopened"); setReason(""); }, onError: (e) => toast(errorMessage(e), "error") })}>Reopen</Button>
-        </Card>
-      )}
-    </div>
-  );
-}
-
 function ReworkList({ w }: { w: Workspace }) {
   if (!w.reworks.length) return <Card><EmptyState title="No rework requests" description="Rework and additional-photo requests appear here with their resolved state." /></Card>;
   return (
@@ -518,7 +321,7 @@ function ReworkList({ w }: { w: Workspace }) {
             <p className="mt-2">{r.instructions}</p>
             <ul className="mt-2 flex flex-col gap-1">
               {r.items.map((i) => (
-                <li key={i.id} className="flex items-center gap-2 text-xs"><span className={`size-2 rounded-full ${i.resolved ? "bg-success" : "bg-warning"}`} aria-hidden />{i.type === "ADDITIONAL_PHOTO" ? `Add: ${i.categoryLabel}` : i.type === "REPLACE_PHOTO" ? (i.rejected ? `Rejected photo${i.categoryLabel ? ` (${i.categoryLabel})` : ""}: ${i.note}` : i.note ? `Replace a photo: ${i.note}` : "Replace a photo") : i.type === "FIX_MEASUREMENT" ? "Correct measurements" : i.note || "Other"}{i.resolved ? ` (resolved in v${i.resolvedInVersion})` : " (open)"}</li>
+                <li key={i.id} className="flex items-center gap-2 text-xs"><span className={`size-2 rounded-full ${i.resolved ? "bg-success" : "bg-warning"}`} aria-hidden />{i.label ? `${i.rejected ? "Rejected" : "Rework"} · ${i.label}${i.note ? `: ${i.note}` : ""}` : i.type === "ADDITIONAL_PHOTO" ? `Add: ${i.categoryLabel}` : i.type === "REPLACE_PHOTO" ? (i.rejected ? `Rejected photo${i.categoryLabel ? ` (${i.categoryLabel})` : ""}: ${i.note}` : i.note ? `Replace a photo: ${i.note}` : "Replace a photo") : i.type === "FIX_MEASUREMENT" ? "Correct measurements" : i.note || "Other"}{i.resolved ? ` (resolved in v${i.resolvedInVersion})` : " (open)"}</li>
               ))}
             </ul>
           </Card>
