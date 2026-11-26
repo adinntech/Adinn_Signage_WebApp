@@ -197,6 +197,7 @@ ROLE_NAV.CLIENT_SERVICING = [
   { label: "Create Project", icon: FolderKanban, href: "/create-project", permission: "sales:read" },
   { label: "Create Project1", icon: FolderKanban, href: "/client-servicing/projects/new", permission: "sales:read" },
   { label: "Rate Card Creation", icon: ReceiptIndianRupee, href: "/rate-card-creation", permission: "ratecards:create" },
+  { label: "Project Approval", icon: BadgeCheck, href: "/project-approval", permission: "recce:review-cs" },
     { label: "Dashboard", icon: LayoutDashboard, href: "/client-servicing/dashboard", permission: "sales:read" },
   { label: "My Orders", icon: ClipboardList, href: "/orders", permission: "sales:read" },
   { label: "Client Finder", icon: Building2, href: "/client-servicing/clients", permission: "clients:read" },
@@ -216,6 +217,7 @@ export function navFor(role: string | undefined, can: (p?: string) => boolean): 
 const OPERATIONS_NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/operations/dashboard", permission: "dashboard:view" },
   { label: "Projects", icon: FolderKanban, href: "/operations/projects", permission: "projects:read" },
+  { label: "Project Approval", icon: BadgeCheck, href: "/project-approval", permission: "verification:manage" },
   // Hidden for now (screens and routes still exist): Cost Comparison, Shop Allocation, Movement.
   // { label: "Cost Comparison", icon: BarChart3, href: "/operations/cost", permission: "sites:read" },
   // { label: "Shop Allocation", icon: MapPin, href: "/operations/allocation", permission: "sites:read" },
