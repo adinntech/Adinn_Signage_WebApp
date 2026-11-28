@@ -20,7 +20,10 @@ export function Modal({
   dismissible = true,
   persistent,
   headerAction,
+  side = "right",
 }: {
+  /** Drawer only: the edge it slides in from. */
+  side?: "left" | "right";
   /** A button beside the close icon (for example "History"). */
   headerAction?: React.ReactNode;
   open: boolean;
@@ -41,6 +44,7 @@ export function Modal({
     if (!dismissible) e.preventDefault();
   };
   const drawer = variant === "drawer";
+  const dx = side === "left" ? -48 : 48;
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <AnimatePresence>
@@ -58,7 +62,7 @@ export function Modal({
             <div
               className={cn(
                 "pointer-events-none fixed inset-0 z-50 flex",
-                drawer ? "justify-end" : "items-center justify-center p-4",
+                drawer ? (side === "left" ? "justify-start" : "justify-end") : "items-center justify-center p-4",
               )}
             >
               <Dialog.Content asChild forceMount onEscapeKeyDown={keep} onPointerDownOutside={keep} onInteractOutside={persistent ? (e: Event) => e.preventDefault() : keep}>
@@ -68,9 +72,9 @@ export function Modal({
                     drawer ? "h-full w-full max-w-xl" : "w-full max-w-lg rounded-lg border border-border",
                     className,
                   )}
-                  initial={drawer ? { x: 48, opacity: 0 } : { y: 12, opacity: 0, scale: 0.98 }}
+                  initial={drawer ? { x: dx, opacity: 0 } : { y: 12, opacity: 0, scale: 0.98 }}
                   animate={drawer ? { x: 0, opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
-                  exit={drawer ? { x: 48, opacity: 0 } : { y: 8, opacity: 0 }}
+                  exit={drawer ? { x: dx, opacity: 0 } : { y: 8, opacity: 0 }}
                   transition={{ duration: 0.18 }}
                 >
                   <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">

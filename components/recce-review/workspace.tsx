@@ -1,4 +1,5 @@
 "use client";
+import { UnitReview } from "@/components/unit-review/unit-review";
 import { showMobile } from "@/lib/input-format";
 
 import { useEffect, useMemo, useState } from "react";
@@ -268,7 +269,9 @@ function ReviewPanel({ w, cur, photos }: { w: Workspace; cur: number; photos: Ws
   const [reason, setReason] = useState("");
   const version = w.versions.find((v) => v.version === cur);
   const readOnly = cur !== w.currentVersion;
-  const can = w.me.canDecide && !readOnly && !!stage;
+  // Unit-wise shops: each unit is approved / rejected on its own (OPS and CS), so the shop-level decision is not used.
+  const unitMode = !!w.boards?.length;
+  const can = !unitMode && w.me.canDecide && !readOnly && !!stage;
 
   const send = () => {
     if (!stage || !mode) return;
@@ -301,6 +304,13 @@ function ReviewPanel({ w, cur, photos }: { w: Workspace; cur: number; photos: Ws
         </ul>
         {w.status === "APPROVED" && <p className="mt-2 rounded-lg bg-success-soft px-3 py-2 text-success">Final approved. This version is locked.</p>}
       </Card>
+
+      {unitMode && (
+        <Card className="p-4 text-sm">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Units{w.summary ? ` · ${w.summary.approved} of ${w.summary.units} approved` : ""}</p>
+          <UnitReview w={w} compact />
+        </Card>
+      )}
 
       {can && (
         <Card className="p-4 text-sm">
@@ -365,7 +375,7 @@ function ReviewPanel({ w, cur, photos }: { w: Workspace; cur: number; photos: Ws
             </>
           )}
         </div>
-      ) : (
+      ) : unitMode ? null : (
         <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
           {readOnly ? "You are looking at an older version. Switch to the current version to decide." : w.me.stage && w.me.openStage && w.me.openStage !== w.me.stage ? `Waiting for ${STAGE_LABEL[w.me.openStage]} to decide first.` : w.status === "REWORK_REQUIRED" ? "Waiting for the recce person to resubmit." : w.me.stage ? "Nothing for you to decide right now." : "You can view this submission. Decisions are made by the review teams."}
         </p>

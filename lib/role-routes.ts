@@ -12,6 +12,7 @@ export const ROLE_AREAS: { prefix: string; label: string; roles: string[] }[] = 
   // Master rates: Super Admin and BD (ratecards:manage); Client Servicing only reads them in their rate cards.
   { prefix: "/rate-cards", label: "Rate Card Management", roles: ["BD", "SUPER_ADMIN"] },
   { prefix: "/operations", label: "Operations", roles: ["OPERATIONS", "RECCE_COORDINATOR", "SUPER_ADMIN"] },
+  { prefix: "/project-tracking", label: "Project Tracking", roles: ["OPERATIONS", "RECCE_COORDINATOR", "CLIENT_SERVICING", "SUPER_ADMIN"] },
   { prefix: "/project-approval", label: "Project Approval", roles: ["OPERATIONS", "RECCE_COORDINATOR", "CLIENT_SERVICING", "SUPER_ADMIN"] },
   { prefix: "/recce-review", label: "Recce Review", roles: ["OPERATIONS", "RECCE_COORDINATOR", "CLIENT_SERVICING", "SUPER_ADMIN", "MANAGEMENT"] },
   { prefix: "/finance", label: "Accounts", roles: ["FINANCE", "SUPER_ADMIN"] },

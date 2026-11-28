@@ -54,6 +54,8 @@ export interface WsPhoto {
   id: string;
   category: string;
   mediaKey: string;
+  /** Board unit of a quantity-based board (empty on older photos). */
+  unitKey?: string | null;
   caption: string;
   state: "SUBMITTED" | "SUPERSEDED" | "REMOVED";
   version: number | null;
@@ -85,6 +87,8 @@ export interface WsReview {
   comment: string;
   checklist: { key: string; label: string; passed: boolean }[];
   override: { reason: string; by: string | null } | null;
+  rejectMode?: "PHOTO" | "MEASUREMENT" | "BOTH" | null;
+  voiceNoteUrl?: string | null;
 }
 export interface WsVersion {
   id: string;
@@ -111,7 +115,103 @@ export interface WsRework {
   requestedAt: string;
   items: { id: string; type: string; category: string | null; categoryLabel: string | null; mediaKey: string; photo: string | null; note: string; resolved: boolean; resolvedInVersion: number | null }[];
 }
+/* Unit-wise review (boards → units → versions → reviews). */
+export type UnitStatus = "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REWORK" | "REJECTED";
+export interface UnitItem {
+  kind: "PHOTO" | "MEASUREMENT";
+  ref: string | null;
+  category: string | null;
+  categoryLabel: string | null;
+  field: "width" | "height" | "both" | null;
+  reason: string;
+  fixedInVersion: number | null;
+}
+export interface UnitReviewEntry {
+  stage: ReviewStage;
+  stageLabel: string;
+  decision: "PENDING" | "APPROVED" | "REJECTED" | "VOID";
+  reviewer: string | null;
+  decidedAt: string | null;
+  comment: string;
+  rejectMode: "PHOTO" | "MEASUREMENT" | "BOTH" | null;
+  voiceNoteUrl: string | null;
+  override: { reason: string; by: string | null } | null;
+  items: UnitItem[];
+}
+export interface UnitMeasurement {
+  width?: number | null;
+  height?: number | null;
+  unit?: string;
+}
+export interface UnitAnswer {
+  key: string;
+  question: string;
+  answer: string;
+}
+export interface UnitVersion {
+  version: number;
+  shopVersion: number | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+  photos: string[];
+  changed: { photos: string[]; measurement: string[] };
+  /** measurement.width, photos.LEFT_SIDE, answers.<id>, installationType */
+  changedFields?: string[];
+  installationType?: string | null;
+  measurement: UnitMeasurement | null;
+  answers: UnitAnswer[];
+  reviews: UnitReviewEntry[];
+}
+export interface UnitRework {
+  reworkId: string;
+  sourceVersion: number;
+  stage: "OPS" | "CS";
+  status: "OPEN" | "RESUBMITTED" | "CANCELLED";
+  requestedAt: string | null;
+  resolvedInVersion: number | null;
+  items: { kind: "PHOTO" | "MEASUREMENT"; ref: string | null; category: string | null; field: string | null; reason: string }[];
+}
+export interface ReviewUnit {
+  /** unitId (SS-01 / DS-01). */
+  key: string;
+  unitId?: string;
+  unitNo: number;
+  installationType?: string | null;
+  reworks?: UnitRework[];
+  status: UnitStatus;
+  currentVersion: number;
+  approvedAt: string | null;
+  measurement: UnitMeasurement | null;
+  answers: UnitAnswer[];
+  notes: string;
+  photos: WsPhoto[];
+  versions: UnitVersion[];
+}
+export interface ReviewBoard {
+  /** mediaKey */
+  key: string;
+  name: string;
+  mediaType?: string | null;
+  sideType?: string | null;
+  quantity: number;
+  sided: string | null;
+  condition: string | null;
+  position: string | null;
+  units: ReviewUnit[];
+}
+export interface UnitSummary {
+  units: number;
+  approved: number;
+  underReview: number;
+  rework: number;
+  draft: number;
+}
+
 export interface Workspace {
+  /** Unit-wise review record; empty for shops not yet moved to units. */
+  boards?: ReviewBoard[];
+  summary?: UnitSummary | null;
+  unitPhotoCategories?: string[];
   id: string;
   status: RecceStatus;
   currentVersion: number;
@@ -237,9 +337,46 @@ export interface DecisionInput {
   reason?: string;
   checklist: { key: string; passed: boolean }[];
   items: { type: string; category?: string; mediaKey?: string; photo?: string; note?: string }[];
+  /** Project Tracking: what a rejection is based on. */
+  rejectMode?: "PHOTO" | "MEASUREMENT" | "BOTH";
 }
 const post = (path: string, body: unknown) => api(path, { method: "POST", body: JSON.stringify(body) });
 export const useDecide = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/decision`, b));
+
+export interface UnitDecisionInput {
+  decision: "APPROVE" | "REJECT";
+  units: { boardKey: string; unitKey: string; versionNo: number }[];
+  comment: string;
+  rejectMode?: "PHOTO" | "MEASUREMENT" | "BOTH";
+  checklist: { key: string; passed: boolean }[];
+  items: { boardKey: string; unitKey: string; kind: "PHOTO" | "MEASUREMENT"; ref?: string; field?: "width" | "height" | "both"; reason: string }[];
+}
+/** Approve / reject one or more units for the signed-in reviewer's own stage (OPS or CS). */
+export function useDecideUnits(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: UnitDecisionInput) => api<Workspace>(`${B}/submissions/${id}/units/decision`, { method: "POST", body: JSON.stringify(b) }),
+    onSuccess: (ws) => {
+      qc.setQueryData([KEY, "ws", id], ws);
+      qc.invalidateQueries({ queryKey: [KEY] });
+    },
+  });
+}
+/** The reviewer's voice note on their own unit rejection (after the rejection is saved). */
+export function useAddUnitVoiceNote(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ boardKey, unitKey, versionNo, blob }: { boardKey: string; unitKey: string; versionNo: number; blob: Blob }) => {
+      const fd = new FormData();
+      fd.append("boardKey", boardKey);
+      fd.append("unitKey", unitKey);
+      fd.append("versionNo", String(versionNo));
+      fd.append("file", blob, `voice-note.${blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm"}`);
+      return api<{ attached: boolean }>(`${B}/submissions/${id}/units/voice-note`, { method: "POST", body: fd });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
+  });
+}
 export const useStartReview = (id: string) => useAct(id, () => post(`${B}/submissions/${id}/start`, {}));
 export const useOverride = (id: string) => useAct(id, (b: { action: "APPROVE" | "REJECT"; reason: string }) => post(`${B}/submissions/${id}/override`, b));
 export const useReopen = (id: string) => useAct(id, (b: { reason: string }) => post(`${B}/submissions/${id}/reopen`, b));

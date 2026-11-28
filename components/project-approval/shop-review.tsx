@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Box, CalendarClock, CheckCircle2, ChevronRight, ClipboardCheck, GitCompare, History, Home, Image as ImageIcon, LayoutGrid, MapPin, MessageSquare, Ruler, Store, User, Wrench, XCircle,
+  ArrowLeft, Box, Layers, CalendarClock, CheckCircle2, ChevronRight, ClipboardCheck, GitCompare, History, Home, Image as ImageIcon, LayoutGrid, MapPin, MessageSquare, Ruler, Store, User, Wrench, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -17,10 +17,11 @@ import { useApprovalWorkspace, useDecideItem, useShopRef, type ApprovalWorkspace
 import { useDecide, useStartReview, type DecisionInput, type ReviewStage, type WsPhoto } from "@/lib/api/recceReview";
 import { cn } from "@/lib/utils";
 import { DECISION_LOOK, fmtDateTime, fmtGps, Pill, STAGE_NAME, STATUS_LOOK } from "./common";
+import { UnitReview } from "@/components/unit-review/unit-review";
 import { RejectItemModal } from "./review-parts";
 import { AuditTab, BoardsTab, ChecklistTab, CommentsTab, CompareModal, DrawingsTab, InstallationTab, MeasurementsTab, OverviewTab, PhotosTab, type ReviewCtx } from "./shop-review-tabs";
 
-type TabKey = "overview" | "photos" | "measurements" | "drawings" | "boards" | "installation" | "checklist" | "comments" | "audit";
+type TabKey = "units" | "overview" | "photos" | "measurements" | "drawings" | "boards" | "installation" | "checklist" | "comments" | "audit";
 const REVIEWABLE = ["SUBMITTED", "UNDER_REVIEW"];
 
 /** Project Approval > shop: resolves the shop's submission, then the review screen. */
@@ -41,7 +42,9 @@ export function ShopApprovalDetail({ projectId, siteId }: { projectId: string; s
 
 function ShopReview({ w, projectId }: { w: ApprovalWorkspace; projectId: string }) {
   const toast = useToast();
-  const [tab, setTab] = useState<TabKey>("overview");
+  // Unit-wise shops are decided unit by unit (Unit Review tab); the shop-level buttons and item decisions are not used for them.
+  const unitMode = !!w.boards?.length;
+  const [tab, setTab] = useState<TabKey>(unitMode ? "units" : "overview");
   const [compare, setCompare] = useState(false);
   const [rejectItem, setRejectItem] = useState<{ kind: "PHOTO" | "MEASUREMENT"; ref: string; title: string; reason?: string } | null>(null);
   const [finalMode, setFinalMode] = useState<"approve" | "reject" | null>(null);
@@ -54,7 +57,7 @@ function ShopReview({ w, projectId }: { w: ApprovalWorkspace; projectId: string 
   const cur = w.versions.at(-1)!;
   const prev = w.versions.length > 1 ? w.versions.at(-2)! : null;
   const myReview = stage ? cur.reviews.find((r) => r.stage === stage) : undefined;
-  const canAct = !!stage && REVIEWABLE.includes(w.status) && !w.project.closed && myReview?.decision === "PENDING" && (cur.sequential === false || w.me.openStage === stage);
+  const canAct = !unitMode && !!stage && REVIEWABLE.includes(w.status) && !w.project.closed && myReview?.decision === "PENDING" && (cur.sequential === false || w.me.openStage === stage);
   const waitNote = !stage
     ? "View only"
     : w.project.closed
@@ -97,6 +100,7 @@ function ShopReview({ w, projectId }: { w: ApprovalWorkspace; projectId: string 
   };
 
   const tabs: TabItem<TabKey>[] = [
+    ...(unitMode ? [{ key: "units" as const, label: "Unit Review", icon: Layers }] : []),
     { key: "overview", label: "Overview", icon: LayoutGrid },
     { key: "photos", label: `Photos (${photos.length})`, icon: ImageIcon },
     { key: "measurements", label: "Measurements", icon: Ruler },
@@ -131,7 +135,7 @@ function ShopReview({ w, projectId }: { w: ApprovalWorkspace; projectId: string 
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {stage && (
+          {stage && !unitMode && (
             <>
               <Button variant="outline" className="border-[#FECACA] text-[#B91C1C] hover:bg-[#FEF2F2]" disabled={!canAct} title={canAct ? undefined : waitNote} onClick={() => setFinalMode("reject")}>
                 <XCircle className="size-4" aria-hidden /> Reject Submission
@@ -141,7 +145,8 @@ function ShopReview({ w, projectId }: { w: ApprovalWorkspace; projectId: string 
               </Button>
             </>
           )}
-          {(!canAct || !stage) && <span className="text-xs text-[#64748B]">{waitNote}</span>}
+          {!unitMode && (!canAct || !stage) && <span className="text-xs text-[#64748B]">{waitNote}</span>}
+          {unitMode && w.summary && <span className="text-xs font-medium text-[#475569]">{w.summary.approved} of {w.summary.units} units approved</span>}
         </div>
       </div>
 
@@ -194,6 +199,7 @@ function ShopReview({ w, projectId }: { w: ApprovalWorkspace; projectId: string 
       <div className="rounded-xl border border-[#E2E8F0] bg-white">
         <Tabs items={tabs} value={tab} onChange={setTab} idPrefix="pa" className="px-2" />
         <div id="pa-panel" role="tabpanel" aria-labelledby={`pa-tab-${tab}`} className="p-4">
+          {tab === "units" && <UnitReview w={w} />}
           {tab === "overview" && <OverviewTab c={ctx} goTo={(k) => setTab(k as TabKey)} />}
           {tab === "photos" && <PhotosTab c={ctx} />}
           {tab === "measurements" && <MeasurementsTab c={ctx} />}

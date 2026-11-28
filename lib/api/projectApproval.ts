@@ -109,6 +109,17 @@ export interface Board {
   condition?: string;
   position?: string;
   installationNotes?: string;
+  /** Quantity-based board: one entry per physical unit (absent on older submissions = one unit). */
+  units?: BoardUnit[];
+}
+export interface BoardUnit {
+  key: string;
+  unitNo: number;
+  width?: number;
+  height?: number;
+  unit?: string;
+  answers?: { key: string; question: string; answer: string }[];
+  notes?: string;
 }
 export type Installation = Record<string, string | number | string[] | null>;
 /** The review workspace as the backend sends it (fields the Recce Review screen does not type). */
@@ -116,6 +127,8 @@ export type ApprovalWorkspace = Omit<Workspace, "mediaItems" | "versions" | "che
   mediaItems: Board[];
   installation: Installation;
   itemReviews: ItemReview[];
+  unitPhotoCategories?: string[];
+  unitQuestions?: { key: string; label: string; type: string; options?: string[]; required?: boolean }[];
   checklist: { key: string; label: string; stage: string; gps: boolean; required?: boolean }[];
   versions: (WsVersion & { mediaItems: Board[]; installation: Installation; installationRecorded: boolean; sequential: boolean })[];
 };
