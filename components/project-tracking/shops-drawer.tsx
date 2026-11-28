@@ -39,7 +39,7 @@ export function ShopsDrawer({ projectId, target, onClose }: { projectId: string;
       open
       onOpenChange={(o) => !o && onClose()}
       variant="drawer"
-      className="max-w-4xl"
+      className="max-w-6xl"
       title={member ? member.name : shop ? `Shop #${shop.siteCode}` : "Shop Details"}
       titleClassName="text-lg"
       description={member ? `${member.channel === "VENDOR" ? "Vendor" : "In-house staff"} · ${member.assigned} shops allocated` : (shop?.shopName ?? undefined)}
