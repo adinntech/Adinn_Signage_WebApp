@@ -13,7 +13,7 @@ export const STATUS: Record<TrackStatus, { label: string; color: string; bg: str
   NOT_ALLOCATED: { label: "Not allocated", color: "#64748B", bg: "#F1F5F9" },
   NOT_STARTED: { label: "Yet to Start", color: "#64748B", bg: "#F1F5F9" },
   IN_PROGRESS: { label: "In Progress", color: "#B45309", bg: "#FFFBEB" },
-  SUBMITTED: { label: "Submitted", color: "#1D4ED8", bg: "#EFF6FF" },
+  SUBMITTED: { label: "Yet to Review", color: "#1D4ED8", bg: "#EFF6FF" },
   REWORK: { label: "Rework Required", color: "#B91C1C", bg: "#FEF2F2" },
   REJECTED: { label: "Rejected", color: "#B91C1C", bg: "#FEF2F2" },
   COMPLETED: { label: "Approved", color: "#047857", bg: "#ECFDF5" },

@@ -88,8 +88,8 @@ export function ProjectTrackingPage() {
     <div className="min-w-0 space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs text-[#6B7280]">Recce Projects › Project Tracking{d ? ` › ${d.project.code}` : ""}</p>
-          <h1 className="text-xl font-bold text-[#111827] sm:text-2xl">Project Tracking</h1>
+          <p className="text-xs text-[#6B7280]">Recce Projects › Recce Tracking{d ? ` › ${d.project.code}` : ""}</p>
+          <h1 className="text-xl font-bold text-[#111827] sm:text-2xl">Recce Tracking</h1>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
           <div className="w-full sm:w-72">

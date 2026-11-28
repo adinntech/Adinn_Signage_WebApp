@@ -1,8 +1,6 @@
-import { ProjectTrackingPage } from "@/components/project-tracking/tracking-page";
+import { redirect } from "next/navigation";
 
-// Renders only after the client-side sign-in check in AppShell (a server page: "instant" is not allowed in a client module).
-export const instant = false;
-
+// Project Tracking was renamed to Recce Tracking: old links and bookmarks go to the new address.
 export default function Page() {
-  return <ProjectTrackingPage />;
+  redirect("/recce-tracking");
 }

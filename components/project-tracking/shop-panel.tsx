@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/states";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { UnitReview } from "@/components/unit-review/unit-review";
-import { allUnits, DecisionChip, UnitBadge, unitTitle } from "@/components/unit-review/unit-shared";
+import { allUnits, ReviewerInfo, UnitBadge, unitTitle } from "@/components/unit-review/unit-shared";
 import { useApprovalWorkspace, type ApprovalWorkspace } from "@/lib/api/projectApproval";
 import type { TrackShop } from "@/lib/api/projectTracking";
 import { useStartReview, useTimeline, type WsPhoto } from "@/lib/api/recceReview";
@@ -121,7 +121,7 @@ function Loaded({ w, shop }: { w: ApprovalWorkspace; shop: TrackShop }) {
                 {units.map(({ board, unit }) => (
                   <li key={`${board.key}-${unit.key}`} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                     <span className="min-w-0 flex-1 font-medium text-[#111827]">{unitTitle(board, unit)}{unit.currentVersion ? <span className="ml-1 text-xs text-[#6B7280]">V{unit.currentVersion}</span> : null}</span>
-                    {(unit.versions.at(-1)?.reviews ?? []).map((r) => <DecisionChip key={r.stage} stage={r.stage} decision={r.decision} />)}
+                    <ReviewerInfo unit={unit} compact className="basis-full sm:basis-auto" />
                     <UnitBadge status={unit.status} />
                   </li>
                 ))}

@@ -129,7 +129,10 @@ export interface UnitItem {
 export interface UnitReviewEntry {
   stage: ReviewStage;
   stageLabel: string;
-  decision: "PENDING" | "APPROVED" | "REJECTED" | "VOID";
+  decision: "PENDING" | "APPROVED" | "REJECTED" | "VOID" | "REVERTED";
+  reviewerRole?: string | null;
+  /** Revert only: why the approval was taken back. */
+  revertReason?: string | null;
   reviewer: string | null;
   decidedAt: string | null;
   comment: string;
@@ -344,7 +347,9 @@ const post = (path: string, body: unknown) => api(path, { method: "POST", body: 
 export const useDecide = (id: string) => useAct(id, (b: DecisionInput) => post(`${B}/submissions/${id}/decision`, b));
 
 export interface UnitDecisionInput {
-  decision: "APPROVE" | "REJECT";
+  decision: "APPROVE" | "REJECT" | "REVERT";
+  /** REVERT only: why the approval is taken back. */
+  revertReason?: string;
   units: { boardKey: string; unitKey: string; versionNo: number }[];
   comment: string;
   rejectMode?: "PHOTO" | "MEASUREMENT" | "BOTH";

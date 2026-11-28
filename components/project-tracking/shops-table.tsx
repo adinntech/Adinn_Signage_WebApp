@@ -15,7 +15,7 @@ const DECISION: Record<string, { label: string; cls: string }> = {
   APPROVED: { label: "Approved", cls: "bg-[#ECFDF5] text-[#047857]" },
   REJECTED: { label: "Rejected", cls: "bg-[#FEF2F2] text-[#B91C1C]" },
   REWORK: { label: "Rework", cls: "bg-[#FEF2F2] text-[#B91C1C]" },
-  VOID: { label: "Not needed", cls: "bg-[#F3F4F6] text-[#6B7280]" },
+  VOID: { label: "—", cls: "text-[#9CA3AF]" },
 };
 const BASE: TrackShopFilters = { channel: "all", status: "all", approval: "all", page: 1, limit: 20 };
 

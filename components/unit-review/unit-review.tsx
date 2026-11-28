@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CheckCheck, CheckCircle2, ChevronDown, Download, History, Image as ImageIcon, Layers, Ruler, XCircle } from "lucide-react";
+import { CheckCheck, CheckCircle2, ChevronDown, Download, History, Image as ImageIcon, Layers, RotateCcw, Ruler, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/states";
 import type { ReviewBoard, ReviewUnit, WsPhoto } from "@/lib/api/recceReview";
 import { cn } from "@/lib/utils";
 import { ApproveUnitsModal, RejectUnitModal, type UnitRef } from "./unit-modals";
-import { allUnits, canDecide, catLabel, DecisionChip, fmtAt, myReviewOf, UnitBadge, unitTitle, type UnitWs } from "./unit-shared";
+import { allUnits, canDecide, canRevert, catLabel, DecisionChip, decisionsOf, fmtAt, fmtIst, personName, ReviewerInfo, UNIT_LOOK, UnitBadge, unitTitle, type UnitWs } from "./unit-shared";
 
 type Tab = "photos" | "measure" | "versions";
 const RED = "#D92D20";
@@ -21,17 +21,20 @@ export function UnitReview({ w, compact }: { w: UnitWs; compact?: boolean }) {
   const units = allUnits(w);
   const [sel, setSel] = useState<string | null>(null);
   const [approve, setApprove] = useState<UnitRef[] | null>(null);
-  const [reject, setReject] = useState<UnitRef | null>(null);
+  const [reject, setReject] = useState<{ ref: UnitRef; revert?: boolean } | null>(null);
   const mine = units.filter((x) => canDecide(w, x.unit));
   if (!units.length) return <EmptyState icon={Layers} title="No unit record yet" description="Units appear here after the recce is submitted (older shops need the unit migration)." />;
   const current = units.find((x) => `${x.board.key}/${x.unit.key}` === sel) ?? units[0]!;
 
+  // Yet to Review / resubmitted → Approve + Reject. Approved → Revert. Rework → no action (waits for the field person).
   const actions = (x: UnitRef, small?: boolean) =>
     canDecide(w, x.unit) ? (
       <div className="flex gap-1.5">
-        <Button size="sm" variant="outline" className={cn("border-[#FECACA] text-[#B91C1C] hover:bg-[#FEF2F2]", small && "h-7 px-2 text-xs")} onClick={() => setReject(x)}><XCircle className="size-3.5" aria-hidden /> Reject</Button>
+        <Button size="sm" variant="outline" className={cn("border-[#FECACA] text-[#B91C1C] hover:bg-[#FEF2F2]", small && "h-7 px-2 text-xs")} onClick={() => setReject({ ref: x })}><XCircle className="size-3.5" aria-hidden /> Reject</Button>
         <Button size="sm" className={cn("bg-[#16A34A] text-white hover:bg-[#15803D]", small && "h-7 px-2 text-xs")} onClick={() => setApprove([x])}><CheckCircle2 className="size-3.5" aria-hidden /> Approve</Button>
       </div>
+    ) : canRevert(w, x.unit) ? (
+      <Button size="sm" variant="outline" className={cn("border-[#FED7AA] text-[#C2410C] hover:bg-[#FFF7ED]", small && "h-7 px-2 text-xs")} onClick={() => setReject({ ref: x, revert: true })}><RotateCcw className="size-3.5" aria-hidden /> Revert</Button>
     ) : null;
 
   const list = (
@@ -43,7 +46,6 @@ export function UnitReview({ w, compact }: { w: UnitWs; compact?: boolean }) {
       {units.map((x) => {
         const id = `${x.board.key}/${x.unit.key}`;
         const active = !compact && current === x;
-        const v = x.unit.versions.at(-1);
         return (
           <li key={id} className={cn(!compact && "w-[232px] shrink-0 snap-start @min-[760px]:w-auto")}>
             <div
@@ -61,7 +63,7 @@ export function UnitReview({ w, compact }: { w: UnitWs; compact?: boolean }) {
                 </span>
                 <span className="mt-auto flex flex-wrap items-center gap-1">
                   <span className="rounded-full bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#374151]">{x.unit.currentVersion ? `V${x.unit.currentVersion}` : "Not submitted"}</span>
-                  {(v?.reviews ?? []).map((r) => <DecisionChip key={r.stage} stage={r.stage} decision={r.decision} />)}
+                  <ReviewerInfo unit={x.unit} compact className="basis-full" />
                 </span>
               </button>
               {compact && <div className="mt-2">{actions(x, true)}</div>}
@@ -90,7 +92,7 @@ export function UnitReview({ w, compact }: { w: UnitWs; compact?: boolean }) {
         </div>
       )}
       {approve && <ApproveUnitsModal w={w} list={approve} onClose={() => setApprove(null)} />}
-      {reject && <RejectUnitModal w={w} target={reject} onClose={() => setReject(null)} />}
+      {reject && <RejectUnitModal w={w} target={reject.ref} revert={reject.revert} onClose={() => setReject(null)} />}
     </div>
   );
 }
@@ -99,7 +101,6 @@ function UnitDetail({ w, board, unit, actions }: { w: UnitWs; board: ReviewBoard
   const [tab, setTab] = useState<Tab>("photos");
   const [zoom, setZoom] = useState<WsPhoto | null>(null);
   const v = unit.versions.at(-1);
-  const mine = myReviewOf(w, unit);
   const tabs: { key: Tab; label: string; icon: typeof ImageIcon }[] = [
     { key: "photos", label: `Photos (${v?.photos.length ?? 0})`, icon: ImageIcon },
     { key: "measure", label: "Measurement & Q&A", icon: Ruler },
@@ -113,7 +114,7 @@ function UnitDetail({ w, board, unit, actions }: { w: UnitWs; board: ReviewBoard
         {unit.currentVersion > 0 && <span className="rounded-full bg-[#F3F4F6] px-2 py-0.5 text-[11px] font-semibold">V{unit.currentVersion}</span>}
         <span className="ml-auto">{actions}</span>
       </div>
-      {!actions && mine && mine.decision !== "PENDING" && <p className="mt-1 text-xs text-[#6B7280]">You decided V{unit.currentVersion}: {mine.decision.toLowerCase()}.</p>}
+      <ReviewerInfo unit={unit} className="mt-1.5 text-xs" />
       <div role="tablist" className="mt-3 flex gap-1 overflow-x-auto border-b border-[#EEF0F3]">
         {tabs.map((t) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={cn("relative flex h-10 shrink-0 items-center gap-1.5 px-3 text-sm font-medium", tab === t.key ? "text-[#111827]" : "text-[#6B7280] hover:text-[#111827]")}>
@@ -222,38 +223,63 @@ function Measure({ unit }: { unit: ReviewUnit }) {
   );
 }
 
+const VERB: Record<string, string> = { APPROVED: "Approved", REJECTED: "Rejected", REVERTED: "Reverted" };
+const MODE_LABEL: Record<string, string> = { PHOTO: "Photos", MEASUREMENT: "Measurement & Q&A", BOTH: "Photos and Measurement & Q&A" };
+
 function Versions({ w, unit }: { w: UnitWs; unit: ReviewUnit }) {
   const [open, setOpen] = useState<number | null>(unit.currentVersion);
   const name = (id: string | null) => (id ? catLabel(w, unit.photos.find((p) => p.id === id)?.category ?? "Photo") : "Photo");
   return (
     <ol className="space-y-2">
       {[...unit.versions].reverse().map((v) => {
-        const rejected = v.reviews.some((r) => r.decision === "REJECTED");
-        const approved = v.reviews.length > 0 && v.reviews.every((r) => r.decision === "APPROVED");
+        // Every real decision of this version in order (approval, revert, rejection); the last one is the version's outcome.
+        const decisions = decisionsOf(v.reviews);
+        const last = decisions.at(-1);
+        const rejected = last?.decision === "REJECTED" || last?.decision === "REVERTED";
+        const approved = last?.decision === "APPROVED";
         const isOpen = open === v.version;
         return (
           <li key={v.version} className={cn("rounded-xl border", rejected ? "border-[#FECACA]" : approved ? "border-[#BBF7D0]" : "border-[#E5E7EB]")}>
             <button type="button" onClick={() => setOpen(isOpen ? null : v.version)} aria-expanded={isOpen} className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
               <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#F3F4F6] text-xs font-bold">V{v.version}</span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-[#111827]">{v.version === unit.currentVersion ? "Current version" : `Version ${v.version}`}{rejected ? " · Rejected" : approved ? " · Approved" : " · Under review"}</span>
-                <span className="block text-xs text-[#6B7280]">{v.submittedBy ?? "-"} · {fmtAt(v.submittedAt)}{v.shopVersion ? ` · shop submit #${v.shopVersion}` : ""}</span>
+                <span className="block text-sm font-semibold text-[#111827]">{v.version === unit.currentVersion ? "Current version" : `Version ${v.version}`}{last?.decision === "REVERTED" ? " · Approval reverted" : rejected ? " · Rejected" : approved ? " · Approved" : " · Yet to review"}</span>
+                <span className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#6B7280]">
+                  <span><span className="font-medium text-[#374151]">Submitted by:</span> {personName(v.submittedBy) ?? "Not recorded"}</span>
+                  <span><span className="font-medium text-[#374151]">Submitted on:</span> {fmtIst(v.submittedAt)}</span>
+                  {v.shopVersion ? <span><span className="font-medium text-[#374151]">Submission:</span> #{v.shopVersion}</span> : null}
+                </span>
               </span>
               <ChevronDown className={cn("size-4 text-[#6B7280] transition-transform", isOpen && "rotate-180")} aria-hidden />
             </button>
             {isOpen && (
               <div className="space-y-2 border-t border-[#F3F4F6] px-3 py-3 text-sm">
                 <p className="text-[#374151]">{v.photos.length} photos · {v.measurement?.width ?? "-"} × {v.measurement?.height ?? "-"} {v.measurement?.unit ?? "FT"}{v.changed.photos.length && v.version > 1 ? ` · ${v.changed.photos.length} new photo(s)` : ""}{v.changed.measurement.length ? ` · changed ${v.changed.measurement.join(", ")}` : ""}</p>
-                {v.reviews.map((r) => (
-                  <div key={r.stage} className="rounded-lg bg-[#F9FAFB] px-3 py-2">
-                    <p className="flex flex-wrap items-center gap-2 font-medium text-[#111827]">{r.stageLabel}: <DecisionChip stage="" decision={r.decision} />{r.rejectMode && <span className="text-xs font-normal text-[#6B7280]">({r.rejectMode === "BOTH" ? "photos & measurement" : r.rejectMode.toLowerCase()})</span>}</p>
-                    {r.reviewer && <p className="text-xs text-[#6B7280]">{r.reviewer} · {fmtAt(r.decidedAt)}</p>}
-                    {r.override && <p className="text-xs text-[#B45309]">Admin override: {r.override.reason}</p>}
-                    {r.comment && <p className="mt-1 text-xs text-[#374151]">{r.comment}</p>}
-                    {r.items.length > 0 && <ul className="mt-1 space-y-1">{r.items.map((i, k) => <li key={k} className="rounded-md bg-[#FEF2F2] px-2 py-1 text-xs text-[#991B1B]"><b>{i.kind === "PHOTO" ? name(i.ref) : `Measurement (${i.field === "both" ? "width & height" : i.field})`}</b> – {i.reason}{i.fixedInVersion ? <span className="text-[#047857]"> · fixed in V{i.fixedInVersion}</span> : null}</li>)}</ul>}
-                    {r.voiceNoteUrl && <audio controls src={r.voiceNoteUrl} className="mt-1 h-8 w-full max-w-xs" />}
-                  </div>
-                ))}
+                {decisions.map((r, n) => {
+                  const verb = VERB[r.decision]!;
+                  return (
+                    <div key={`${r.stage}-${r.decision}-${n}`} className={cn("rounded-lg px-3 py-2", r.decision === "APPROVED" ? "bg-[#F0FDF4]" : r.decision === "REVERTED" ? "bg-[#FFF7ED]" : "bg-[#FEF2F2]")}>
+                      <p className="flex flex-wrap items-center gap-2 font-medium text-[#111827]"><DecisionChip stage={r.stage} decision={r.decision} /></p>
+                      <dl className="mt-1 grid gap-x-4 gap-y-0.5 text-xs text-[#374151] sm:grid-cols-2">
+                        <div><dt className="inline font-medium">{verb} by: </dt><dd className="inline">{personName(r.reviewer) ?? "Not recorded"} ({r.stageLabel})</dd></div>
+                        <div><dt className="inline font-medium">{verb} on: </dt><dd className="inline">{fmtIst(r.decidedAt)}</dd></div>
+                        {r.revertReason && <div className="sm:col-span-2"><dt className="inline font-medium">Reason: </dt><dd className="inline">{r.revertReason}</dd></div>}
+                        {r.rejectMode && r.decision !== "APPROVED" && <div className="sm:col-span-2"><dt className="inline font-medium">Correction type: </dt><dd className="inline">{MODE_LABEL[r.rejectMode] ?? r.rejectMode}</dd></div>}
+                      </dl>
+                      {r.override && <p className="mt-1 text-xs text-[#B45309]">Admin override: {r.override.reason}</p>}
+                      {r.comment && <p className="mt-1 text-xs text-[#374151]"><span className="font-medium">{r.decision === "APPROVED" ? "Remarks" : "Comment"}:</span> {r.comment}</p>}
+                      {r.items.length > 0 && (
+                        <div className="mt-1">
+                          <p className="text-xs font-medium text-[#374151]">Selected corrections:</p>
+                          <ul className="mt-1 space-y-1">{r.items.map((i, k) => <li key={k} className="rounded-md bg-white px-2 py-1 text-xs text-[#991B1B]"><b>{i.kind === "PHOTO" ? name(i.ref) : `Measurement (${i.field === "both" ? "width & height" : i.field})`}</b> – {i.reason}{i.fixedInVersion ? <span className="text-[#047857]"> · fixed in V{i.fixedInVersion}</span> : null}</li>)}</ul>
+                        </div>
+                      )}
+                      {r.voiceNoteUrl && <audio controls src={r.voiceNoteUrl} className="mt-1 h-8 w-full max-w-xs" />}
+                    </div>
+                  );
+                })}
+                {!decisions.length && <p className="text-xs text-[#6B7280]">No review decision on this version yet.</p>}
+                {last && v.version === unit.currentVersion && <p className="text-xs text-[#6B7280]"><span className="font-medium text-[#374151]">Current status:</span> {UNIT_LOOK[unit.status]?.label ?? unit.status}</p>}
               </div>
             )}
           </li>
